@@ -142,7 +142,7 @@ export function useMeshProcessor() {
     chunks: readonly(chunks),
     loading: readonly(loading),
     error: readonly(error),
-    buildVolume: readonly(buildVolume),
+    buildVolume,
     loadStl,
     split,
     applyConnectors,

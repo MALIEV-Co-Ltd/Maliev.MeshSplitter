@@ -1,29 +1,43 @@
 <template>
-  <div>
-    <h3 class="text-lg font-semibold mb-3">Split Configuration</h3>
-    <div class="space-y-3">
-      <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis">
-        <label class="block text-xs text-gray-600 mb-1">{{ axis }} divisions: {{ divisions[i] }}</label>
-        <input type="range" min="1" max="5" v-model.number="divisions[i]" class="w-full" />
+  <Card>
+    <CardHeader>
+      <h3 class="text-lg font-semibold">Split Configuration</h3>
+    </CardHeader>
+    <CardContent class="space-y-4">
+      <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="space-y-2">
+        <Label>{{ axis }} divisions: {{ divisions[i] }}</Label>
+        <div class="flex items-center gap-3">
+          <Slider
+            :min="1" :max="5" :step="1"
+            :model-value="[divisions[i]]"
+            @update:model-value="divisions[i] = $event[0]"
+            class="flex-1"
+          />
+          <Input type="number" min="1" max="5" :model-value="divisions[i]"
+            @update:model-value="divisions[i] = clamp($event)"
+            class="w-16" />
+        </div>
       </div>
-    </div>
-    <p class="text-sm text-gray-600 mt-2">
-      Total parts: <span class="font-semibold">{{ totalParts }}</span>
-    </p>
-    <p v-if="err" class="text-sm text-red-600 mt-1">{{ err }}</p>
-    <button
-      class="mt-3 w-full px-4 py-2 rounded text-sm font-medium transition-colors"
-      :class="ok ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 text-gray-400 cursor-not-allowed'"
-      :disabled="!ok"
-      @click="onSplit"
-    >
-      Split
-    </button>
-  </div>
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-muted-foreground">Total parts:</span>
+        <Badge variant="secondary">{{ totalParts }}</Badge>
+      </div>
+      <p v-if="err" class="text-sm text-destructive">{{ err }}</p>
+      <Button class="w-full" :disabled="!ok" @click="onSplit">
+        Split
+      </Button>
+    </CardContent>
+  </Card>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 const props = defineProps({
   v: { type: Array, required: true },
@@ -36,6 +50,12 @@ const emit = defineEmits(['split'])
 const divisions = ref([2, 2, 1])
 
 const totalParts = computed(() => divisions.value.reduce((a, b) => a * b, 1))
+
+function clamp(val) {
+  const n = Number(val)
+  if (isNaN(n)) return divisions.value
+  return Math.max(1, Math.min(5, n))
+}
 
 function onSplit() {
   if (!props.ok) return

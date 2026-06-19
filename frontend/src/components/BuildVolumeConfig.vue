@@ -1,55 +1,31 @@
 <template>
-  <div>
-    <h3 class="text-lg font-semibold mb-3">Build Volume</h3>
-
-    <div class="grid grid-cols-3 gap-2 mb-3">
-      <div>
-        <label class="block text-xs text-gray-600 mb-1">X (mm)</label>
-        <input
-          type="number"
-          min="1"
-          step="1"
-          v-model.number="localVolume[0]"
-          class="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-        />
+  <Card>
+    <CardHeader>
+      <h3 class="text-lg font-semibold">Build Volume</h3>
+    </CardHeader>
+    <CardContent class="space-y-3">
+      <div class="grid grid-cols-3 gap-3">
+        <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="space-y-1">
+          <Label>{{ axis }} (mm)</Label>
+          <Input type="number" min="1" step="1" :model-value="localVolume[i]"
+            @update:model-value="updateAxis(i, $event)" />
+        </div>
       </div>
-      <div>
-        <label class="block text-xs text-gray-600 mb-1">Y (mm)</label>
-        <input
-          type="number"
-          min="1"
-          step="1"
-          v-model.number="localVolume[1]"
-          class="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-        />
+      <div class="flex gap-2 flex-wrap">
+        <Button v-for="preset in presets" :key="preset.label" variant="outline" size="sm" @click="setPreset(preset)">
+          {{ preset.label }}
+        </Button>
       </div>
-      <div>
-        <label class="block text-xs text-gray-600 mb-1">Z (mm)</label>
-        <input
-          type="number"
-          min="1"
-          step="1"
-          v-model.number="localVolume[2]"
-          class="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-        />
-      </div>
-    </div>
-
-    <div class="flex gap-2 flex-wrap">
-      <button
-        v-for="preset in presets"
-        :key="preset.label"
-        class="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 transition-colors"
-        @click="setPreset(preset)"
-      >
-        {{ preset.label }}
-      </button>
-    </div>
-  </div>
+    </CardContent>
+  </Card>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
 
 const props = defineProps({
   modelValue: { type: Array, required: true },
@@ -69,5 +45,11 @@ const presets = [
 
 function setPreset(preset) {
   emit('update:modelValue', [...preset.value])
+}
+
+function updateAxis(i, val) {
+  const next = [...localVolume.value]
+  next[i] = Number(val)
+  emit('update:modelValue', next)
 }
 </script>

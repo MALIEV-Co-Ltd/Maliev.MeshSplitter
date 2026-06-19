@@ -9,6 +9,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 const props = defineProps({
   chunks: { type: Array, default: () => [] },
+  meshInfo: { type: Object, default: null },
 })
 
 const container = ref(null)
