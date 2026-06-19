@@ -133,6 +133,7 @@ export function useMeshProcessor() {
     meshInfo.value = null
     meshGeometry.value = null
     chunks.value = []
+    loading.value = false
     error.value = null
   }
 
