@@ -28,7 +28,7 @@ export function useMeshApi() {
     loading.value = true
     error.value = null
     try {
-      const res = await axios.post('/api/split', { buildVolume, gridDivisions })
+      const res = await axios.post('/api/split', { build_volume: buildVolume, grid_divisions: gridDivisions })
       chunks.value = res.data.chunks || []
       return res.data
     } catch (e) {
