@@ -40,6 +40,6 @@ describe('SplitConfig', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: true, err: '' }
     })
-    expect(wrapper.text()).toContain('Total parts')
+    expect(wrapper.text()).toContain('parts')
   })
 })

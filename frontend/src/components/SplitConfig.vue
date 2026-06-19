@@ -1,26 +1,30 @@
 <template>
   <Card>
-    <CardHeader>
+    <CardHeader class="flex flex-row items-center justify-between">
       <h3 class="text-lg font-semibold">Split Configuration</h3>
+      <Button v-if="ok" variant="ghost" size="sm" @click="expanded = !expanded">
+        {{ expanded ? 'Hide' : 'Edit' }}
+      </Button>
     </CardHeader>
     <CardContent class="space-y-4">
-      <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="space-y-2">
-        <Label>{{ axis }} divisions: {{ divisions[i] }}</Label>
-        <div class="flex items-center gap-3">
-          <Slider
-            :min="1" :max="5" :step="1"
-            :model-value="[divisions[i]]"
-            @update:model-value="divisions[i] = $event[0]"
-            class="flex-1"
-          />
-          <Input type="number" min="1" max="5" :model-value="divisions[i]"
-            @update:model-value="divisions[i] = clamp($event)"
-            class="w-16" />
-        </div>
+      <div class="text-sm text-muted-foreground">
+        {{ divisions[0] }}×{{ divisions[1] }}×{{ divisions[2] }} grid &middot; {{ totalParts }} part{{ totalParts === 1 ? '' : 's' }}
       </div>
-      <div class="flex items-center justify-between">
-        <span class="text-sm text-muted-foreground">Total parts:</span>
-        <Badge variant="secondary">{{ totalParts }}</Badge>
+      <div v-show="expanded" class="space-y-4">
+        <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="space-y-2">
+          <Label>{{ axis }} divisions: {{ divisions[i] }}</Label>
+          <div class="flex items-center gap-3">
+            <Slider
+              :min="1" :max="5" :step="1"
+              :model-value="[divisions[i]]"
+              @update:model-value="setDivisions(i, $event[0])"
+              class="flex-1"
+            />
+            <Input type="number" min="1" max="5" :model-value="divisions[i]"
+              @update:model-value="setDivisions(i, clamp($event))"
+              class="w-16" />
+          </div>
+        </div>
       </div>
       <p v-if="err" class="text-sm text-destructive">{{ err }}</p>
       <Button class="w-full" :disabled="!ok" @click="onSplit">
@@ -36,20 +40,19 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
 const props = defineProps({
   v: { type: Array, required: true },
   ok: { type: Boolean, default: false },
   err: { type: String, default: '' },
+  divisions: { type: Array, default: () => [2, 2, 1] },
 })
 
-const emit = defineEmits(['split'])
+const emit = defineEmits(['split', 'update:divisions'])
+const expanded = ref(false)
 
-const divisions = ref([2, 2, 1])
-
-const totalParts = computed(() => divisions.value.reduce((a, b) => a * b, 1))
+const totalParts = computed(() => props.divisions.reduce((a, b) => a * b, 1))
 
 function clamp(val) {
   const n = Number(val)
@@ -57,8 +60,14 @@ function clamp(val) {
   return Math.max(1, Math.min(5, n))
 }
 
+function setDivisions(i, val) {
+  const d = [...props.divisions]
+  d[i] = val
+  emit('update:divisions', d)
+}
+
 function onSplit() {
   if (!props.ok) return
-  emit('split', [...props.v], [...divisions.value])
+  emit('split', [...props.v], [...props.divisions])
 }
 </script>

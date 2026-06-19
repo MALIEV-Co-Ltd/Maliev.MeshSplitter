@@ -4,15 +4,20 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 Write-Host "=== Mesh Splitter ===" -ForegroundColor Cyan
-Write-Host "Fully offline — no backend required`n" -ForegroundColor Yellow
+Write-Host "Fully offline - no backend required" -ForegroundColor Yellow
+Write-Host ""
 
 if (-not (Test-Path "$root\frontend\node_modules")) {
     Write-Host "Installing frontend deps..." -ForegroundColor Yellow
-    Push-Location "$root\frontend"; npm install; Pop-Location
+    Push-Location "$root\frontend"
+    npm install
+    Pop-Location
 }
 
+Push-Location "$root\frontend"
 if ($Open) {
-    Push-Location "$root\frontend"; npx vite --open; Pop-Location
+    npx vite --open
 } else {
-    Push-Location "$root\frontend"; npx vite; Pop-Location
+    npx vite
 }
+Pop-Location

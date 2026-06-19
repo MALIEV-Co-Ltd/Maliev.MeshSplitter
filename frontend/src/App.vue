@@ -6,14 +6,14 @@
           <MeshUploader :mesh-info="meshInfo" :chunks="chunks" :loading="loading" :error="error" @upload="onUpload" />
         </div>
         <BuildVolumeConfig v-model="buildVolume" />
-        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="error" @split="onSplit" />
+        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="error" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
         <ConnectorConfig :error="error" :success="connectorSuccess" @apply="onApply" />
       </div>
 
       <div class="lg:col-span-2 space-y-4">
         <Card>
           <CardContent class="p-0">
-            <ThreePreview :chunks="chunks" :mesh-info="meshInfo" />
+            <ThreePreview :chunks="chunks" :mesh-info="meshInfo" :mesh-geometry="meshGeometry" :build-volume="buildVolume" :divisions="divisions" :up-axis="upAxis" />
           </CardContent>
         </Card>
         <PartList :chunks="chunks" @select="onSelectChunk" />
@@ -24,7 +24,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { useMeshProcessor } from './composables/useMeshProcessor'
 
@@ -37,21 +37,46 @@ import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
 
 const {
-  meshInfo, chunks, loading, error, buildVolume,
+  meshInfo, meshGeometry, chunks, loading, error, buildVolume,
   loadStl, split, applyConnectors, downloadStl, downloadPdf, clearMesh,
 } = useMeshProcessor()
 
 const connectorSuccess = ref('')
+const divisions = ref([2, 2, 1])
+const upAxis = ref('Z')
+
+function calcAutoDivisions(meshBounds, bv) {
+  const sx = meshBounds.max.x - meshBounds.min.x
+  const sy = meshBounds.max.y - meshBounds.min.y
+  const sz = meshBounds.max.z - meshBounds.min.z
+  return [
+    Math.max(1, Math.ceil(sx / bv[0])),
+    Math.max(1, Math.ceil(sy / bv[1])),
+    Math.max(1, Math.ceil(sz / bv[2])),
+  ]
+}
+
+watch(meshInfo, (info) => {
+  if (info && info.bounds) {
+    divisions.value = calcAutoDivisions(info.bounds, buildVolume.value)
+  }
+})
+
+watch(buildVolume, (bv) => {
+  if (meshInfo.value && meshInfo.value.bounds) {
+    divisions.value = calcAutoDivisions(meshInfo.value.bounds, bv)
+  }
+})
 
 async function onUpload(file) {
   connectorSuccess.value = ''
   await loadStl(file)
 }
 
-function onSplit(volume, divisions) {
+function onSplit(volume, gridDivisions) {
   connectorSuccess.value = ''
   try {
-    split(volume, divisions)
+    split(volume, gridDivisions)
   } catch {
     // error set by composable
   }

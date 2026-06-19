@@ -139,6 +139,7 @@ export function useMeshProcessor() {
 
   return {
     meshInfo: readonly(meshInfo),
+    meshGeometry: readonly(meshGeometry),
     chunks: readonly(chunks),
     loading: readonly(loading),
     error: readonly(error),

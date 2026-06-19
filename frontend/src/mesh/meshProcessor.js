@@ -91,22 +91,31 @@ export function splitMesh(mesh, buildVolume, gridDivisions) {
   if (dx === 0 || dy === 0 || dz === 0) return []
 
   const evaluator = new Evaluator()
+  const existingAttrs = Object.keys(mesh.geometry.attributes)
+  evaluator.attributes = ['position']
+  if (existingAttrs.includes('normal')) evaluator.attributes.push('normal')
+  if (existingAttrs.includes('uv')) evaluator.attributes.push('uv')
+
   const mainBrush = new Brush(mesh.geometry.clone())
   mainBrush.position.set(0, 0, 0)
   mainBrush.updateMatrixWorld()
   mainBrush.prepareGeometry()
 
-  const [bx, by, bz] = buildVolume
-  const cellSize = [bx / dx, by / dy, bz / dz]
+  mesh.geometry.computeBoundingBox()
+  const bb = mesh.geometry.boundingBox
+  const meshCenter = new THREE.Vector3().copy(bb.min).add(bb.max).multiplyScalar(0.5)
+  const meshSize = new THREE.Vector3().copy(bb.max).sub(bb.min)
+
+  const cellSize = [meshSize.x / dx, meshSize.y / dy, meshSize.z / dz]
   const chunks = []
   let chunkIndex = 0
 
   for (let iz = 0; iz < dz; iz++) {
     for (let iy = 0; iy < dy; iy++) {
       for (let ix = 0; ix < dx; ix++) {
-        const cx = -bx / 2 + cellSize[0] * (ix + 0.5)
-        const cy = -by / 2 + cellSize[1] * (iy + 0.5)
-        const cz = -bz / 2 + cellSize[2] * (iz + 0.5)
+        const cx = meshCenter.x - meshSize.x / 2 + cellSize[0] * (ix + 0.5)
+        const cy = meshCenter.y - meshSize.y / 2 + cellSize[1] * (iy + 0.5)
+        const cz = meshCenter.z - meshSize.z / 2 + cellSize[2] * (iz + 0.5)
 
         const cellGeo = new THREE.BoxGeometry(cellSize[0], cellSize[1], cellSize[2])
         const cellBrush = new Brush(cellGeo)
@@ -161,6 +170,14 @@ export function addConnectors(chunks, config) {
   const evaluator = new Evaluator()
   const { diameter, depth, clearance, perFace } = config
   const radius = diameter / 2
+
+  const filterAttrs = (geom) => {
+    const keys = Object.keys(geom.attributes)
+    const attrs = ['position']
+    if (keys.includes('normal')) attrs.push('normal')
+    if (keys.includes('uv')) attrs.push('uv')
+    evaluator.attributes = attrs
+  }
 
   for (let i = 0; i < chunks.length; i++) {
     for (let j = i + 1; j < chunks.length; j++) {
@@ -226,6 +243,7 @@ export function addConnectors(chunks, config) {
           brushI.position.set(0, 0, 0)
           brushI.updateMatrixWorld()
           brushI.prepareGeometry()
+          filterAttrs(chunks[i].geometry)
           const maleResult = evaluator.evaluate(brushI, cylBrush, ADDITION)
           chunks[i].geometry = maleResult.geometry.clone()
 
@@ -233,6 +251,7 @@ export function addConnectors(chunks, config) {
           brushJ.position.set(0, 0, 0)
           brushJ.updateMatrixWorld()
           brushJ.prepareGeometry()
+          filterAttrs(chunks[j].geometry)
           const femaleResult = evaluator.evaluate(brushJ, cylBrushHole, SUBTRACTION)
           chunks[j].geometry = femaleResult.geometry.clone()
         } catch {

@@ -37,7 +37,7 @@
         </p>
         <p v-if="meshInfo.bounds">
           <span class="font-medium">Bounds:</span>
-          {{ typeof meshInfo.bounds === 'object' && meshInfo.bounds.min ? `${meshInfo.bounds.min.x.toFixed(1)} x ${meshInfo.bounds.min.y.toFixed(1)} x ${meshInfo.bounds.min.z.toFixed(1)} mm` : (Array.isArray(meshInfo.bounds) ? meshInfo.bounds.map(v => Number(v).toFixed(1)).join(' x ') : meshInfo.bounds) }} mm
+          {{ typeof meshInfo.bounds === 'object' && meshInfo.bounds.min && meshInfo.bounds.max ? `${(meshInfo.bounds.max.x - meshInfo.bounds.min.x).toFixed(1)} x ${(meshInfo.bounds.max.y - meshInfo.bounds.min.y).toFixed(1)} x ${(meshInfo.bounds.max.z - meshInfo.bounds.min.z).toFixed(1)} mm` : (Array.isArray(meshInfo.bounds) ? meshInfo.bounds.map(v => Number(v).toFixed(1)).join(' x ') : meshInfo.bounds) }}
         </p>
       </div>
       <p v-if="!meshInfo.is_watertight" class="text-sm text-destructive font-medium">

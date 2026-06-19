@@ -10,21 +10,27 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 const props = defineProps({
   chunks: { type: Array, default: () => [] },
   meshInfo: { type: Object, default: null },
+  meshGeometry: { type: Object, default: null },
+  buildVolume: { type: Array, default: () => [250, 250, 250] },
+  divisions: { type: Array, default: () => [2, 2, 1] },
+  upAxis: { type: String, default: 'Z' },
 })
 
 const container = ref(null)
 
-let renderer, scene, camera, controls, meshGroup
+let renderer, scene, camera, controls, meshGroup, gridOverlay
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
 
 function initScene() {
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x888888)
+  scene.background = new THREE.Color(0xe8e8e8)
   scene.add(new THREE.AmbientLight(0xffffff, 0.5))
   const dir = new THREE.DirectionalLight(0xffffff, 0.8)
   dir.position.set(1, 2, 1)
   scene.add(dir)
-  scene.add(new THREE.GridHelper(500, 20))
+  const grid = new THREE.GridHelper(500, 20)
+  if (props.upAxis === 'Z') grid.rotation.x = -Math.PI / 2
+  scene.add(grid)
 }
 
 function initRenderer() {
@@ -38,6 +44,7 @@ function initRenderer() {
 function initCamera() {
   const el = container.value
   camera = new THREE.PerspectiveCamera(45, el.clientWidth / el.clientHeight, 0.1, 10000)
+  if (props.upAxis === 'Z') camera.up.set(0, 0, 1)
 }
 
 function initControls() {
@@ -57,29 +64,100 @@ function disposeGroup(group) {
   scene?.remove(group)
 }
 
-function buildMeshes(chunks) {
+function clearScene() {
   disposeGroup(meshGroup)
   meshGroup = null
-  if (!chunks || chunks.length === 0) return
+  if (gridOverlay) {
+    scene.remove(gridOverlay)
+    gridOverlay = null
+  }
+}
 
+function buildMeshes(chunks) {
+  clearScene()
+  if (!chunks || chunks.length === 0) return
   meshGroup = new THREE.Group()
   const box = new THREE.Box3()
-
   chunks.forEach((chunk, i) => {
+    if (!chunk.geometry) return
     const geom = chunk.geometry.clone()
     const mat = new THREE.MeshPhongMaterial({
       color: chunk.color || COLORS[i % COLORS.length],
-      transparent: true,
-      opacity: 0.85,
-      side: THREE.DoubleSide,
+      transparent: true, opacity: 0.85, side: THREE.DoubleSide,
     })
     const mesh = new THREE.Mesh(geom, mat)
     meshGroup.add(mesh)
     box.expandByObject(mesh)
   })
-
+  if (meshGroup.children.length === 0) return
   scene.add(meshGroup)
   fitCamera(box)
+}
+
+function showOriginal(geometry, divisions) {
+  clearScene()
+  if (!geometry) return
+  meshGroup = new THREE.Group()
+  const geom = geometry.clone()
+  const mat = new THREE.MeshPhongMaterial({
+    color: 0x4a90d9, side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.Mesh(geom, mat)
+  meshGroup.add(mesh)
+  const box = new THREE.Box3().expandByObject(mesh)
+  scene.add(meshGroup)
+  drawGridOverlay(geometry, divisions)
+  fitCamera(box)
+}
+
+function drawGridOverlay(geometry, divisions) {
+  if (gridOverlay) {
+    scene.remove(gridOverlay)
+    gridOverlay = null
+  }
+  if (!geometry || !divisions) return
+  const [dx, dy, dz] = divisions
+  if (dx < 2 && dy < 2 && dz < 2) return
+
+  geometry.computeBoundingBox()
+  const bb = geometry.boundingBox
+  const center = new THREE.Vector3().copy(bb.min).add(bb.max).multiplyScalar(0.5)
+  const size = new THREE.Vector3().copy(bb.max).sub(bb.min)
+
+  gridOverlay = new THREE.Group()
+  const mat = new THREE.LineBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.6 })
+
+  function drawPlane(axis, pos) {
+    const w = axis === 0 ? 0.01 : size.x
+    const h = axis === 1 ? 0.01 : size.y
+    const d = axis === 2 ? 0.01 : size.z
+    const geo = new THREE.BoxGeometry(w || 0.01, h || 0.01, d || 0.01)
+    const edges = new THREE.EdgesGeometry(geo)
+    const line = new THREE.LineSegments(edges, mat)
+    const p = new THREE.Vector3(
+      axis === 0 ? pos : center.x,
+      axis === 1 ? pos : center.y,
+      axis === 2 ? pos : center.z,
+    )
+    line.position.copy(p)
+    gridOverlay.add(line)
+    geo.dispose()
+  }
+
+  const start = new THREE.Vector3().copy(bb.min)
+  for (let ix = 1; ix < dx; ix++) {
+    drawPlane(0, start.x + size.x * ix / dx)
+  }
+  for (let iy = 1; iy < dy; iy++) {
+    drawPlane(1, start.y + size.y * iy / dy)
+  }
+  for (let iz = 1; iz < dz; iz++) {
+    drawPlane(2, start.z + size.z * iz / dz)
+  }
+
+  if (gridOverlay.children.length > 0) {
+    scene.add(gridOverlay)
+  }
 }
 
 function fitCamera(box) {
@@ -89,7 +167,11 @@ function fitCamera(box) {
   const maxDim = Math.max(size.x, size.y, size.z)
   const dist = maxDim * 1.5
 
-  camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist)
+  if (props.upAxis === 'Z') {
+    camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist * 0.7)
+  } else {
+    camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist)
+  }
   controls.target.copy(center)
   controls.update()
 }
@@ -121,9 +203,29 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   controls?.dispose()
-  disposeGroup(meshGroup)
+  clearScene()
   renderer?.dispose()
 })
 
-watch(() => props.chunks, (val) => buildMeshes(val), { deep: true })
+watch(() => props.chunks, (val) => {
+  if (val?.length > 0) {
+    buildMeshes(val)
+  } else if (props.meshGeometry) {
+    showOriginal(props.meshGeometry, props.divisions)
+  } else {
+    clearScene()
+  }
+}, { deep: true })
+
+watch(() => props.meshGeometry, (val) => {
+  if (val && (!props.chunks || props.chunks.length === 0)) {
+    showOriginal(val, props.divisions)
+  }
+}, { deep: true })
+
+watch(() => props.divisions, (val) => {
+  if (props.meshGeometry && (!props.chunks || props.chunks.length === 0)) {
+    showOriginal(props.meshGeometry, val)
+  }
+}, { deep: true })
 </script>
