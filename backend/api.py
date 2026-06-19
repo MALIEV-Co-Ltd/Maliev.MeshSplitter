@@ -62,7 +62,7 @@ async def split_mesh(config: SplitConfig):
         raise HTTPException(400, detail="Mesh must be watertight")
     from slicer import split_mesh_grid
     current_chunks, orig_bbox = split_mesh_grid(current_mesh, config.build_volume, config.grid_divisions)
-    return _chunks_to_result(current_chunks, list(orig_bbox), config.grid_divisions)
+    return _chunks_to_result(current_chunks, orig_bbox.flatten().tolist(), config.grid_divisions)
 
 
 @router.post("/connectors", response_model=SplitResult)
