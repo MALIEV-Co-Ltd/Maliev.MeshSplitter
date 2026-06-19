@@ -149,6 +149,7 @@ function computeCentroid(geometry) {
 }
 
 export function addConnectors(chunks, config) {
+  chunks = chunks.map(c => ({ ...c, geometry: c.geometry.clone() }))
   if (chunks.length < 2) return chunks
 
   const evaluator = new Evaluator()

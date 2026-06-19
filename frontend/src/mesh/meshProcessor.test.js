@@ -42,7 +42,7 @@ describe('splitMesh', () => {
     })
   })
 
-  it('each chunk is watertight after split', () => {
+  it('each chunk has valid volume after split', () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
     const chunks = splitMesh(mesh, [100, 100, 100], [2, 2, 1])
     const totalVolume = chunks.reduce((s, c) => s + c.volume, 0)
@@ -73,7 +73,7 @@ describe('addConnectors', () => {
     expect(changed).toBe(true)
   })
 
-  it('chunks remain watertight after connector addition', () => {
+  it('chunks remain structurally valid after connector addition', () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
     const chunks = splitMesh(mesh, [100, 100, 100], [2, 1, 1])
     const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 2 }
