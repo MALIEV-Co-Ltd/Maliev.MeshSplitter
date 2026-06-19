@@ -2,6 +2,39 @@ import numpy as np
 import trimesh
 
 
+def _boolean_union(meshes):
+    for engine in ["manifold", "scad", "blender"]:
+        try:
+            result = trimesh.boolean.union(meshes, engine=engine)
+            if result is not None and hasattr(result, 'vertices'):
+                return result
+        except Exception:
+            continue
+    return None
+
+
+def _boolean_difference(meshes):
+    for engine in ["manifold", "scad", "blender"]:
+        try:
+            result = trimesh.boolean.difference(meshes, engine=engine)
+            if result is not None and hasattr(result, 'vertices'):
+                return result
+        except Exception:
+            continue
+    return None
+
+
+def _boolean_intersection(meshes):
+    for engine in ["manifold", "scad", "blender"]:
+        try:
+            result = trimesh.boolean.intersection(meshes, engine=engine)
+            if result is not None and hasattr(result, 'vertices'):
+                return result
+        except Exception:
+            continue
+    return None
+
+
 def create_dowel(position, direction, diameter, depth):
     direction = np.array(direction, dtype=float)
     direction = direction / np.linalg.norm(direction)
@@ -64,9 +97,8 @@ def add_connectors(chunks, config):
     for i in range(n):
         for j in range(i + 1, n):
             try:
-                intersection = trimesh.boolean.intersection(
-                    [chunks[i]["mesh"], chunks[j]["mesh"]],
-                    engine="scad",
+                intersection = _boolean_intersection(
+                    [chunks[i]["mesh"], chunks[j]["mesh"]]
                 )
             except Exception:
                 continue
@@ -108,16 +140,14 @@ def add_connectors(chunks, config):
                         female_pos, normal, female_diameter, config.depth
                     )
 
-                    result = trimesh.boolean.union(
-                        [chunks[i]["mesh"], male],
-                        engine="scad",
+                    result = _boolean_union(
+                        [chunks[i]["mesh"], male]
                     )
                     if result is not None:
                         chunks[i]["mesh"] = result
 
-                    result = trimesh.boolean.difference(
-                        [chunks[j]["mesh"], female],
-                        engine="scad",
+                    result = _boolean_difference(
+                        [chunks[j]["mesh"], female]
                     )
                     if result is not None:
                         chunks[j]["mesh"] = result
