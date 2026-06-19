@@ -50,17 +50,17 @@ async function onUpload(file) {
 
 function onSplit(volume, divisions) {
   connectorSuccess.value = ''
-  split(volume, divisions)
+  try {
+    split(volume, divisions)
+  } catch {
+    // error set by composable
+  }
 }
 
 function onApply(config) {
   connectorSuccess.value = ''
-  try {
-    applyConnectors(config)
-    connectorSuccess.value = 'Connectors applied'
-  } catch {
-    // error set by composable
-  }
+  applyConnectors(config)
+  connectorSuccess.value = 'Connectors applied'
 }
 
 function onSelectChunk(index) {

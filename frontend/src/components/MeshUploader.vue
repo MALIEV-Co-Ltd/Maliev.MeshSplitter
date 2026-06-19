@@ -2,7 +2,7 @@
   <div>
     <div
       class="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors"
-      :class="dragOver ? 'border-primary bg-accent' : error ? 'border-destructive bg-destructive/10' : 'border-border hover:border-muted-foreground'"
+      :class="dragOver ? 'border-primary bg-accent' : (error || localError) ? 'border-destructive bg-destructive/10' : 'border-border hover:border-muted-foreground'"
       @dragover.prevent="dragOver = true"
       @dragleave.prevent="dragOver = false"
       @drop.prevent="onDrop"
@@ -21,6 +21,7 @@
     </div>
 
     <div v-if="loading" class="mt-3 text-sm text-primary">Uploading...</div>
+    <div v-if="localError && !loading" class="mt-3 text-sm text-destructive">{{ localError }}</div>
     <div v-if="error && !loading" class="mt-3 text-sm text-destructive">{{ error }}</div>
 
     <div v-if="meshInfo" class="mt-3 space-y-2">
@@ -81,8 +82,14 @@ async function onFileSelected(e) {
   if (file) await handleFile(file)
 }
 
+const localError = ref('')
+
 function handleFile(file) {
-  if (!file.name.toLowerCase().endsWith('.stl')) return
+  if (!file.name.toLowerCase().endsWith('.stl')) {
+    localError.value = 'Please select an .stl file'
+    return
+  }
+  localError.value = ''
   emit('upload', file)
 }
 </script>
