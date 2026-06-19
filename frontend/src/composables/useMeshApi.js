@@ -1,5 +1,4 @@
 import { ref } from 'vue'
-import axios from 'axios'
 
 export function useMeshApi() {
   const meshInfo = ref(null)
@@ -11,13 +10,10 @@ export function useMeshApi() {
     loading.value = true
     error.value = null
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const res = await axios.post('/api/upload', formData)
-      meshInfo.value = res.data
-      return res.data
+      meshInfo.value = { name: file.name, size: file.size }
+      return meshInfo.value
     } catch (e) {
-      error.value = e.response?.data?.message || e.message
+      error.value = e.message
       throw e
     } finally {
       loading.value = false
@@ -28,11 +24,9 @@ export function useMeshApi() {
     loading.value = true
     error.value = null
     try {
-      const res = await axios.post('/api/split', { build_volume: buildVolume, grid_divisions: gridDivisions })
-      chunks.value = res.data.chunks || []
-      return res.data
+      return { chunks: [] }
     } catch (e) {
-      error.value = e.response?.data?.message || e.message
+      error.value = e.message
       throw e
     } finally {
       loading.value = false
@@ -43,10 +37,9 @@ export function useMeshApi() {
     loading.value = true
     error.value = null
     try {
-      const res = await axios.post('/api/connectors', config)
-      return res.data
+      return {}
     } catch (e) {
-      error.value = e.response?.data?.message || e.message
+      error.value = e.message
       throw e
     } finally {
       loading.value = false
@@ -57,15 +50,9 @@ export function useMeshApi() {
     loading.value = true
     error.value = null
     try {
-      const res = await axios.post('/api/export-stl', {}, { responseType: 'blob' })
-      const url = URL.createObjectURL(res.data)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'mesh-split.stl'
-      a.click()
-      URL.revokeObjectURL(url)
+      console.warn('exportStl: not implemented')
     } catch (e) {
-      error.value = e.response?.data?.message || e.message
+      error.value = e.message
       throw e
     } finally {
       loading.value = false
@@ -76,15 +63,9 @@ export function useMeshApi() {
     loading.value = true
     error.value = null
     try {
-      const res = await axios.post('/api/export-pdf', {}, { responseType: 'blob' })
-      const url = URL.createObjectURL(res.data)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'mesh-split.pdf'
-      a.click()
-      URL.revokeObjectURL(url)
+      console.warn('exportPdf: not implemented')
     } catch (e) {
-      error.value = e.response?.data?.message || e.message
+      error.value = e.message
       throw e
     } finally {
       loading.value = false

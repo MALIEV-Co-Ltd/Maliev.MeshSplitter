@@ -33,7 +33,6 @@
 
 <script setup>
 import { ref } from 'vue'
-import axios from 'axios'
 import { useMeshApi } from './composables/useMeshApi'
 
 import MeshUploader from './components/MeshUploader.vue'
@@ -51,15 +50,6 @@ const previewChunks = ref([])
 const splitError = ref(null)
 const hasMesh = ref(false)
 
-async function fetchPreviewAll() {
-  try {
-    const res = await axios.get('/api/preview-all')
-    previewChunks.value = res.data || []
-  } catch {
-    previewChunks.value = []
-  }
-}
-
 function onUploaded() {
   hasMesh.value = true
   previewChunks.value = []
@@ -70,18 +60,15 @@ async function onSplit(volume, divisions) {
   splitError.value = null
   try {
     await splitMesh(volume, divisions)
-    await fetchPreviewAll()
   } catch (e) {
-    splitError.value = e.response?.data?.message || e.message
+    splitError.value = e.message
   }
 }
 
 async function onApplied() {
-  await fetchPreviewAll()
 }
 
 function onSelectChunk(index) {
-  // future: focus/highlight chunk in 3D preview
 }
 
 function onExportStl() {
