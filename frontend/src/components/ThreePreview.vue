@@ -66,16 +66,9 @@ function buildMeshes(chunks) {
   const box = new THREE.Box3()
 
   chunks.forEach((chunk, i) => {
-    const positions = new Float32Array(chunk.vertices.flat())
-    const indices = chunk.faces.flat()
-
-    const geom = new THREE.BufferGeometry()
-    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geom.setIndex(indices)
-    geom.computeVertexNormals()
-
+    const geom = chunk.geometry.clone()
     const mat = new THREE.MeshPhongMaterial({
-      color: COLORS[i % COLORS.length],
+      color: chunk.color || COLORS[i % COLORS.length],
       transparent: true,
       opacity: 0.85,
       side: THREE.DoubleSide,

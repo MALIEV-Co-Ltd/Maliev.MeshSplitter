@@ -53,7 +53,7 @@ const totalParts = computed(() => divisions.value.reduce((a, b) => a * b, 1))
 
 function clamp(val) {
   const n = Number(val)
-  if (isNaN(n)) return divisions.value
+  if (isNaN(n)) return 1
   return Math.max(1, Math.min(5, n))
 }
 

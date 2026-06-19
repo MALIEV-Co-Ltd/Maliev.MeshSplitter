@@ -59,8 +59,10 @@ function onSplit(volume, divisions) {
 
 function onApply(config) {
   connectorSuccess.value = ''
-  applyConnectors(config)
-  connectorSuccess.value = 'Connectors applied'
+  try {
+    applyConnectors(config)
+    connectorSuccess.value = 'Connectors applied'
+  } catch { /* error set by composable */ }
 }
 
 function onSelectChunk(index) {

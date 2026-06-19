@@ -83,6 +83,10 @@ export function computeVolume(geometry) {
 }
 
 export function splitMesh(mesh, buildVolume, gridDivisions) {
+  const info = validateManifold(mesh.geometry)
+  if (!info.watertight) {
+    throw new Error('Mesh must be watertight for splitting')
+  }
   const [dx, dy, dz] = gridDivisions
   if (dx === 0 || dy === 0 || dz === 0) return []
 
@@ -149,6 +153,8 @@ function computeCentroid(geometry) {
 }
 
 export function addConnectors(chunks, config) {
+  const type = (config.type || 'None').toLowerCase()
+  if (type === 'none') return chunks
   chunks = chunks.map(c => ({ ...c, geometry: c.geometry.clone() }))
   if (chunks.length < 2) return chunks
 
