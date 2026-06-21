@@ -17,8 +17,6 @@
   "type": "module",
   "dependencies": {
     "@lucide/vue": "^1.21.0",
-    "@rolldown/binding-win32-x64-msvc": "^1.1.2",
-    "@rollup/rollup-win32-x64-msvc": "^4.62.0",
     "@vueuse/core": "^14.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

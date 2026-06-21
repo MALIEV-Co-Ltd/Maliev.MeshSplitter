@@ -1,0 +1,12 @@
+{
+  "name": "maliev-mesh-splitter",
+  "version": "1.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "install:all": "npm --prefix frontend install && npm --prefix backend install",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend test && npm --prefix backend test",
+    "start": "npm --prefix backend start"
+  }
+}

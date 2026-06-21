@@ -27,8 +27,8 @@
         </div>
       </div>
       <p v-if="err" class="text-sm text-destructive">{{ err }}</p>
-      <Button class="w-full" :disabled="!ok" @click="onSplit">
-        Split
+      <Button class="w-full" :disabled="!ok || loading" @click="onSplit">
+        {{ loading ? 'Authorizing…' : 'Split' }}
       </Button>
     </CardContent>
   </Card>
@@ -47,6 +47,7 @@ const props = defineProps({
   ok: { type: Boolean, default: false },
   err: { type: String, default: '' },
   divisions: { type: Array, default: () => [2, 2, 1] },
+  loading: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['split', 'update:divisions'])

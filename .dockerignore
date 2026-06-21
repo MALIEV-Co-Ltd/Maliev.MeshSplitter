@@ -1,0 +1,13 @@
+.git
+.github
+.playwright-mcp
+frontend/node_modules
+backend/node_modules
+frontend/dist
+frontend/test-results
+node_modules
+coverage
+*.log
+.env
+.env.local
+docs/superpowers

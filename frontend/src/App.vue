@@ -5,8 +5,14 @@
         <div class="bg-card rounded-lg border p-4">
           <MeshUploader :mesh-info="meshInfo" :chunks="chunks" :loading="loading" :error="error" @upload="onUpload" />
         </div>
+        <CreditsPanel
+          :account="creditAccount"
+          :pricing="creditPricing"
+          :error="creditError"
+          :store-domain="shopifyStoreDomain"
+        />
         <BuildVolumeConfig v-model="buildVolume" />
-        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="error" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
+        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
         <ConnectorConfig :error="error" :success="connectorSuccess" @apply="onApply" />
       </div>
 
@@ -24,11 +30,13 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { useMeshProcessor } from './composables/useMeshProcessor'
+import { useCredits } from './composables/useCredits'
 
 import MeshUploader from './components/MeshUploader.vue'
+import CreditsPanel from './components/CreditsPanel.vue'
 import BuildVolumeConfig from './components/BuildVolumeConfig.vue'
 import SplitConfig from './components/SplitConfig.vue'
 import ConnectorConfig from './components/ConnectorConfig.vue'
@@ -41,9 +49,22 @@ const {
   loadStl, split, applyConnectors, downloadStl, downloadPdf, clearMesh,
 } = useMeshProcessor()
 
+const credits = useCredits()
+const creditAccount = credits.account
+const creditPricing = credits.pricing
+const creditError = credits.error
+const shopifyStoreDomain = import.meta.env.VITE_SHOPIFY_STORE_DOMAIN || ''
 const connectorSuccess = ref('')
 const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
+const splitAuthorizing = ref(false)
+const visibleError = computed(() => error.value || creditError.value || '')
+
+onMounted(() => {
+  credits.refresh().catch(() => {
+    // The credit panel shows the authorization error.
+  })
+})
 
 function calcAutoDivisions(meshBounds, bv) {
   const sx = meshBounds.max.x - meshBounds.min.x
@@ -73,12 +94,23 @@ async function onUpload(file) {
   await loadStl(file)
 }
 
-function onSplit(volume, gridDivisions) {
+async function onSplit(volume, gridDivisions) {
   connectorSuccess.value = ''
+  splitAuthorizing.value = true
   try {
+    await credits.consumeGeneration({
+      idempotencyKey: createGenerationKey(gridDivisions),
+      metadata: {
+        filename: meshInfo.value?.filename,
+        divisions: gridDivisions,
+        buildVolume: volume,
+      },
+    })
     split(volume, gridDivisions)
   } catch {
     // error set by composable
+  } finally {
+    splitAuthorizing.value = false
   }
 }
 
@@ -92,5 +124,10 @@ function onApply(config) {
 
 function onSelectChunk(index) {
   // future: highlight chunk in preview
+}
+
+function createGenerationKey(gridDivisions) {
+  const random = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
+  return `split:${meshInfo.value?.filename || 'mesh'}:${gridDivisions.join('x')}:${random}`
 }
 </script>

@@ -1,0 +1,81 @@
+# Shopify app-proxy setup
+
+## Product direction
+
+MeshSplitter is a self-serve STL splitting product for customers who need to
+fit large meshes onto smaller 3D printers.
+
+Launch pricing:
+
+- 3 free generations per logged-in Shopify customer every calendar month.
+- Starter Credit Pack: 10 generations for USD 9.
+- Maker Credit Pack: 30 generations for USD 24.
+- Studio Credit Pack: 100 generations for USD 69.
+
+Credits are consumed when the customer starts a split. Paid credits never reset;
+the free monthly allowance resets by UTC month.
+
+## Shopify products
+
+Import `shopify/credit-products.csv` into Shopify Products, or create the three
+products manually with these SKUs:
+
+- `MS-CREDITS-10`
+- `MS-CREDITS-30`
+- `MS-CREDITS-100`
+
+The backend reads paid `orders/paid` webhooks and grants credits from the SKU
+and quantity of purchased line items.
+
+## App proxy
+
+Configure a Shopify app proxy that points to the deployed backend URL:
+
+- Subpath prefix: `apps`
+- Subpath: `mesh-splitter`
+- Proxy URL: `https://<backend-host>/`
+
+The first page request through `/apps/mesh-splitter` is signed by Shopify. The
+backend verifies that signature, requires `logged_in_customer_id`, then sets a
+signed `mesh_splitter_session` cookie. API requests use that cookie.
+
+## Webhook
+
+Subscribe the app to `orders/paid` and route it to:
+
+```text
+https://<backend-host>/webhooks/shopify/orders-paid
+```
+
+Set `SHOPIFY_WEBHOOK_SECRET` to the webhook signing secret so the backend can
+verify `X-Shopify-Hmac-Sha256`.
+
+## Deployment build
+
+Build the frontend:
+
+```powershell
+npm --prefix frontend install
+npm --prefix frontend run build
+```
+
+Install and start the backend:
+
+```powershell
+npm --prefix backend install
+npm --prefix backend start
+```
+
+Required backend environment:
+
+- `DATABASE_URL`
+- `SHOPIFY_APP_PROXY_SECRET`
+- `SHOPIFY_WEBHOOK_SECRET`
+- `SESSION_SECRET`
+- `FRONTEND_DIST_DIR`
+
+Required frontend build environment:
+
+- `VITE_MESH_API_BASE_URL=/api`
+- `VITE_CREDITS_ENFORCEMENT=required`
+- `VITE_SHOPIFY_STORE_DOMAIN=<your-store>.myshopify.com`
