@@ -1,11 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as THREE from 'three'
 
-const { mockValidateManifold, mockComputeVolume, mockSplitMesh, mockAddConnectors, mockExportStl, mockExportPdf, mockStlParse } = vi.hoisted(() => ({
+const {
+  mockValidateManifold,
+  mockComputeVolume,
+  mockApplyScale,
+  mockSplitMeshManifold,
+  mockAddConnectorsManifold,
+  mockExportStl,
+  mockExportPdf,
+  mockStlParse,
+} = vi.hoisted(() => ({
   mockValidateManifold: vi.fn(),
   mockComputeVolume: vi.fn(),
-  mockSplitMesh: vi.fn(),
-  mockAddConnectors: vi.fn(),
+  mockApplyScale: vi.fn(),
+  mockSplitMeshManifold: vi.fn(),
+  mockAddConnectorsManifold: vi.fn(),
   mockExportStl: vi.fn(),
   mockExportPdf: vi.fn(),
   mockStlParse: vi.fn(),
@@ -14,8 +24,9 @@ const { mockValidateManifold, mockComputeVolume, mockSplitMesh, mockAddConnector
 vi.mock('../mesh/meshProcessor', () => ({
   validateManifold: mockValidateManifold,
   computeVolume: mockComputeVolume,
-  splitMesh: mockSplitMesh,
-  addConnectors: mockAddConnectors,
+  applyScale: mockApplyScale,
+  splitMeshManifold: mockSplitMeshManifold,
+  addConnectorsManifold: mockAddConnectorsManifold,
   exportStl: mockExportStl,
   exportPdf: mockExportPdf,
 }))
@@ -63,7 +74,7 @@ describe('useMeshProcessor', () => {
       const result = await loadStl(file)
 
       expect(mockStlParse).toHaveBeenCalledWith(expect.any(ArrayBuffer))
-      expect(mockValidateManifold).toHaveBeenCalledWith(geometry)
+      expect(mockValidateManifold).toHaveBeenCalledWith(expect.objectContaining({ type: 'BoxGeometry' }))
       expect(meshInfo.value).toEqual({
         filename: 'test.stl',
         verts: 24,
@@ -104,7 +115,7 @@ describe('useMeshProcessor', () => {
         { index: 0, geometry, label: 'X0Y0Z0', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
         { index: 1, geometry, label: 'X1Y0Z0', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
       ]
-      mockSplitMesh.mockReturnValue(rawChunks)
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
 
       const file = createMockFile('test.stl')
       const { loadStl, split, chunks, loading, error } = useMeshProcessor()
@@ -112,13 +123,34 @@ describe('useMeshProcessor', () => {
       await loadStl(file)
       await split([250, 250, 250], [2, 1, 1])
 
-      expect(mockSplitMesh).toHaveBeenCalledOnce()
+      expect(mockSplitMeshManifold).toHaveBeenCalledOnce()
       expect(chunks.value).toHaveLength(2)
       expect(chunks.value[0].color).toBeDefined()
       expect(chunks.value[1].color).toBeDefined()
       expect(typeof chunks.value[0].color).toBe('number')
       expect(loading.value).toBe(false)
       expect(error.value).toBeNull()
+    })
+  })
+
+  describe('setScaleFactor', () => {
+    it('regenerates working mesh from the uploaded source geometry', async () => {
+      const geometry = createMockGeometry()
+      const scaled = new THREE.BoxGeometry(20, 20, 20)
+      scaled.computeBoundingBox()
+      mockStlParse.mockReturnValue(geometry)
+      mockApplyScale.mockReturnValue(scaled)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 8000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+
+      const { loadStl, setScaleFactor, scaleFactor, meshInfo } = useMeshProcessor()
+      await loadStl(createMockFile('test.stl'))
+      setScaleFactor(2)
+
+      expect(mockApplyScale).toHaveBeenCalledWith(geometry, 2)
+      expect(scaleFactor.value).toBe(2)
+      expect(meshInfo.value.volume).toBe(8000)
     })
   })
 
@@ -129,7 +161,7 @@ describe('useMeshProcessor', () => {
       mockValidateManifold.mockReturnValue({
         watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
       })
-      mockSplitMesh.mockReturnValue([
+      mockSplitMeshManifold.mockResolvedValue([
         { index: 0, geometry, label: 'X0Y0Z0', volume: 500, centroid: new THREE.Vector3() },
       ])
 

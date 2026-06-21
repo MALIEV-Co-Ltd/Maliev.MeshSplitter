@@ -1,5 +1,5 @@
 <template>
-  <div ref="container" class="w-full h-[500px]"></div>
+  <div ref="container" class="preview-canvas"></div>
 </template>
 
 <script setup>
@@ -56,8 +56,11 @@ function initControls() {
 function disposeGroup(group) {
   if (!group) return
   group.children.forEach((c) => {
-    if (c.isMesh) {
+    if (c.isMesh || c.isLineSegments) {
       c.geometry?.dispose()
+      c.material?.dispose()
+    } else if (c.isSprite) {
+      c.material?.map?.dispose()
       c.material?.dispose()
     }
   })
@@ -87,11 +90,59 @@ function buildMeshes(chunks) {
     })
     const mesh = new THREE.Mesh(geom, mat)
     meshGroup.add(mesh)
+    meshGroup.add(createLabelSprite(chunk.label || `P${i + 1}`, chunk.centroid || computeGeometryCenter(geom), chunk.color || COLORS[i % COLORS.length]))
     box.expandByObject(mesh)
   })
   if (meshGroup.children.length === 0) return
   scene.add(meshGroup)
   fitCamera(box)
+}
+
+function computeGeometryCenter(geometry) {
+  geometry.computeBoundingBox()
+  return geometry.boundingBox.getCenter(new THREE.Vector3())
+}
+
+function createLabelSprite(label, position, color) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 96
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
+  roundRect(ctx, 12, 14, 232, 64, 12)
+  ctx.fill()
+  ctx.strokeStyle = `#${new THREE.Color(color).getHexString()}`
+  ctx.lineWidth = 6
+  roundRect(ctx, 12, 14, 232, 64, 12)
+  ctx.stroke()
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '600 28px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(label, 128, 47, 210)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false })
+  const sprite = new THREE.Sprite(material)
+  sprite.position.copy(position)
+  sprite.position.z += 12
+  sprite.scale.set(48, 18, 1)
+  sprite.renderOrder = 10
+  return sprite
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.lineTo(x + width - radius, y)
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius)
+  ctx.lineTo(x + width, y + height - radius)
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
+  ctx.lineTo(x + radius, y + height)
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius)
+  ctx.lineTo(x, y + radius)
+  ctx.quadraticCurveTo(x, y, x + radius, y)
+  ctx.closePath()
 }
 
 function showOriginal(geometry, divisions) {

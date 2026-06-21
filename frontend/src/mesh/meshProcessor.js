@@ -1,5 +1,7 @@
 import * as THREE from 'three'
-import { Brush, Evaluator, INTERSECTION, ADDITION, SUBTRACTION, computeMeshVolume } from 'three-bvh-csg'
+import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url'
+
+let manifoldModulePromise
 
 function computeVolumeImpl(geometry) {
   const pos = geometry.attributes.position
@@ -25,6 +27,36 @@ function computeVolumeImpl(geometry) {
   }
 
   return Math.abs(volume / 6)
+}
+
+function manifoldWasmPath(path) {
+  if (!path.endsWith('.wasm')) return path
+  const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')
+  if (isJsdom || (typeof process !== 'undefined' && process.versions?.node && typeof window === 'undefined')) {
+    const filePath = new URL('../../node_modules/manifold-3d/manifold.wasm', import.meta.url).pathname
+    return decodeURIComponent(filePath).replace(/^\/([A-Za-z]:)/, '$1')
+  }
+  return manifoldWasmUrl
+}
+
+function isNodeRuntime() {
+  return typeof process !== 'undefined' && process.versions?.node
+}
+
+async function loadManifoldWasmBinary() {
+  if (isNodeRuntime()) {
+    const [{ readFile }, path] = await Promise.all([
+      import('node:fs/promises'),
+      import('node:path'),
+    ])
+    return readFile(path.join(process.cwd(), 'node_modules', 'manifold-3d', 'manifold.wasm'))
+  }
+
+  const response = await fetch(manifoldWasmUrl)
+  if (!response.ok) {
+    throw new Error(`Unable to load manifold WASM (${response.status})`)
+  }
+  return new Uint8Array(await response.arrayBuffer())
 }
 
 export function validateManifold(geometry) {
@@ -70,7 +102,7 @@ export function validateManifold(geometry) {
 
   let volume
   try {
-    volume = computeMeshVolume(geometry)
+    volume = computeVolumeImpl(geometry)
   } catch {
     volume = computeVolumeImpl(geometry)
   }
@@ -82,70 +114,167 @@ export function computeVolume(geometry) {
   return computeVolumeImpl(geometry)
 }
 
-export function splitMesh(mesh, buildVolume, gridDivisions) {
+export function applyScale(geometry, scaleFactor) {
+  const factor = Number(scaleFactor)
+  if (!Number.isFinite(factor) || factor <= 0) {
+    throw new Error('Scale factor must be greater than zero')
+  }
+
+  const scaled = geometry.clone()
+  scaled.scale(factor, factor, factor)
+  scaled.computeBoundingBox()
+  scaled.computeVertexNormals()
+  return scaled
+}
+
+async function getManifoldModule() {
+  if (!manifoldModulePromise) {
+    manifoldModulePromise = import('manifold-3d').then(async (mod) => {
+      const wasmBinary = await loadManifoldWasmBinary()
+      const api = await mod.default({
+        locateFile: manifoldWasmPath,
+        wasmBinary,
+      })
+      api.setup()
+      return api
+    })
+  }
+  return manifoldModulePromise
+}
+
+function geometryToManifoldMesh(geometry, manifold) {
+  const source = geometry.clone()
+  source.computeVertexNormals()
+  const pos = source.attributes.position
+  const vertProperties = []
+  const vertexMap = new Map()
+  const remap = []
+
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`
+    let mapped = vertexMap.get(key)
+    if (mapped === undefined) {
+      mapped = vertexMap.size
+      vertexMap.set(key, mapped)
+      vertProperties.push(x, y, z)
+    }
+    remap[i] = mapped
+  }
+
+  const triVerts = []
+  if (source.index) {
+    const index = source.index.array
+    for (let i = 0; i < index.length; i++) {
+      triVerts.push(remap[index[i]])
+    }
+  } else {
+    for (let i = 0; i < pos.count; i++) {
+      triVerts.push(remap[i])
+    }
+  }
+
+  const mesh = new manifold.Mesh({
+    numProp: 3,
+    vertProperties: new Float32Array(vertProperties),
+    triVerts: new Uint32Array(triVerts),
+  })
+  source.dispose()
+  return mesh
+}
+
+function manifoldMeshToGeometry(mesh) {
+  const positions = new Float32Array(mesh.numVert * 3)
+  for (let i = 0; i < mesh.numVert; i++) {
+    positions[i * 3] = mesh.vertProperties[i * mesh.numProp]
+    positions[i * 3 + 1] = mesh.vertProperties[i * mesh.numProp + 1]
+    positions[i * 3 + 2] = mesh.vertProperties[i * mesh.numProp + 2]
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(mesh.triVerts), 1))
+  geometry.computeBoundingBox()
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function chunkLabel(partNumber, ix, iy, iz) {
+  return `P${String(partNumber).padStart(2, '0')}-X${ix}Y${iy}Z${iz}`
+}
+
+export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   const info = validateManifold(mesh.geometry)
   if (!info.watertight) {
-    throw new Error('Mesh must be watertight for splitting')
+    throw new Error('Mesh must be watertight for manifold splitting')
   }
-  const [dx, dy, dz] = gridDivisions
+
+  const [dx, dy, dz] = gridDivisions.map(Number)
   if (dx === 0 || dy === 0 || dz === 0) return []
+  if (![dx, dy, dz].every((n) => Number.isInteger(n) && n > 0)) {
+    throw new Error('Grid divisions must be positive whole numbers')
+  }
 
-  const evaluator = new Evaluator()
-  const existingAttrs = Object.keys(mesh.geometry.attributes)
-  evaluator.attributes = ['position']
-  if (existingAttrs.includes('normal')) evaluator.attributes.push('normal')
-  if (existingAttrs.includes('uv')) evaluator.attributes.push('uv')
-
-  const mainBrush = new Brush(mesh.geometry.clone())
-  mainBrush.position.set(0, 0, 0)
-  mainBrush.updateMatrixWorld()
-  mainBrush.prepareGeometry()
+  const manifold = await getManifoldModule()
+  const manifoldMesh = geometryToManifoldMesh(mesh.geometry, manifold)
+  const solid = manifold.Manifold.ofMesh(manifoldMesh)
+  const status = solid.status()
+  if (status !== 'NoError') {
+    solid.delete?.()
+    throw new Error(`Input mesh is not manifold (${status})`)
+  }
 
   mesh.geometry.computeBoundingBox()
   const bb = mesh.geometry.boundingBox
   const meshCenter = new THREE.Vector3().copy(bb.min).add(bb.max).multiplyScalar(0.5)
   const meshSize = new THREE.Vector3().copy(bb.max).sub(bb.min)
-
   const cellSize = [meshSize.x / dx, meshSize.y / dy, meshSize.z / dz]
   const chunks = []
-  let chunkIndex = 0
+  let partNumber = 1
 
-  for (let iz = 0; iz < dz; iz++) {
-    for (let iy = 0; iy < dy; iy++) {
-      for (let ix = 0; ix < dx; ix++) {
-        const cx = meshCenter.x - meshSize.x / 2 + cellSize[0] * (ix + 0.5)
-        const cy = meshCenter.y - meshSize.y / 2 + cellSize[1] * (iy + 0.5)
-        const cz = meshCenter.z - meshSize.z / 2 + cellSize[2] * (iz + 0.5)
+  try {
+    for (let iz = 0; iz < dz; iz++) {
+      for (let iy = 0; iy < dy; iy++) {
+        for (let ix = 0; ix < dx; ix++) {
+          const cx = meshCenter.x - meshSize.x / 2 + cellSize[0] * (ix + 0.5)
+          const cy = meshCenter.y - meshSize.y / 2 + cellSize[1] * (iy + 0.5)
+          const cz = meshCenter.z - meshSize.z / 2 + cellSize[2] * (iz + 0.5)
+          const cutter = manifold.Manifold.cube(cellSize, true).translate([cx, cy, cz])
+          const part = solid.intersect(cutter)
+          cutter.delete?.()
 
-        const cellGeo = new THREE.BoxGeometry(cellSize[0], cellSize[1], cellSize[2])
-        const cellBrush = new Brush(cellGeo)
-        cellBrush.position.set(cx, cy, cz)
-        cellBrush.updateMatrixWorld()
-        cellBrush.prepareGeometry()
+          try {
+            if (part.isEmpty()) continue
+            const manifoldStatus = part.status()
+            if (manifoldStatus !== 'NoError') {
+              throw new Error(`Split part failed manifold validation (${manifoldStatus})`)
+            }
 
-        let result
-        try {
-          result = evaluator.evaluate(mainBrush, cellBrush, INTERSECTION)
-        } catch {
-          cellGeo.dispose()
-          continue
-        }
-
-        const resultGeo = result.geometry
-        if (resultGeo.attributes.position.count > 0) {
-          chunks.push({
-            index: chunkIndex++,
-            geometry: resultGeo.clone(),
-            label: `X${ix}Y${iy}Z${iz}`,
-            volume: computeMeshVolume(resultGeo),
-            centroid: computeCentroid(resultGeo),
-          })
+            const resultMesh = part.getMesh()
+            const geometry = manifoldMeshToGeometry(resultMesh)
+            const label = chunkLabel(partNumber, ix, iy, iz)
+            chunks.push({
+              index: partNumber - 1,
+              assemblyOrder: partNumber,
+              geometry,
+              label,
+              volume: Math.abs(part.volume()),
+              centroid: computeCentroid(geometry),
+              manifoldStatus,
+            })
+            partNumber += 1
+          } finally {
+            part.delete?.()
+          }
         }
       }
     }
+  } finally {
+    solid.delete?.()
   }
 
-  mainBrush.geometry.dispose()
   return chunks
 }
 
@@ -161,110 +290,113 @@ function computeCentroid(geometry) {
   return centroid
 }
 
-export function addConnectors(chunks, config) {
+export async function addConnectorsManifold(chunks, config) {
   const type = (config.type || 'None').toLowerCase()
   if (type === 'none') return chunks
-  chunks = chunks.map(c => ({ ...c, geometry: c.geometry.clone() }))
   if (chunks.length < 2) return chunks
 
-  const evaluator = new Evaluator()
-  const { diameter, depth, clearance, perFace } = config
-  const radius = diameter / 2
+  const manifold = await getManifoldModule()
+  const radius = Number(config.diameter || 6) / 2
+  const clearance = Number(config.clearance || 0.1)
+  const depth = Number(config.depth || 10)
+  const perFace = Math.max(1, Number(config.perFace || 1))
+  const solids = chunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
 
-  const filterAttrs = (geom) => {
-    const keys = Object.keys(geom.attributes)
-    const attrs = ['position']
-    if (keys.includes('normal')) attrs.push('normal')
-    if (keys.includes('uv')) attrs.push('uv')
-    evaluator.attributes = attrs
-  }
+  try {
+    for (let i = 0; i < chunks.length; i++) {
+      for (let j = i + 1; j < chunks.length; j++) {
+        chunks[i].geometry.computeBoundingBox()
+        chunks[j].geometry.computeBoundingBox()
+        const bbA = chunks[i].geometry.boundingBox
+        const bbB = chunks[j].geometry.boundingBox
+        if (!bbA.intersectsBox(bbB)) continue
 
-  for (let i = 0; i < chunks.length; i++) {
-    for (let j = i + 1; j < chunks.length; j++) {
-      chunks[i].geometry.computeBoundingBox()
-      chunks[j].geometry.computeBoundingBox()
-      const bbA = chunks[i].geometry.boundingBox
-      const bbB = chunks[j].geometry.boundingBox
+        const interMin = new THREE.Vector3(
+          Math.max(bbA.min.x, bbB.min.x),
+          Math.max(bbA.min.y, bbB.min.y),
+          Math.max(bbA.min.z, bbB.min.z),
+        )
+        const interMax = new THREE.Vector3(
+          Math.min(bbA.max.x, bbB.max.x),
+          Math.min(bbA.max.y, bbB.max.y),
+          Math.min(bbA.max.z, bbB.max.z),
+        )
+        const interBox = new THREE.Box3(interMin, interMax)
+        const interSize = new THREE.Vector3()
+        interBox.getSize(interSize)
+        const axis = interSize.x <= interSize.y && interSize.x <= interSize.z ? 0
+          : interSize.y <= interSize.z ? 1 : 2
+        const center = new THREE.Vector3()
+        interBox.getCenter(center)
+        const otherAxes = [(axis + 1) % 3, (axis + 2) % 3]
+        const extentA = interSize.getComponent(otherAxes[0])
+        const extentB = interSize.getComponent(otherAxes[1])
 
-      if (!bbA.intersectsBox(bbB)) continue
+        for (let p = 0; p < perFace; p++) {
+          const frac = (p + 1) / (perFace + 1)
+          const offset = new THREE.Vector3()
+          if (perFace > 1) {
+            offset.setComponent(otherAxes[0], (frac - 0.5) * extentA)
+            offset.setComponent(otherAxes[1], (frac - 0.5) * extentB)
+          }
+          const pos = center.clone().add(offset)
+          const peg = orientConnector(manifold.Manifold.cylinder(depth * 2, radius, radius, 24, true), axis).translate([pos.x, pos.y, pos.z])
+          const socket = orientConnector(manifold.Manifold.cylinder(depth * 2, radius + clearance, radius + clearance, 24, true), axis).translate([pos.x, pos.y, pos.z])
 
-      const interMin = new THREE.Vector3(
-        Math.max(bbA.min.x, bbB.min.x),
-        Math.max(bbA.min.y, bbB.min.y),
-        Math.max(bbA.min.z, bbB.min.z)
-      )
-      const interMax = new THREE.Vector3(
-        Math.min(bbA.max.x, bbB.max.x),
-        Math.min(bbA.max.y, bbB.max.y),
-        Math.min(bbA.max.z, bbB.max.z)
-      )
-      const interBox = new THREE.Box3(interMin, interMax)
-      const interSize = new THREE.Vector3()
-      interBox.getSize(interSize)
-
-      const axis = interSize.x <= interSize.y && interSize.x <= interSize.z ? 0
-        : interSize.y <= interSize.z ? 1 : 2
-      const center = new THREE.Vector3()
-      interBox.getCenter(center)
-
-      const otherAxes = [(axis + 1) % 3, (axis + 2) % 3]
-      const extentA = interSize.getComponent(otherAxes[0])
-      const extentB = interSize.getComponent(otherAxes[1])
-
-      for (let p = 0; p < perFace; p++) {
-        const frac = (p + 1) / (perFace + 1)
-        const offset = new THREE.Vector3()
-        if (perFace === 1) {
-          offset.set(0, 0, 0)
-        } else {
-          offset.setComponent(otherAxes[0], (frac - 0.5) * extentA)
-          offset.setComponent(otherAxes[1], (frac - 0.5) * extentB)
-        }
-        const pos = center.clone().add(offset)
-
-        const cylGeo = new THREE.CylinderGeometry(radius, radius, depth * 2, 16)
-        const cylBrush = new Brush(cylGeo)
-        if (axis === 0) cylBrush.rotation.z = -Math.PI / 2
-        else if (axis === 2) cylBrush.rotation.x = Math.PI / 2
-        cylBrush.position.copy(pos)
-        cylBrush.updateMatrixWorld()
-        cylBrush.prepareGeometry()
-
-        const cylGeoHole = new THREE.CylinderGeometry(radius + clearance, radius + clearance, depth * 2, 16)
-        const cylBrushHole = new Brush(cylGeoHole)
-        if (axis === 0) cylBrushHole.rotation.z = -Math.PI / 2
-        else if (axis === 2) cylBrushHole.rotation.x = Math.PI / 2
-        cylBrushHole.position.copy(pos)
-        cylBrushHole.updateMatrixWorld()
-        cylBrushHole.prepareGeometry()
-
-        try {
-          const brushI = new Brush(chunks[i].geometry)
-          brushI.position.set(0, 0, 0)
-          brushI.updateMatrixWorld()
-          brushI.prepareGeometry()
-          filterAttrs(chunks[i].geometry)
-          const maleResult = evaluator.evaluate(brushI, cylBrush, ADDITION)
-          chunks[i].geometry = maleResult.geometry.clone()
-
-          const brushJ = new Brush(chunks[j].geometry)
-          brushJ.position.set(0, 0, 0)
-          brushJ.updateMatrixWorld()
-          brushJ.prepareGeometry()
-          filterAttrs(chunks[j].geometry)
-          const femaleResult = evaluator.evaluate(brushJ, cylBrushHole, SUBTRACTION)
-          chunks[j].geometry = femaleResult.geometry.clone()
-        } catch {
-          continue
+          const male = solids[i].add(peg)
+          const female = solids[j].subtract(socket)
+          solids[i].delete?.()
+          solids[j].delete?.()
+          peg.delete?.()
+          socket.delete?.()
+          solids[i] = male
+          solids[j] = female
         }
       }
     }
+
+    return chunks.map((chunk, index) => {
+      const status = solids[index].status()
+      if (status !== 'NoError') throw new Error(`Connector operation failed manifold validation (${status})`)
+      const geometry = manifoldMeshToGeometry(solids[index].getMesh())
+      return {
+        ...chunk,
+        geometry,
+        volume: Math.abs(solids[index].volume()),
+        centroid: computeCentroid(geometry),
+        manifoldStatus: status,
+      }
+    })
+  } finally {
+    solids.forEach((solid) => solid.delete?.())
+  }
+}
+
+function orientConnector(connector, axis) {
+  if (axis === 0) return connector.rotate([0, 90, 0])
+  if (axis === 1) return connector.rotate([90, 0, 0])
+  return connector
+}
+
+export function validateExportChunks(chunks) {
+  if (!Array.isArray(chunks) || chunks.length === 0) {
+    throw new Error('No split parts are available for export')
   }
 
-  return chunks
+  chunks.forEach((chunk, i) => {
+    const label = chunk.label || `part ${i + 1}`
+    const info = validateManifold(chunk.geometry)
+    const volume = Math.abs(chunk.volume || info.volume || computeVolume(chunk.geometry))
+    if (!info.watertight || info.faceCount <= 0 || info.vertCount <= 0 || volume <= 0) {
+      throw new Error(`Part ${label} is not manifold and cannot be exported`)
+    }
+  })
+
+  return true
 }
 
 export async function exportStl(chunks) {
+  validateExportChunks(chunks)
   const { STLExporter } = await import('three/addons/exporters/STLExporter.js')
   const exporter = new STLExporter()
   const JSZip = (await import('jszip')).default
@@ -280,18 +412,36 @@ export async function exportStl(chunks) {
 }
 
 export async function exportPdf(chunks, buildVolume) {
+  validateExportChunks(chunks)
   const { jsPDF } = await import('jspdf')
   const pdf = new jsPDF()
 
   pdf.setFontSize(24)
-  pdf.text('Mesh Split Report', 105, 40, { align: 'center' })
+  pdf.text('MeshSplitter Assembly Packet', 105, 38, { align: 'center' })
 
   pdf.setFontSize(14)
-  pdf.text(`Build Volume: ${buildVolume[0]} x ${buildVolume[1]} x ${buildVolume[2]} mm`, 20, 70)
-  pdf.text(`Part Count: ${chunks.length}`, 20, 85)
+  pdf.text(`Build Volume: ${buildVolume[0]} x ${buildVolume[1]} x ${buildVolume[2]} mm`, 20, 66)
+  pdf.text(`Part Count: ${chunks.length}`, 20, 81)
 
   const date = new Date().toLocaleDateString()
-  pdf.text(`Date: ${date}`, 20, 100)
+  pdf.text(`Date: ${date}`, 20, 96)
+
+  pdf.setFontSize(12)
+  const steps = [
+    '1. Print every labeled STL part using the orientation chosen in your slicer.',
+    '2. Dry fit parts by label before applying adhesive or permanent fasteners.',
+    '3. Use matching connector faces and labels to keep the assembly order stable.',
+    '4. Re-export from MeshSplitter after any scale, connector, or build-volume change.',
+  ]
+  let stepY = 122
+  pdf.setFontSize(16)
+  pdf.text('Assembly Instructions', 20, stepY)
+  pdf.setFontSize(11)
+  stepY += 12
+  steps.forEach((step) => {
+    pdf.text(step, 20, stepY, { maxWidth: 170 })
+    stepY += 11
+  })
 
   pdf.addPage()
   pdf.setFontSize(18)
@@ -310,6 +460,10 @@ export async function exportPdf(chunks, buildVolume) {
 
   let yPos = 45
   chunks.forEach(chunk => {
+    if (yPos > 270) {
+      pdf.addPage()
+      yPos = 25
+    }
     const box = new THREE.Box3().setFromObject(new THREE.Mesh(chunk.geometry))
     const size = new THREE.Vector3()
     box.getSize(size)

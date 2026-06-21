@@ -9,9 +9,10 @@ const props = defineProps<{
 
 <template>
   <div
+    data-card
     :class="
       cn(
-        'rounded-xl border bg-card text-card-foreground shadow',
+        'rounded-lg border bg-card text-card-foreground shadow-sm',
         props.class,
       )
     "

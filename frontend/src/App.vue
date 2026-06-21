@@ -1,8 +1,19 @@
 <template>
-  <div class="min-h-screen bg-background p-4">
-    <div class="grid gap-4 lg:grid-cols-3 max-w-7xl mx-auto">
-      <div class="lg:col-span-1 space-y-4">
-        <div class="bg-card rounded-lg border p-4">
+  <main class="app-shell min-h-screen">
+    <div class="mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-4 py-4 sm:px-6 lg:px-8">
+      <header class="app-header">
+        <div>
+          <p class="text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">Maliev MeshSplitter</p>
+          <h1 class="text-2xl font-semibold text-foreground sm:text-3xl">Print-ready mesh splitting</h1>
+        </div>
+        <div class="header-stats" aria-label="Workflow status">
+          <span>{{ chunks.length || 0 }} parts</span>
+          <span>{{ meshInfo?.is_watertight ? 'Watertight' : 'Awaiting mesh' }}</span>
+        </div>
+      </header>
+    <div class="grid gap-5 xl:grid-cols-[minmax(320px,420px)_1fr]">
+      <div class="space-y-4">
+        <div class="panel-card">
           <MeshUploader :mesh-info="meshInfo" :chunks="chunks" :loading="loading" :error="error" @upload="onUpload" />
         </div>
         <CreditsPanel
@@ -11,13 +22,14 @@
           :error="creditError"
           :store-domain="shopifyStoreDomain"
         />
+        <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" @apply="onScaleApply" />
         <BuildVolumeConfig v-model="buildVolume" />
         <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
         <ConnectorConfig :error="error" :success="connectorSuccess" @apply="onApply" />
       </div>
 
-      <div class="lg:col-span-2 space-y-4">
-        <Card>
+      <div class="space-y-4">
+        <Card class="preview-card">
           <CardContent class="p-0">
             <ThreePreview :chunks="chunks" :mesh-info="meshInfo" :mesh-geometry="meshGeometry" :build-volume="buildVolume" :divisions="divisions" :up-axis="upAxis" />
           </CardContent>
@@ -26,7 +38,8 @@
         <ExportPanel :has-chunks="chunks.length > 0" :loading="loading" @export-stl="downloadStl" @export-pdf="downloadPdf" />
       </div>
     </div>
-  </div>
+    </div>
+  </main>
 </template>
 
 <script setup>
@@ -37,6 +50,7 @@ import { useCredits } from './composables/useCredits'
 
 import MeshUploader from './components/MeshUploader.vue'
 import CreditsPanel from './components/CreditsPanel.vue'
+import ScaleConfig from './components/ScaleConfig.vue'
 import BuildVolumeConfig from './components/BuildVolumeConfig.vue'
 import SplitConfig from './components/SplitConfig.vue'
 import ConnectorConfig from './components/ConnectorConfig.vue'
@@ -45,8 +59,8 @@ import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
 
 const {
-  meshInfo, meshGeometry, chunks, loading, error, buildVolume,
-  loadStl, split, applyConnectors, downloadStl, downloadPdf, clearMesh,
+  meshInfo, meshGeometry, chunks, loading, error, scaleFactor, buildVolume,
+  loadStl, setScaleFactor, split, applyConnectors, downloadStl, downloadPdf, clearMesh,
 } = useMeshProcessor()
 
 const credits = useCredits()
@@ -58,6 +72,7 @@ const connectorSuccess = ref('')
 const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
+const scaleInput = ref(1)
 const visibleError = computed(() => error.value || creditError.value || '')
 
 onMounted(() => {
@@ -80,6 +95,7 @@ function calcAutoDivisions(meshBounds, bv) {
 watch(meshInfo, (info) => {
   if (info && info.bounds) {
     divisions.value = calcAutoDivisions(info.bounds, buildVolume.value)
+    scaleInput.value = scaleFactor.value
   }
 })
 
@@ -94,6 +110,11 @@ async function onUpload(file) {
   await loadStl(file)
 }
 
+function onScaleApply(value) {
+  connectorSuccess.value = ''
+  setScaleFactor(value)
+}
+
 async function onSplit(volume, gridDivisions) {
   connectorSuccess.value = ''
   splitAuthorizing.value = true
@@ -106,7 +127,7 @@ async function onSplit(volume, gridDivisions) {
         buildVolume: volume,
       },
     })
-    split(volume, gridDivisions)
+    await split(volume, gridDivisions)
   } catch {
     // error set by composable
   } finally {
@@ -114,10 +135,10 @@ async function onSplit(volume, gridDivisions) {
   }
 }
 
-function onApply(config) {
+async function onApply(config) {
   connectorSuccess.value = ''
   try {
-    applyConnectors(config)
+    await applyConnectors(config)
     connectorSuccess.value = 'Connectors applied'
   } catch { /* error set by composable */ }
 }

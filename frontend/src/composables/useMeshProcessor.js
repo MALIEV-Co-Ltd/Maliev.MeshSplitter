@@ -1,6 +1,13 @@
 import { ref, readonly } from 'vue'
 import * as THREE from 'three'
-import { validateManifold, splitMesh, addConnectors, exportStl, exportPdf } from '../mesh/meshProcessor'
+import {
+  addConnectorsManifold,
+  applyScale,
+  exportPdf,
+  exportStl,
+  splitMeshManifold,
+  validateManifold,
+} from '../mesh/meshProcessor'
 
 const COLORS = [
   0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6,
@@ -10,11 +17,34 @@ const COLORS = [
 
 export function useMeshProcessor() {
   const meshInfo = ref(null)
+  const sourceGeometry = ref(null)
   const meshGeometry = ref(null)
   const chunks = ref([])
   const loading = ref(false)
   const error = ref(null)
+  const scaleFactor = ref(1)
   const buildVolume = ref([250, 250, 250])
+
+  function setMeshState(geometry, filename) {
+    const info = validateManifold(geometry)
+    geometry.computeBoundingBox()
+    const box = geometry.boundingBox
+
+    meshInfo.value = {
+      filename,
+      verts: info.vertCount,
+      faces: info.faceCount,
+      is_watertight: info.watertight,
+      volume: info.volume,
+      bounds: {
+        min: { x: box.min.x, y: box.min.y, z: box.min.z },
+        max: { x: box.max.x, y: box.max.y, z: box.max.z },
+      },
+    }
+    meshGeometry.value = geometry
+    chunks.value = []
+    return meshInfo.value
+  }
 
   async function loadStl(file) {
     loading.value = true
@@ -24,25 +54,12 @@ export function useMeshProcessor() {
       const { STLLoader } = await import('three/addons/loaders/STLLoader.js')
       const loader = new STLLoader()
       const geometry = loader.parse(buffer)
-
-      const info = validateManifold(geometry)
       geometry.computeBoundingBox()
-      const box = geometry.boundingBox
+      geometry.computeVertexNormals()
+      sourceGeometry.value = geometry
+      scaleFactor.value = 1
 
-      meshInfo.value = {
-        filename: file.name,
-        verts: info.vertCount,
-        faces: info.faceCount,
-        is_watertight: info.watertight,
-        volume: info.volume,
-        bounds: {
-          min: { x: box.min.x, y: box.min.y, z: box.min.z },
-          max: { x: box.max.x, y: box.max.y, z: box.max.z },
-        },
-      }
-      meshGeometry.value = geometry
-      chunks.value = []
-      return meshInfo.value
+      return setMeshState(geometry.clone(), file.name)
     } catch (e) {
       error.value = e.message
       throw e
@@ -51,12 +68,28 @@ export function useMeshProcessor() {
     }
   }
 
-  function split(bv, divisions) {
+  function setScaleFactor(value) {
+    if (!sourceGeometry.value || !meshInfo.value) return
+    loading.value = true
+    error.value = null
+    try {
+      const scaled = applyScale(sourceGeometry.value, value)
+      scaleFactor.value = Number(value)
+      setMeshState(scaled, meshInfo.value.filename)
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function split(bv, divisions) {
     loading.value = true
     error.value = null
     try {
       const mesh = new THREE.Mesh(meshGeometry.value)
-      const rawChunks = splitMesh(mesh, bv, divisions)
+      const rawChunks = await splitMeshManifold(mesh, bv, divisions)
       chunks.value = rawChunks.map((chunk, i) => ({
         ...chunk,
         color: COLORS[i % COLORS.length],
@@ -69,11 +102,11 @@ export function useMeshProcessor() {
     }
   }
 
-  function applyConnectors(config) {
+  async function applyConnectors(config) {
     loading.value = true
     error.value = null
     try {
-      const updated = addConnectors(chunks.value, config)
+      const updated = await addConnectorsManifold(chunks.value, config)
       chunks.value = updated.map((chunk, i) => ({
         ...chunk,
         color: COLORS[i % COLORS.length],
@@ -131,10 +164,12 @@ export function useMeshProcessor() {
 
   function clearMesh() {
     meshInfo.value = null
+    sourceGeometry.value = null
     meshGeometry.value = null
     chunks.value = []
     loading.value = false
     error.value = null
+    scaleFactor.value = 1
   }
 
   return {
@@ -143,8 +178,10 @@ export function useMeshProcessor() {
     chunks: readonly(chunks),
     loading: readonly(loading),
     error: readonly(error),
+    scaleFactor: readonly(scaleFactor),
     buildVolume,
     loadStl,
+    setScaleFactor,
     split,
     applyConnectors,
     downloadStl,

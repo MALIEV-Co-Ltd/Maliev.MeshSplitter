@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { validateManifold, computeVolume, splitMesh, addConnectors } from './meshProcessor'
+import {
+  addConnectorsManifold,
+  applyScale,
+  computeVolume,
+  exportStl,
+  splitMeshManifold,
+  validateExportChunks,
+  validateManifold,
+} from './meshProcessor'
 
 describe('validateManifold', () => {
   it('detects a 10x10x10 box as watertight', () => {
@@ -27,61 +35,59 @@ describe('computeVolume', () => {
   })
 })
 
-describe('splitMesh', () => {
-  it('splits a 100x100x100 box into 4 chunks (2x2x1)', () => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
-    const chunks = splitMesh(mesh, [100, 100, 100], [2, 2, 1])
-    expect(chunks).toHaveLength(4)
-  })
+describe('applyScale', () => {
+  it('scales geometry dimensions and volume before splitting', () => {
+    const geometry = new THREE.BoxGeometry(10, 20, 30)
+    const scaled = applyScale(geometry, 2)
+    scaled.computeBoundingBox()
+    const size = scaled.boundingBox.getSize(new THREE.Vector3())
 
-  it('each chunk has valid geometry with position count > 0', () => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
-    const chunks = splitMesh(mesh, [100, 100, 100], [2, 2, 1])
-    chunks.forEach(chunk => {
-      expect(chunk.geometry.attributes.position.count).toBeGreaterThan(0)
-    })
-  })
-
-  it('each chunk has valid volume after split', () => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
-    const chunks = splitMesh(mesh, [100, 100, 100], [2, 2, 1])
-    const totalVolume = chunks.reduce((s, c) => s + c.volume, 0)
-    expect(totalVolume).toBeCloseTo(1000000, -4)
-    chunks.forEach(chunk => {
-      expect(chunk.volume).toBeGreaterThan(0)
-      expect(chunk.geometry.attributes.position.count).toBeGreaterThan(0)
-    })
-  })
-
-  it('returns empty for zero divisions', () => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
-    const chunks = splitMesh(mesh, [100, 100, 100], [0, 0, 0])
-    expect(chunks).toHaveLength(0)
+    expect(size.x).toBeCloseTo(20)
+    expect(size.y).toBeCloseTo(40)
+    expect(size.z).toBeCloseTo(60)
+    expect(computeVolume(scaled)).toBeCloseTo(48000, -1)
   })
 })
 
-describe('addConnectors', () => {
-  it('adds dowel connectors between adjacent chunks', () => {
+describe('splitMeshManifold', () => {
+  it('uses browser-loadable WASM manifold operations to produce watertight chunks', async () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
-    const origChunks = splitMesh(mesh, [100, 100, 100], [2, 1, 1])
-    const originalCounts = origChunks.map(c => c.geometry.attributes.position.count)
-    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 2 }
-    const result = addConnectors(origChunks, config)
-    expect(result).toHaveLength(2)
-    const newCounts = result.map(c => c.geometry.attributes.position.count)
-    const changed = newCounts.some((count, i) => count !== originalCounts[i])
-    expect(changed).toBe(true)
-  })
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 2, 1])
 
-  it('chunks remain structurally valid after connector addition', () => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
-    const chunks = splitMesh(mesh, [100, 100, 100], [2, 1, 1])
-    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 2 }
-    const result = addConnectors(chunks, config)
-    result.forEach((chunk, i) => {
-      const info = validateManifold(chunk.geometry)
-      expect(info.vertCount).toBeGreaterThan(0)
-      expect(info.faceCount).toBeGreaterThan(0)
+    expect(chunks).toHaveLength(4)
+    chunks.forEach(chunk => {
+      expect(chunk.label).toMatch(/^P\d{2}-X\dY\dZ\d$/)
+      expect(chunk.manifoldStatus).toBe('NoError')
+      expect(validateManifold(chunk.geometry).watertight).toBe(true)
     })
+  })
+})
+
+describe('addConnectorsManifold', () => {
+  it('keeps connector-modified chunks watertight and exportable', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 2 }
+    const result = await addConnectorsManifold(chunks, config)
+
+    expect(result).toHaveLength(2)
+    result.forEach(chunk => {
+      expect(chunk.manifoldStatus).toBe('NoError')
+      expect(validateManifold(chunk.geometry).watertight).toBe(true)
+    })
+    expect(() => validateExportChunks(result)).not.toThrow()
+  })
+})
+
+describe('export validation', () => {
+  it('rejects non-manifold chunks before STL export', async () => {
+    const badChunk = {
+      index: 0,
+      label: 'bad',
+      geometry: new THREE.PlaneGeometry(10, 10),
+    }
+
+    expect(() => validateExportChunks([badChunk])).toThrow('not manifold')
+    await expect(exportStl([badChunk])).rejects.toThrow('not manifold')
   })
 })

@@ -5,6 +5,14 @@
 MeshSplitter is a self-serve STL splitting product for customers who need to
 fit large meshes onto smaller 3D printers.
 
+Storefront positioning:
+
+- Headline: Print-ready mesh splitting.
+- Promise: split large watertight STL files into labeled, printer-sized parts
+  directly in the browser.
+- Trust points: local WASM processing, manifold-validated exports, connector
+  pegs/sockets, 3D review canvas, STL ZIP, and assembly PDF.
+
 Launch pricing:
 
 - 3 free generations per logged-in Shopify customer every calendar month.

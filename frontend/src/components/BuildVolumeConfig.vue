@@ -6,8 +6,8 @@
     <CardContent class="space-y-3">
       <div class="grid grid-cols-3 gap-3">
         <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="space-y-1">
-          <Label>{{ axis }} (mm)</Label>
-          <Input type="number" min="1" step="1" :model-value="localVolume[i]"
+          <Label :for="`build-volume-${axis}`">{{ axis }} (mm)</Label>
+          <Input :id="`build-volume-${axis}`" type="number" min="1" step="1" :model-value="localVolume[i]"
             @update:model-value="updateAxis(i, $event)" />
         </div>
       </div>
