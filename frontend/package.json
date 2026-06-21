@@ -1,15 +1,19 @@
 {
   "name": "frontend",
   "version": "1.0.0",
+  "private": true,
   "description": "",
   "main": "postcss.config.js",
   "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 0.0.0.0",
+    "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "UNLICENSED",
   "type": "module",
   "dependencies": {
     "@lucide/vue": "^1.21.0",
