@@ -39,11 +39,11 @@ and quantity of purchased line items.
 
 Configure a Shopify app proxy that points to the deployed backend URL:
 
-- Subpath prefix: `apps`
+- Subpath prefix: `tools`
 - Subpath: `mesh-splitter`
 - Proxy URL: `https://<backend-host>/`
 
-The first page request through `/apps/mesh-splitter` is signed by Shopify. The
+The first page request through `/tools/mesh-splitter` is signed by Shopify. The
 backend verifies that signature, requires `logged_in_customer_id`, then sets a
 signed `mesh_splitter_session` cookie. API requests use that cookie.
 

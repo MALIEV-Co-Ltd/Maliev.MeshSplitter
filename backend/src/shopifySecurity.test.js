@@ -13,7 +13,7 @@ describe('shopifySecurity', () => {
     const secret = 'shared-secret'
     const query = {
       shop: 'example.myshopify.com',
-      path_prefix: '/apps/mesh-splitter',
+      path_prefix: '/tools/mesh-splitter',
       timestamp: '1782050000',
       logged_in_customer_id: '12345',
     }

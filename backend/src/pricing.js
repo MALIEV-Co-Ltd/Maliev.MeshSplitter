@@ -3,7 +3,7 @@ export const FREE_GENERATIONS_PER_MONTH = 3
 export const CREDIT_PACKS = Object.freeze([
   {
     sku: 'MS-CREDITS-10',
-    handle: 'mesh-splitter-10-credits',
+    handle: 'mesh-splitter-starter-credit-pack',
     name: 'Starter Credit Pack',
     credits: 10,
     priceCents: 32900,
@@ -12,7 +12,7 @@ export const CREDIT_PACKS = Object.freeze([
   },
   {
     sku: 'MS-CREDITS-30',
-    handle: 'mesh-splitter-30-credits',
+    handle: 'mesh-splitter-maker-credit-pack',
     name: 'Maker Credit Pack',
     credits: 30,
     priceCents: 87900,
@@ -21,7 +21,7 @@ export const CREDIT_PACKS = Object.freeze([
   },
   {
     sku: 'MS-CREDITS-100',
-    handle: 'mesh-splitter-100-credits',
+    handle: 'mesh-splitter-studio-credit-pack',
     name: 'Studio Credit Pack',
     credits: 100,
     priceCents: 249000,
