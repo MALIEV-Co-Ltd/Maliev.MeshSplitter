@@ -55,6 +55,27 @@ export function useCredits(options = {}) {
     }
   }
 
+  async function refreshPublic() {
+    if (!apiBaseUrl) return
+    loading.value = true
+    error.value = null
+    try {
+      pricing.value = await request(`${apiBaseUrl}/pricing`)
+      try {
+        const accountResponse = await request(`${apiBaseUrl}/account`)
+        account.value = accountResponse.account
+        hasAccountData.value = true
+      } catch {
+        hasAccountData.value = false
+      }
+    } catch (e) {
+      error.value = e.message
+      if (enforcement === 'required') throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function consumeExport({ idempotencyKey, metadata = {} }) {
     if (!apiBaseUrl) {
       if (enforcement === 'required') {
@@ -94,6 +115,7 @@ export function useCredits(options = {}) {
     hasAccountData: readonly(hasAccountData),
     refresh,
     refreshPricing,
+    refreshPublic,
     consumeExport,
     consumeGeneration,
   }

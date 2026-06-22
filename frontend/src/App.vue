@@ -2,15 +2,20 @@
   <PublicLanding
     v-if="showPublicLanding"
     :pricing="creditPricing"
+    :account="creditAccount"
+    :has-account-data="hasCreditAccount"
+    :credits-loading="creditLoading"
     :store-domain="shopifyStoreDomain"
+    :home-url="storeHomeUrl"
     :launch-url="launchUrl"
+    :sign-in-url="signInUrl"
   />
   <main v-else class="app-shell">
     <header class="app-header">
-      <div class="app-logo">
+      <a class="app-logo app-logo-link" :href="storeHomeUrl" aria-label="Go to MALIEV shop">
         <img :src="logoUrl" alt="MALIEV" />
         <span>MeshSplitter</span>
-      </div>
+      </a>
       <div class="app-status" aria-label="Workflow status">
         <span class="status-chip" :class="{ ok: meshInfo?.is_watertight }">
           <span class="dot"></span>{{ meshInfo?.is_watertight ? 'Watertight' : 'Awaiting mesh' }}
@@ -157,6 +162,8 @@ const storefrontBasePath = '/tools/mesh-splitter'
 const currentPath = window.location.pathname.replace(/\/+$/, '')
 const showPublicLanding = currentPath === storefrontBasePath
 const launchUrl = `${storefrontBasePath}/app`
+const storeHomeUrl = shopifyStoreDomain ? `https://${shopifyStoreDomain}/` : 'https://shop.maliev.com/'
+const signInUrl = computed(() => buildCustomerLoginUrl(currentPath || storefrontBasePath))
 const connectorSuccess = ref('')
 const creditDialog = ref(null)
 const divisions = ref([2, 2, 1])
@@ -193,11 +200,19 @@ const previewDims = computed(() => {
 })
 
 onMounted(() => {
-  const refreshCredits = showPublicLanding ? credits.refreshPricing : credits.refresh
+  const refreshCredits = showPublicLanding ? credits.refreshPublic : credits.refresh
   refreshCredits().catch(() => {
     // The credit panel shows the authorization error.
   })
 })
+
+function buildCustomerLoginUrl(returnPath) {
+  const normalizedReturnPath = returnPath?.startsWith('/') ? returnPath : storefrontBasePath
+  const loginUrl = new URL('/account/login', storeHomeUrl)
+  loginUrl.searchParams.set('return_to', normalizedReturnPath)
+  loginUrl.searchParams.set('return_url', normalizedReturnPath)
+  return loginUrl.toString()
+}
 
 function calcAutoDivisions(meshBounds, bv) {
   const sx = meshBounds.max.x - meshBounds.min.x

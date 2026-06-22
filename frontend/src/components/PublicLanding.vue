@@ -1,7 +1,9 @@
 <template>
   <main class="landing-shell">
     <header class="lnd-header">
-      <img :src="logoUrl" alt="MALIEV" />
+      <a class="lnd-logo" :href="homeUrl" aria-label="Go to MALIEV shop">
+        <img :src="logoUrl" alt="MALIEV" />
+      </a>
       <nav class="lnd-nav">
         <a href="#">Home</a>
         <a href="#capabilities">Capabilities</a>
@@ -9,7 +11,11 @@
         <a href="#pricing">Pricing</a>
       </nav>
       <div class="lnd-header-right">
-        <a class="lnd-btn lnd-btn-outline" href="/account/login">Sign in</a>
+        <span v-if="hasAccountData" class="lnd-credit-chip">
+          {{ account.freeRemaining }} free · {{ account.paidCredits }} credits
+        </span>
+        <span v-else-if="creditsLoading" class="lnd-credit-chip lnd-credit-chip--loading">Credits loading</span>
+        <a v-else class="lnd-btn lnd-btn-outline" :href="signInUrl">Sign in</a>
         <a class="lnd-btn lnd-btn-ink" :href="launchUrl">Launch MeshSplitter</a>
       </div>
     </header>
@@ -43,19 +49,11 @@
       </div>
 
       <div class="mesh-stage" aria-label="Mesh splitting workflow preview">
-        <div class="build-volume">
-          <span class="volume-label">250 x 250 x 250 mm</span>
-          <span class="split-plane split-plane-x"></span>
-          <span class="split-plane split-plane-y"></span>
-          <div class="part-stack">
-            <span v-for="part in parts" :key="part" class="mesh-part">{{ part }}</span>
-          </div>
-        </div>
-        <div class="assembly-strip">
-          <span>Upload STL</span>
-          <span>Scale</span>
-          <span>Split</span>
-          <span>Export</span>
+        <div class="splitter-visual">
+          <img
+            :src="heroImageUrl"
+            alt="Low-poly rabbit STL split into labeled printable parts inside a 250 by 250 by 250 millimeter build volume with connector tabs"
+          />
         </div>
       </div>
     </section>
@@ -124,14 +122,18 @@
 
 <script setup>
 import logoUrl from '../assets/logos/maliev-wordmark-black.svg'
+import heroImageUrl from '../assets/mesh-splitter-hero.webp'
 
 const props = defineProps({
   pricing: { type: Object, required: true },
+  account: { type: Object, required: true },
+  hasAccountData: { type: Boolean, default: false },
+  creditsLoading: { type: Boolean, default: false },
   storeDomain: { type: String, default: '' },
+  homeUrl: { type: String, default: 'https://shop.maliev.com/' },
   launchUrl: { type: String, required: true },
+  signInUrl: { type: String, default: '/account/login' },
 })
-
-const parts = ['P01', 'P02', 'P03', 'P04']
 
 const workflow = [
   {

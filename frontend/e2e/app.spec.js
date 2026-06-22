@@ -29,6 +29,7 @@ test.describe('Mesh Split Application', () => {
   })
 
   test('page loads with empty state', async ({ page }) => {
+    await expect(page.locator('.app-logo-link')).toHaveAttribute('href', 'https://shop.maliev.com/')
     await expect(page.getByText('Drag & drop an STL file or click to browse')).toBeVisible()
     await expect(page.locator('.parts-panel')).toContainText('0 total')
     await expect(page.getByText('No parts yet. Upload and split a mesh.')).toBeVisible()
@@ -159,7 +160,13 @@ test.describe('public presentation', () => {
 
     await expect(page.getByText('Split oversized STL files into print-ready, labeled parts.')).toBeVisible()
     await expect(page.getByText('free exports monthly')).toBeVisible()
-    await expect(page.getByText('Upload STL')).toBeVisible()
+    await expect(page.locator('.splitter-visual img')).toBeVisible()
+    await expect(page.locator('.splitter-visual img')).toHaveAttribute('src', /mesh-splitter-hero/)
+    await expect(page.locator('.lnd-logo')).toHaveAttribute('href', 'https://shop.maliev.com/')
+    await expect(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+      'href',
+      'https://shop.maliev.com/account/login?return_to=%2Ftools%2Fmesh-splitter&return_url=%2Ftools%2Fmesh-splitter',
+    )
     await expect(page.getByRole('link', { name: 'Launch MeshSplitter' }).first()).toHaveAttribute('href', '/tools/mesh-splitter/app')
   })
 })

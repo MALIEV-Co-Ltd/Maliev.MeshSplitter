@@ -145,6 +145,10 @@
     gap: 9px;
   }
 
+  .app-logo-link {
+    text-decoration: none;
+  }
+
   .app-logo img {
     height: 15px;
     width: auto;
@@ -489,7 +493,7 @@
     gap: 9px;
   }
 
-  .axis-label {
+  .visual-axis-label {
     color: var(--steel-600);
     flex: none;
     font-family: var(--font-mono);
@@ -925,6 +929,12 @@
     width: auto;
   }
 
+  .lnd-logo {
+    align-items: center;
+    display: inline-flex;
+    flex: none;
+  }
+
   .lnd-nav {
     display: flex;
     gap: 28px;
@@ -947,6 +957,26 @@
     display: flex;
     gap: 10px;
     margin-left: auto;
+  }
+
+  .lnd-credit-chip {
+    align-items: center;
+    background: var(--steel-100);
+    border: 1px solid var(--steel-200);
+    border-radius: var(--radius-pill);
+    color: var(--steel-700);
+    display: inline-flex;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    height: 32px;
+    letter-spacing: 0.04em;
+    padding: 0 12px;
+    white-space: nowrap;
+  }
+
+  .lnd-credit-chip--loading {
+    color: var(--steel-500);
   }
 
   .lnd-btn {
@@ -1115,105 +1145,22 @@
     align-items: center;
     display: flex;
     flex-direction: column;
-    gap: 0.875rem;
   }
 
-  .build-volume {
-    aspect-ratio: 1 / 1;
-    background:
-      linear-gradient(90deg, oklch(var(--ring) / 0.13) 1px, transparent 1px),
-      linear-gradient(oklch(var(--ring) / 0.13) 1px, transparent 1px),
-      oklch(var(--card));
-    background-size: 26px 26px;
-    border: 1px solid var(--steel-300);
-    border-radius: var(--radius-md);
+  .splitter-visual {
+    background: oklch(var(--card));
+    border: 1px solid var(--steel-200);
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
-    max-width: 440px;
     overflow: hidden;
-    position: relative;
-    width: min(100%, 62vh);
+    padding: 0;
+    width: min(100%, 640px);
   }
 
-  .volume-label {
-    background: oklch(var(--primary));
-    border-radius: var(--radius-sm);
-    color: oklch(var(--primary-foreground));
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 600;
-    left: 14px;
-    letter-spacing: 0.1em;
-    padding: 4px 8px;
-    position: absolute;
-    text-transform: uppercase;
-    top: 12px;
-  }
-
-  .split-plane {
-    background: var(--signal-500);
-    opacity: 0.65;
-    position: absolute;
-  }
-
-  .split-plane-x {
-    bottom: 9%;
-    left: 49%;
-    top: 9%;
-    width: 1.5px;
-  }
-
-  .split-plane-y {
-    height: 1.5px;
-    left: 9%;
-    right: 9%;
-    top: 51%;
-  }
-
-  .part-stack {
-    display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    inset: 18% 13% 13%;
-    position: absolute;
-  }
-
-  .mesh-part {
-    align-items: flex-end;
-    background:
-      repeating-linear-gradient(45deg, oklch(1 0 0 / 0.06) 0 1px, transparent 1px 8px),
-      oklch(var(--primary));
-    border: 1px solid oklch(1 0 0 / 0.18);
-    border-radius: var(--radius-sm);
-    color: white;
-    display: flex;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 600;
-    justify-content: flex-start;
-    letter-spacing: 0.06em;
-    padding: 10px;
-  }
-
-  .assembly-strip {
-    background: oklch(var(--primary));
-    border-radius: var(--radius-pill);
-    color: oklch(var(--primary-foreground));
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    justify-content: center;
-    padding: 4px;
-  }
-
-  .assembly-strip span {
-    background: oklch(1 0 0 / 0.12);
-    border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    padding: 6px 12px;
-    text-transform: uppercase;
+  .splitter-visual img {
+    display: block;
+    height: auto;
+    width: 100%;
   }
 
   .landing-band,
