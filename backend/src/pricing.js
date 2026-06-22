@@ -6,8 +6,8 @@ export const CREDIT_PACKS = Object.freeze([
     handle: 'mesh-splitter-10-credits',
     name: 'Starter Credit Pack',
     credits: 10,
-    priceCents: 900,
-    currency: 'USD',
+    priceCents: 32900,
+    currency: 'THB',
     bestFor: 'Trying real customer parts after the monthly free allowance.',
   },
   {
@@ -15,8 +15,8 @@ export const CREDIT_PACKS = Object.freeze([
     handle: 'mesh-splitter-30-credits',
     name: 'Maker Credit Pack',
     credits: 30,
-    priceCents: 2400,
-    currency: 'USD',
+    priceCents: 87900,
+    currency: 'THB',
     bestFor: 'Regular makers splitting several large models per month.',
   },
   {
@@ -24,8 +24,8 @@ export const CREDIT_PACKS = Object.freeze([
     handle: 'mesh-splitter-100-credits',
     name: 'Studio Credit Pack',
     credits: 100,
-    priceCents: 6900,
-    currency: 'USD',
+    priceCents: 249000,
+    currency: 'THB',
     bestFor: 'Print farms, studios, and service bureaus.',
   },
 ])

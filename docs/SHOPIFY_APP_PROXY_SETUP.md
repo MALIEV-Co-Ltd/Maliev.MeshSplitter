@@ -16,9 +16,9 @@ Storefront positioning:
 Launch pricing:
 
 - 3 free generations per logged-in Shopify customer every calendar month.
-- Starter Credit Pack: 10 generations for USD 9.
-- Maker Credit Pack: 30 generations for USD 24.
-- Studio Credit Pack: 100 generations for USD 69.
+- Starter Credit Pack: 10 generations for THB 329.
+- Maker Credit Pack: 30 generations for THB 879.
+- Studio Credit Pack: 100 generations for THB 2,490.
 
 Credits are consumed when the customer starts a split. Paid credits never reset;
 the free monthly allowance resets by UTC month.

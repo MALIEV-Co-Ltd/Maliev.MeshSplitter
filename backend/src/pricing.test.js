@@ -8,9 +8,9 @@ describe('pricing', () => {
 
   it('defines launch credit packs from low-friction trial to studio volume', () => {
     expect(CREDIT_PACKS).toEqual([
-      expect.objectContaining({ sku: 'MS-CREDITS-10', credits: 10, priceCents: 900 }),
-      expect.objectContaining({ sku: 'MS-CREDITS-30', credits: 30, priceCents: 2400 }),
-      expect.objectContaining({ sku: 'MS-CREDITS-100', credits: 100, priceCents: 6900 }),
+      expect.objectContaining({ sku: 'MS-CREDITS-10', credits: 10, priceCents: 32900, currency: 'THB' }),
+      expect.objectContaining({ sku: 'MS-CREDITS-30', credits: 30, priceCents: 87900, currency: 'THB' }),
+      expect.objectContaining({ sku: 'MS-CREDITS-100', credits: 100, priceCents: 249000, currency: 'THB' }),
     ])
   })
 
