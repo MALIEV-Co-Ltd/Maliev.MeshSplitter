@@ -37,7 +37,10 @@ function initScene() {
 
 function initRenderer() {
   const el = container.value
-  renderer = new THREE.WebGLRenderer({ antialias: true })
+  // logarithmicDepthBuffer: adjacent split chunks share an exact cut-plane
+  // face, which standard linear depth precision can't reliably resolve —
+  // shows up as off-color slivers flickering at the seam between parts.
+  renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true })
   renderer.setPixelRatio(window.devicePixelRatio)
   renderer.setSize(el.clientWidth, el.clientHeight)
   el.appendChild(renderer.domElement)

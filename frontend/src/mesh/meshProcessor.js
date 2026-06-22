@@ -855,7 +855,7 @@ function addImageFrame(pdf, image, x, y, width, height, caption) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 2, 2, 'FD')
   if (image) {
-    pdf.addImage(image, 'PNG', x + 3, y + 6, width - 6, height - 14)
+    pdf.addImage(image, 'JPEG', x + 3, y + 6, width - 6, height - 14)
   } else {
     setFont(pdf, 9, 'normal', BRAND.muted)
     pdf.text('Preview image unavailable in this browser session.', x + width / 2, y + height / 2, { align: 'center' })

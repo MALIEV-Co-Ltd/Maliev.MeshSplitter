@@ -142,7 +142,10 @@ function withClearScene(fn) {
     if (group.children.length === 0 || box.isEmpty()) return null
     fitCameraToBox(box)
     r.render(scene, camera)
-    return r.domElement.toDataURL('image/png')
+    // JPEG: jsPDF stores addImage('PNG', ...) uncompressed, which blew a
+    // 4-part report up to ~23MB. These are photographic 3D renders, not
+    // line art, so JPEG's compression is also the better fit visually.
+    return r.domElement.toDataURL('image/jpeg', 0.85)
   } catch {
     return null
   } finally {
