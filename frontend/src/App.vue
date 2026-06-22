@@ -37,10 +37,22 @@
       <div class="space-y-4">
         <Card class="preview-card">
           <CardContent class="p-0">
-            <ThreePreview :chunks="chunks" :mesh-info="meshInfo" :mesh-geometry="meshGeometry" :build-volume="buildVolume" :divisions="divisions" :up-axis="upAxis" />
+            <ThreePreview
+              :chunks="chunks"
+              :mesh-info="meshInfo"
+              :mesh-geometry="meshGeometry"
+              :build-volume="buildVolume"
+              :divisions="divisions"
+              :up-axis="upAxis"
+              :selected-chunk-index="selectedChunkIndex"
+            />
           </CardContent>
         </Card>
-        <PartList :chunks="chunks" @select="onSelectChunk" />
+        <PartList
+          :chunks="chunks"
+          :selected-chunk-index="selectedChunkIndex"
+          @select="onSelectChunk"
+        />
         <ExportPanel
           :has-chunks="chunks.length > 0"
           :loading="loading"
@@ -89,6 +101,7 @@ const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
 const exportSessionId = ref('')
 const scaleInput = ref(1)
+const selectedChunkIndex = ref(null)
 const visibleError = computed(() => error.value || creditError.value || '')
 
 onMounted(() => {
@@ -124,6 +137,7 @@ watch(buildVolume, (bv) => {
 
 async function onUpload(file) {
   connectorSuccess.value = ''
+  selectedChunkIndex.value = null
   await loadStl(file)
 }
 
@@ -137,6 +151,7 @@ async function onSplit(volume, gridDivisions) {
   splitAuthorizing.value = true
   try {
     await split(volume, gridDivisions)
+    selectedChunkIndex.value = null
     exportSessionId.value = createExportSessionId({
       filename: meshInfo.value?.filename,
       divisions: gridDivisions,
@@ -159,7 +174,7 @@ async function onApply(config) {
 }
 
 function onSelectChunk(index) {
-  // future: highlight chunk in preview
+  selectedChunkIndex.value = index
 }
 
 async function exportAfterCredit(format, downloadFn) {
