@@ -398,7 +398,7 @@ const appTranslations = {
   },
 }
 const uiCopy = computed(() => appTranslations[locale.value] || appTranslations.en)
-const visibleError = computed(() => error.value || creditError.value || '')
+const visibleError = computed(() => error.value || (hasCreditAccount.value ? creditError.value : '') || '')
 const showCreditSpinner = computed(() => creditLoading.value && !hasCreditAccount.value)
 const creditChipText = computed(() => {
   if (showCreditSpinner.value) return uiCopy.value.credits
