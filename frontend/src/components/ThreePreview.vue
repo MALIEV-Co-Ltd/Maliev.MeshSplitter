@@ -25,12 +25,12 @@ const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe6
 
 function initScene() {
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0xe8e8e8)
+  scene.background = new THREE.Color(0xffffff)
   scene.add(new THREE.AmbientLight(0xffffff, 0.5))
   const dir = new THREE.DirectionalLight(0xffffff, 0.8)
   dir.position.set(1, 2, 1)
   scene.add(dir)
-  const grid = new THREE.GridHelper(500, 20)
+  const grid = new THREE.GridHelper(500, 20, 0x8fb4e8, 0xe5e9ee)
   if (props.upAxis === 'Z') grid.rotation.x = -Math.PI / 2
   scene.add(grid)
 }
@@ -125,7 +125,7 @@ function createLabelSprite(label, position, color) {
   canvas.width = 256
   canvas.height = 96
   const ctx = canvas.getContext('2d')
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
+  ctx.fillStyle = 'rgba(38, 38, 38, 0.92)'
   roundRect(ctx, 12, 14, 232, 64, 12)
   ctx.fill()
   ctx.strokeStyle = `#${new THREE.Color(color).getHexString()}`
@@ -193,7 +193,7 @@ function drawGridOverlay(geometry, divisions) {
   const size = new THREE.Vector3().copy(bb.max).sub(bb.min)
 
   gridOverlay = new THREE.Group()
-  const mat = new THREE.LineBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.6 })
+  const mat = new THREE.LineBasicMaterial({ color: 0x2f3338, transparent: true, opacity: 0.55 })
 
   function drawPlane(axis, pos) {
     const w = axis === 0 ? 0.01 : size.x

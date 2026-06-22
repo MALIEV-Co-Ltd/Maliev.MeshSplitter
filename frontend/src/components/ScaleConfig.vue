@@ -1,51 +1,51 @@
 <template>
-  <Card>
-    <CardHeader>
-      <h3 class="text-lg font-semibold">Scale</h3>
-    </CardHeader>
-    <CardContent class="space-y-4">
-      <div class="grid grid-cols-[1fr_auto] items-end gap-3">
-        <div class="space-y-2">
-          <Label for="scale-factor">Scale factor</Label>
-          <Input
-            id="scale-factor"
-            type="number"
-            min="0.01"
-            max="25.4"
-            step="0.01"
-            :model-value="draft"
-            :disabled="!enabled || loading"
-            @update:model-value="draft = $event"
-          />
-        </div>
-        <Button :disabled="!enabled || loading || !isValid" @click="apply">
+  <div class="pnl">
+    <div class="pnl-head">
+      <div class="pnl-title">
+        <RulerIcon />
+        Scale
+      </div>
+      <span class="pnl-meta">{{ percent }}%</span>
+    </div>
+    <div class="pnl-body">
+      <div class="scale-row">
+        <Input
+          id="scale-factor"
+          type="number"
+          min="0.01"
+          max="25.4"
+          step="0.01"
+          class="font-mono"
+          :model-value="draft"
+          :disabled="!enabled || loading"
+          @update:model-value="draft = $event"
+        />
+        <Button size="sm" variant="outline" :disabled="!enabled || loading || !isValid" @click="apply">
           Apply
         </Button>
       </div>
-      <div class="flex flex-wrap gap-2" aria-label="Scale presets">
+      <div class="mt-2 flex flex-wrap gap-2" aria-label="Scale presets">
         <Button
           v-for="preset in presets"
           :key="preset.label"
           type="button"
           variant="outline"
-          size="sm"
+          size="xs"
           :disabled="!enabled || loading"
           @click="applyPreset(preset.value)"
         >
           {{ preset.label }}
         </Button>
       </div>
-      <p class="text-sm text-muted-foreground">Current scale {{ percent }}%.</p>
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Ruler as RulerIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 
 const props = defineProps({
   modelValue: { type: Number, default: 1 },

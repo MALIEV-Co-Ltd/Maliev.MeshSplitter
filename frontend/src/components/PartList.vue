@@ -1,33 +1,36 @@
 <template>
-  <Card>
-    <CardHeader>
-      <h3 class="text-lg font-semibold">Parts ({{ chunks.length }})</h3>
-    </CardHeader>
-    <CardContent>
-      <div v-if="chunks.length === 0" class="text-sm text-muted-foreground">
-        No parts yet. Upload and split a mesh.
+  <div class="parts-panel">
+    <div class="parts-panel-head">
+      <div class="pnl-title">
+        <BoxesIcon />
+        Parts
       </div>
-      <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-        <Card v-for="chunk in chunks" :key="chunk.index"
-          class="cursor-pointer transition-shadow"
-          :class="chunk.index === selectedChunkIndex ? 'ring-2 ring-primary shadow-md bg-accent' : 'hover:shadow-md'"
-          @click="$emit('select', chunk.index)">
-          <CardContent class="p-3 flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full shrink-0" :style="{ backgroundColor: colorHex(chunk.color) }"></div>
-            <div class="min-w-0">
-              <div class="text-sm font-medium truncate">{{ chunk.label }}</div>
-              <div class="text-xs text-muted-foreground">#{{ chunk.index }}</div>
-              <div class="text-xs text-muted-foreground">{{ (chunk.volume / 1000).toFixed(1) }} cm³</div>
-            </div>
-          </CardContent>
-        </Card>
+      <span class="pnl-meta">{{ chunks.length }} total</span>
+    </div>
+    <div v-if="chunks.length === 0" class="pnl-body">
+      <p class="text-sm text-muted-foreground">No parts yet. Upload and split a mesh.</p>
+    </div>
+    <div v-else class="parts-scroll">
+      <div
+        v-for="chunk in chunks"
+        :key="chunk.index"
+        class="pl-row cursor-pointer"
+        :class="{ 'ring-2': chunk.index === selectedChunkIndex }"
+        @click="$emit('select', chunk.index)"
+      >
+        <span class="pl-dot" :style="{ backgroundColor: colorHex(chunk.color) }"></span>
+        <div class="pl-info">
+          <span class="pl-label">{{ chunk.label }}</span>
+          <span class="pl-vol">{{ (chunk.volume / 1000).toFixed(1) }} cm³</span>
+        </div>
+        <span class="pl-idx">{{ chunk.index + 1 }}</span>
       </div>
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Boxes as BoxesIcon } from '@lucide/vue'
 
 defineProps({
   chunks: { type: Array, default: () => [] },

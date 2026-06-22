@@ -5,76 +5,64 @@
     :store-domain="shopifyStoreDomain"
     :launch-url="launchUrl"
   />
-  <main v-else class="app-shell min-h-screen overflow-hidden">
-    <div class="app-workspace mx-auto flex w-full max-w-[1800px] h-[calc(100dvh-1.75rem)] min-h-0 flex-col gap-5 overflow-hidden px-4 py-4 sm:px-6 lg:px-8">
-      <header class="app-header">
-        <div>
-          <p class="text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">Maliev MeshSplitter</p>
-          <h1 class="text-2xl font-semibold text-foreground sm:text-3xl">Print-ready mesh splitting</h1>
-        </div>
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <div class="header-stats" aria-label="Workflow status">
-            <span>{{ chunks.length || 0 }} parts</span>
-            <span>{{ meshInfo?.is_watertight ? 'Watertight' : 'Awaiting mesh' }}</span>
-            <span>{{ creditAccount.freeRemaining }} free / {{ creditAccount.availableGenerations }} total</span>
-          </div>
-          <Button class="whitespace-nowrap" size="sm" @click="showCreditDialog">
-            Buy credits
-          </Button>
-        </div>
-      </header>
-      <div class="workspace-grid flex-1 min-h-0">
-        <section class="panel-column min-h-0">
-          <div class="panel-card">
-            <MeshUploader :mesh-info="meshInfo" :chunks="chunks" :loading="loading" :error="error" @upload="onUpload" />
-          </div>
-          <div class="panel-card min-h-0 flex-1 overflow-y-auto part-list-wrap">
-            <PartList
-              :chunks="chunks"
-              :selected-chunk-index="selectedChunkIndex"
-              @select="onSelectChunk"
-            />
-          </div>
-        </section>
-
-        <section class="panel-column preview-column">
-          <Card class="preview-card h-full">
-            <CardContent class="p-0 h-full">
-              <ThreePreview
-                :chunks="chunks"
-                :mesh-info="meshInfo"
-                :mesh-geometry="meshGeometry"
-                :build-volume="buildVolume"
-                :divisions="divisions"
-                :up-axis="upAxis"
-                :selected-chunk-index="selectedChunkIndex"
-              />
-            </CardContent>
-          </Card>
-        </section>
-
-        <section class="panel-column panel-column-scroll">
-          <div class="panel-card">
-            <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" @apply="onScaleApply" />
-          </div>
-          <div class="panel-card">
-            <BuildVolumeConfig v-model="buildVolume" />
-          </div>
-          <div class="panel-card">
-            <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
-          </div>
-          <div class="panel-card">
-            <ConnectorConfig :error="error" :success="connectorSuccess" @apply="onApply" />
-          </div>
-          <div class="panel-card">
-            <ExportPanel
-              :has-chunks="chunks.length > 0"
-              :loading="loading"
-              @export-package="onExportPackage"
-            />
-          </div>
-        </section>
+  <main v-else class="app-shell">
+    <header class="app-header">
+      <div class="app-logo">
+        <img :src="logoUrl" alt="MALIEV" />
+        <span>MeshSplitter</span>
       </div>
+      <div class="app-status" aria-label="Workflow status">
+        <span class="status-chip" :class="{ ok: meshInfo?.is_watertight }">
+          <span class="dot"></span>{{ meshInfo?.is_watertight ? 'Watertight' : 'Awaiting mesh' }}
+        </span>
+        <span class="status-chip">{{ chunks.length || 0 }} parts</span>
+        <span class="status-chip">{{ creditAccount.freeRemaining }} free &middot; {{ creditAccount.availableGenerations }} credits</span>
+      </div>
+      <div class="header-right">
+        <Button variant="outline" size="sm" @click="showCreditDialog">
+          Buy credits
+        </Button>
+      </div>
+    </header>
+    <div class="workspace-grid">
+      <section class="col-left">
+        <MeshUploader :mesh-info="meshInfo" :chunks="chunks" :loading="loading" :error="error" @upload="onUpload" />
+        <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" @apply="onScaleApply" />
+        <BuildVolumeConfig v-model="buildVolume" />
+        <PartList
+          :chunks="chunks"
+          :selected-chunk-index="selectedChunkIndex"
+          @select="onSelectChunk"
+        />
+      </section>
+
+      <section class="col-center">
+        <Card class="preview-card h-full rounded-none border-x border-y-0 shadow-none">
+          <CardContent class="p-0 h-full">
+            <ThreePreview
+              :chunks="chunks"
+              :mesh-info="meshInfo"
+              :mesh-geometry="meshGeometry"
+              :build-volume="buildVolume"
+              :divisions="divisions"
+              :up-axis="upAxis"
+              :selected-chunk-index="selectedChunkIndex"
+            />
+          </CardContent>
+        </Card>
+        <div class="canvas-label">3D PREVIEW{{ previewDims ? ` · ${previewDims}` : '' }} · SCALE {{ scaleFactor.toFixed(3) }}&times;</div>
+        <div class="canvas-hint">DRAG TO ROTATE &middot; SCROLL TO ZOOM</div>
+      </section>
+
+      <section class="col-right">
+        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
+        <ConnectorConfig :error="error" :success="connectorSuccess" @apply="onApply" />
+        <ExportPanel
+          :has-chunks="chunks.length > 0"
+          :loading="loading"
+          @export-package="onExportPackage"
+        />
+      </section>
     </div>
     <dialog ref="creditDialog" class="credit-modal" @click.self="closeCreditDialog">
       <div class="credit-modal__panel">
@@ -114,6 +102,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
 import { useCredits } from './composables/useCredits'
+import logoUrl from './assets/logos/maliev-wordmark-black.svg'
 
 import MeshUploader from './components/MeshUploader.vue'
 import ScaleConfig from './components/ScaleConfig.vue'
@@ -148,6 +137,15 @@ const exportSessionId = ref('')
 const scaleInput = ref(1)
 const selectedChunkIndex = ref(null)
 const visibleError = computed(() => error.value || creditError.value || '')
+const previewDims = computed(() => {
+  const bounds = meshInfo.value?.bounds
+  if (!bounds) return ''
+  if (bounds.min && bounds.max) {
+    return `${(bounds.max.x - bounds.min.x).toFixed(0)} × ${(bounds.max.y - bounds.min.y).toFixed(0)} × ${(bounds.max.z - bounds.min.z).toFixed(0)} mm`
+  }
+  if (Array.isArray(bounds)) return `${bounds.map((v) => Number(v).toFixed(0)).join(' × ')} mm`
+  return ''
+})
 
 onMounted(() => {
   const refreshCredits = showPublicLanding ? credits.refreshPricing : credits.refresh

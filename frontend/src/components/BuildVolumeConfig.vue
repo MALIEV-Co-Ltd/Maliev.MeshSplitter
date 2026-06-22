@@ -1,34 +1,44 @@
 <template>
-  <Card>
-    <CardHeader>
-      <h3 class="text-lg font-semibold">Build Volume</h3>
-    </CardHeader>
-    <CardContent class="space-y-3">
-      <div class="space-y-1">
-        <Label for="build-volume-preset">Printer preset</Label>
-        <select id="build-volume-preset" v-model="selectedPresetId" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-          <option value="custom">Custom (manual)</option>
-          <option v-for="preset in presets" :key="preset.id" :value="preset.id">
-            {{ preset.label }}
-          </option>
-        </select>
+  <div class="pnl">
+    <div class="pnl-head">
+      <div class="pnl-title">
+        <BoxIcon />
+        Build volume
       </div>
-      <div class="grid grid-cols-3 gap-3">
-        <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="space-y-1">
-          <Label :for="`build-volume-${axis}`">{{ axis }} (mm)</Label>
-          <Input :id="`build-volume-${axis}`" type="number" min="1" step="1" :model-value="localVolume[i]"
-            @update:model-value="updateAxis(i, $event)" />
+    </div>
+    <div class="pnl-body space-y-2">
+      <select
+        id="build-volume-preset"
+        v-model="selectedPresetId"
+        class="bv-select flex h-8 w-full rounded-sm border border-input bg-background px-2.5 font-mono text-xs text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <option value="custom">Custom (manual)</option>
+        <option v-for="preset in presets" :key="preset.id" :value="preset.id">
+          {{ preset.label }}
+        </option>
+      </select>
+      <div class="grid grid-cols-3 gap-1.5">
+        <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="bv-field">
+          <label :for="`build-volume-${axis}`">{{ axis }} (mm)</label>
+          <Input
+            :id="`build-volume-${axis}`"
+            type="number"
+            min="1"
+            step="1"
+            class="h-8 font-mono text-xs"
+            :model-value="localVolume[i]"
+            @update:model-value="updateAxis(i, $event)"
+          />
         </div>
       </div>
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Box as BoxIcon } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 
 const props = defineProps({
   modelValue: { type: Array, required: true },

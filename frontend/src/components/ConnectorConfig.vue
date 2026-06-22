@@ -1,20 +1,22 @@
 <template>
-  <Card>
-    <CardHeader>
-      <h3 class="text-lg font-semibold">Connectors</h3>
-    </CardHeader>
-    <CardContent class="space-y-4">
-      <RadioGroup v-model="connectorType" class="grid grid-cols-2 gap-3">
+  <div class="pnl">
+    <div class="pnl-head">
+      <div class="pnl-title">
+        <Link2Icon />
+        Connectors
+      </div>
+    </div>
+    <div class="pnl-body space-y-3">
+      <RadioGroup v-model="connectorType" class="conn-pills">
         <div v-for="type in connectorTypes" :key="type.value">
           <RadioGroupItem :value="type.value" :id="`conn-${type.value}`" class="peer sr-only" />
           <Label :for="`conn-${type.value}`"
-            class="flex h-full min-h-[190px] flex-col rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer">
-            <div class="mb-2 text-sm font-medium">{{ type.title }}</div>
+            class="flex cursor-pointer flex-col gap-1 rounded-sm border border-input bg-background p-2 hover:bg-accent peer-data-[state=checked]:border-signal peer-data-[state=checked]:bg-signal/10 [&:has([data-state=checked])]:border-signal [&:has([data-state=checked])]:bg-signal/10">
+            <span class="conn-pill-name">{{ type.title }}</span>
             <div class="connector-preview-wrapper">
               <component :is="type.visual" />
             </div>
-            <p class="mt-auto text-xs text-muted-foreground">{{ type.description }}</p>
-            <a :href="type.referenceUrl" target="_blank" rel="noreferrer" class="mt-2 text-xs underline">
+            <a :href="type.referenceUrl" target="_blank" rel="noreferrer" class="text-[10px] text-muted-foreground underline">
               Reference
             </a>
           </Label>
@@ -22,53 +24,53 @@
       </RadioGroup>
 
       <template v-if="connectorType !== 'None'">
-        <div v-if="isDowelConnector" class="grid grid-cols-2 gap-3">
-          <div class="space-y-1">
-            <Label>Connector diameter (mm)</Label>
-            <Input type="number" step="0.5" min="2" v-model.number="diameter" />
+        <div v-if="isDowelConnector" class="conn-params">
+          <div class="conn-field">
+            <label>Diameter (mm)</label>
+            <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="diameter" />
           </div>
-          <div class="space-y-1">
-            <Label>Connector depth (mm)</Label>
-            <Input type="number" step="0.5" min="2" v-model.number="depth" />
-          </div>
-        </div>
-        <div v-else-if="isMortiseConnector" class="grid grid-cols-2 gap-3">
-          <div class="space-y-1">
-            <Label>Tenon width (mm)</Label>
-            <Input type="number" step="0.5" min="1" v-model.number="mortiseWidth" />
-          </div>
-          <div class="space-y-1">
-            <Label>Tenon thickness (mm)</Label>
-            <Input type="number" step="0.5" min="0.5" v-model.number="mortiseThickness" />
-          </div>
-          <div class="space-y-1">
-            <Label>Insert depth (mm)</Label>
-            <Input type="number" step="0.5" min="2" v-model.number="depth" />
+          <div class="conn-field">
+            <label>Depth (mm)</label>
+            <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="depth" />
           </div>
         </div>
-        <div v-else class="grid grid-cols-2 gap-3">
-          <div class="space-y-1">
-            <Label>Key width (mm)</Label>
-            <Input type="number" step="0.5" min="1" v-model.number="keyWidth" />
+        <div v-else-if="isMortiseConnector" class="conn-params">
+          <div class="conn-field">
+            <label>Tenon width (mm)</label>
+            <Input type="number" step="0.5" min="1" class="h-8 font-mono text-xs" v-model.number="mortiseWidth" />
           </div>
-          <div class="space-y-1">
-            <Label>Key thickness (mm)</Label>
-            <Input type="number" step="0.5" min="0.5" v-model.number="keyThickness" />
+          <div class="conn-field">
+            <label>Tenon thickness (mm)</label>
+            <Input type="number" step="0.5" min="0.5" class="h-8 font-mono text-xs" v-model.number="mortiseThickness" />
           </div>
-          <div class="space-y-1">
-            <Label>Insert depth (mm)</Label>
-            <Input type="number" step="0.5" min="2" v-model.number="depth" />
+          <div class="conn-field">
+            <label>Insert depth (mm)</label>
+            <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="depth" />
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="space-y-1">
-            <Label>Clearance (mm)</Label>
-            <Input type="number" step="0.05" min="0" v-model.number="clearance" />
+        <div v-else class="conn-params">
+          <div class="conn-field">
+            <label>Key width (mm)</label>
+            <Input type="number" step="0.5" min="1" class="h-8 font-mono text-xs" v-model.number="keyWidth" />
           </div>
-          <div class="space-y-1">
-            <Label>Connectors per face</Label>
+          <div class="conn-field">
+            <label>Key thickness (mm)</label>
+            <Input type="number" step="0.5" min="0.5" class="h-8 font-mono text-xs" v-model.number="keyThickness" />
+          </div>
+          <div class="conn-field">
+            <label>Insert depth (mm)</label>
+            <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="depth" />
+          </div>
+        </div>
+        <div class="conn-params">
+          <div class="conn-field">
+            <label>Clearance (mm)</label>
+            <Input type="number" step="0.05" min="0" class="h-8 font-mono text-xs" v-model.number="clearance" />
+          </div>
+          <div class="conn-field">
+            <label>Connectors per face</label>
             <select v-model.number="perFace"
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+              class="flex h-8 w-full rounded-sm border border-input bg-background px-2 font-mono text-xs text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
               <option :value="1">1</option>
               <option :value="2">2</option>
               <option :value="4">4</option>
@@ -77,19 +79,19 @@
         </div>
       </template>
 
-      <div v-if="error" class="text-sm text-destructive">{{ error }}</div>
-      <div v-if="success" class="text-sm text-green-600">{{ success }}</div>
+      <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
+      <p v-if="success" class="text-sm text-positive">{{ success }}</p>
 
-      <Button class="w-full" @click="onApply">
-        Apply
+      <Button class="w-full justify-center" @click="onApply">
+        Apply connectors
       </Button>
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 </template>
 
 <script setup>
 import { computed, defineComponent, h, ref } from 'vue'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Link2 as Link2Icon } from '@lucide/vue'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -111,6 +113,11 @@ const mortiseThickness = ref(4)
 const keyWidth = ref(6)
 const keyThickness = ref(3.5)
 
+const BOX_PROPS = {
+  x: '4', y: '4', width: '252', height: '92', rx: '8',
+  fill: 'none', stroke: 'var(--steel-300)',
+}
+
 const DowelVisual = defineComponent({
   name: 'DowelVisual',
   render: () => h('svg', {
@@ -118,19 +125,10 @@ const DowelVisual = defineComponent({
     class: 'h-full w-full',
     'aria-hidden': true,
   }, [
-    h('rect', {
-      x: '4',
-      y: '4',
-      width: '252',
-      height: '92',
-      rx: '8',
-      fill: 'none',
-      stroke: 'currentColor',
-      class: 'connector-diagram-box',
-    }),
-    h('circle', { cx: '66', cy: '50', r: '18', fill: '#0ea5e9', stroke: 'currentColor' }),
-    h('circle', { cx: '130', cy: '50', r: '18', fill: '#0ea5e9', stroke: 'currentColor' }),
-    h('circle', { cx: '194', cy: '50', r: '18', fill: '#dbeafe', stroke: 'currentColor' }),
+    h('rect', { ...BOX_PROPS, class: 'connector-diagram-box' }),
+    h('circle', { cx: '66', cy: '50', r: '18', fill: 'var(--signal-100)', stroke: 'var(--signal-500)' }),
+    h('circle', { cx: '130', cy: '50', r: '18', fill: 'var(--signal-100)', stroke: 'var(--signal-500)' }),
+    h('circle', { cx: '194', cy: '50', r: '18', fill: 'var(--steel-100)', stroke: 'var(--steel-300)' }),
   ]),
 })
 
@@ -141,19 +139,10 @@ const MortiseVisual = defineComponent({
     class: 'h-full w-full',
     'aria-hidden': true,
   }, [
-    h('rect', {
-      x: '4',
-      y: '4',
-      width: '252',
-      height: '92',
-      rx: '8',
-      fill: 'none',
-      stroke: 'currentColor',
-      class: 'connector-diagram-box',
-    }),
-    h('rect', { x: '72', y: '35', width: '42', height: '30', fill: '#0ea5e9', stroke: 'currentColor' }),
-    h('rect', { x: '130', y: '35', width: '58', height: '30', fill: '#dbeafe', stroke: 'currentColor' }),
-    h('rect', { x: '130', y: '47', width: '58', height: '10', fill: '#0ea5e9', fillOpacity: '0.4' }),
+    h('rect', { ...BOX_PROPS, class: 'connector-diagram-box' }),
+    h('rect', { x: '72', y: '35', width: '42', height: '30', fill: 'var(--signal-100)', stroke: 'var(--signal-500)' }),
+    h('rect', { x: '130', y: '35', width: '58', height: '30', fill: 'var(--steel-100)', stroke: 'var(--steel-300)' }),
+    h('rect', { x: '130', y: '47', width: '58', height: '10', fill: 'var(--signal-500)', 'fill-opacity': '0.25' }),
   ]),
 })
 
@@ -164,19 +153,10 @@ const KeyVisual = defineComponent({
     class: 'h-full w-full',
     'aria-hidden': true,
   }, [
-    h('rect', {
-      x: '4',
-      y: '4',
-      width: '252',
-      height: '92',
-      rx: '8',
-      fill: 'none',
-      stroke: 'currentColor',
-      class: 'connector-diagram-box',
-    }),
-    h('rect', { x: '52', y: '40', width: '48', height: '20', fill: '#0ea5e9', stroke: 'currentColor' }),
-    h('rect', { x: '104', y: '36', width: '70', height: '28', fill: '#dbeafe', stroke: 'currentColor' }),
-    h('rect', { x: '104', y: '46', width: '70', height: '8', fill: '#0ea5e9', fillOpacity: '0.45' }),
+    h('rect', { ...BOX_PROPS, class: 'connector-diagram-box' }),
+    h('rect', { x: '52', y: '40', width: '48', height: '20', fill: 'var(--signal-100)', stroke: 'var(--signal-500)' }),
+    h('rect', { x: '104', y: '36', width: '70', height: '28', fill: 'var(--steel-100)', stroke: 'var(--steel-300)' }),
+    h('rect', { x: '104', y: '46', width: '70', height: '8', fill: 'var(--signal-500)', 'fill-opacity': '0.3' }),
   ]),
 })
 
@@ -187,24 +167,16 @@ const NoneVisual = defineComponent({
     class: 'h-full w-full',
     'aria-hidden': true,
   }, [
-    h('rect', {
-      x: '4',
-      y: '4',
-      width: '252',
-      height: '92',
-      rx: '8',
-      fill: 'none',
-      stroke: 'currentColor',
-      class: 'connector-diagram-box',
-    }),
+    h('rect', { ...BOX_PROPS, class: 'connector-diagram-box' }),
     h('line', {
       x1: '40',
       y1: '50',
       x2: '220',
       y2: '50',
-      stroke: 'currentColor',
+      stroke: 'var(--steel-300)',
       'stroke-width': '4',
       'stroke-linecap': 'round',
+      'stroke-dasharray': '10 8',
     }),
   ]),
 })

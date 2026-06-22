@@ -1,5 +1,18 @@
 <template>
   <main class="landing-shell">
+    <header class="lnd-header">
+      <img :src="logoUrl" alt="MALIEV" />
+      <nav class="lnd-nav">
+        <a href="#">Home</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#pricing">Pricing</a>
+      </nav>
+      <div class="lnd-header-right">
+        <a class="lnd-btn lnd-btn-outline" href="/account/login">Sign in</a>
+        <a class="lnd-btn lnd-btn-ink" :href="launchUrl">Launch MeshSplitter</a>
+      </div>
+    </header>
     <section class="landing-hero">
       <div class="landing-copy">
         <p class="landing-kicker">MALIEV MeshSplitter</p>
@@ -47,7 +60,7 @@
       </div>
     </section>
 
-    <section class="landing-band workflow-band" aria-label="Workflow">
+    <section id="how-it-works" class="landing-band workflow-band" aria-label="Workflow">
       <div class="section-heading">
         <p>Workflow</p>
         <h2>From one large mesh to a printable assembly packet.</h2>
@@ -61,7 +74,7 @@
       </div>
     </section>
 
-    <section class="landing-band capability-band" aria-label="Capabilities">
+    <section id="capabilities" class="landing-band capability-band" aria-label="Capabilities">
       <div class="capability-copy">
         <p class="landing-kicker">Built for fabrication decisions</p>
         <h2>Know what will happen before you spend a generation.</h2>
@@ -110,6 +123,8 @@
 </template>
 
 <script setup>
+import logoUrl from '../assets/logos/maliev-wordmark-black.svg'
+
 const props = defineProps({
   pricing: { type: Object, required: true },
   storeDomain: { type: String, default: '' },
