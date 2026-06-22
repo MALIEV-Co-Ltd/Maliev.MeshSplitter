@@ -224,6 +224,157 @@ describe('HTTP API', () => {
     expect(secondBody).toMatchObject({ transaction: firstBody.transaction, account: firstBody.account })
   })
 
+  it('rejects reset requests when admin reset is disabled', async () => {
+    const response = await fetch(`${baseUrl}/api/admin/reset-credits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ customerId: 'local-customer' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(body.error).toBe('Credit reset is disabled')
+  })
+
+  it('rejects reset credit requests without admin token', async () => {
+    const secretServer = createServer({
+      devCustomerBypass: true,
+      shopifyAppProxySecret: 'proxy-secret',
+      shopifyWebhookSecret: 'webhook-secret',
+      appUrl: 'https://mesh.example.com',
+      storefrontUrl: 'https://shop.example.com/tools/mesh-splitter',
+      customerLoginUrl: 'https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter',
+      adminSecret: 'admin-reset-token',
+      now: () => new Date('2026-06-21T12:00:00.000Z'),
+    })
+    await new Promise(resolve => secretServer.listen(0, resolve))
+    const secretBaseUrl = `http://127.0.0.1:${secretServer.address().port}`
+
+    try {
+      const response = await fetch(`${secretBaseUrl}/api/admin/reset-credits`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ customerId: 'local-customer' }),
+      })
+      const body = await response.json()
+
+      expect(response.status).toBe(401)
+      expect(body.error).toBe('Unauthorized')
+    } finally {
+      await new Promise(resolve => secretServer.close(resolve))
+    }
+  })
+
+  it('resets all customer accounts when admin token is valid', async () => {
+    const serverWithSecret = createServer({
+      devCustomerBypass: true,
+      shopifyAppProxySecret: 'proxy-secret',
+      shopifyWebhookSecret: 'webhook-secret',
+      appUrl: 'https://mesh.example.com',
+      storefrontUrl: 'https://shop.example.com/tools/mesh-splitter',
+      customerLoginUrl: 'https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter',
+      adminSecret: 'admin-reset-token',
+      now: () => new Date('2026-06-21T12:00:00.000Z'),
+    })
+    await new Promise(resolve => serverWithSecret.listen(0, resolve))
+    const secretBaseUrl = `http://127.0.0.1:${serverWithSecret.address().port}`
+
+    try {
+      await Promise.all([
+        fetch(`${secretBaseUrl}/api/exports`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-mesh-customer-id': 'local-customer-1',
+          },
+          body: JSON.stringify({ idempotencyKey: 'reset-all-1' }),
+        }),
+        fetch(`${secretBaseUrl}/api/exports`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-mesh-customer-id': 'local-customer-2',
+          },
+          body: JSON.stringify({ idempotencyKey: 'reset-all-2' }),
+        }),
+      ])
+
+      const beforeReset = await Promise.all([
+        fetch(`${secretBaseUrl}/api/account`, { headers: { 'x-mesh-customer-id': 'local-customer-1' } }),
+        fetch(`${secretBaseUrl}/api/account`, { headers: { 'x-mesh-customer-id': 'local-customer-2' } }),
+      ])
+      expect((await beforeReset[0].json()).account.freeRemaining).toBe(2)
+      expect((await beforeReset[1].json()).account.freeRemaining).toBe(2)
+
+      const resetResponse = await fetch(`${secretBaseUrl}/api/admin/reset-credits`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-reset-token',
+        },
+        body: JSON.stringify({ all: true }),
+      })
+      const resetBody = await resetResponse.json()
+
+      expect(resetResponse.status).toBe(200)
+      expect(resetBody.ok).toBe(true)
+    } finally {
+      await new Promise(resolve => serverWithSecret.close(resolve))
+    }
+  })
+
+  it('resets a customer account when admin token is valid', async () => {
+    const serverWithSecret = createServer({
+      devCustomerBypass: true,
+      shopifyAppProxySecret: 'proxy-secret',
+      shopifyWebhookSecret: 'webhook-secret',
+      appUrl: 'https://mesh.example.com',
+      storefrontUrl: 'https://shop.example.com/tools/mesh-splitter',
+      customerLoginUrl: 'https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter',
+      adminSecret: 'admin-reset-token',
+      now: () => new Date('2026-06-21T12:00:00.000Z'),
+    })
+    await new Promise(resolve => serverWithSecret.listen(0, resolve))
+    const secretBaseUrl = `http://127.0.0.1:${serverWithSecret.address().port}`
+
+    try {
+      await Promise.all([
+        fetch(`${secretBaseUrl}/api/exports`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-mesh-customer-id': 'local-customer',
+          },
+          body: JSON.stringify({ idempotencyKey: 'reset-test' }),
+        }),
+      ])
+
+      const beforeReset = await fetch(`${secretBaseUrl}/api/account`, {
+        headers: { 'x-mesh-customer-id': 'local-customer' },
+      })
+      expect((await beforeReset.json()).account.freeRemaining).toBe(2)
+
+      const resetResponse = await fetch(`${secretBaseUrl}/api/admin/reset-credits`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-reset-token',
+        },
+        body: JSON.stringify({ customerId: 'local-customer' }),
+      })
+      const resetBody = await resetResponse.json()
+
+      expect(resetResponse.status).toBe(200)
+      expect(resetBody.account).toMatchObject({ customerId: 'local-customer', freeRemaining: 3, paidCredits: 0 })
+    } finally {
+      await new Promise(resolve => serverWithSecret.close(resolve))
+    }
+  })
+
   it('returns insufficient credits when monthly free exports and paid credits are exhausted', async () => {
     await Promise.all([
       fetch(`${baseUrl}/api/exports`, {
