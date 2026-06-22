@@ -12,6 +12,7 @@ import {
   verifySignedSession,
 } from './shopifySecurity.js'
 import { MemoryCreditStore } from './stores/memoryCreditStore.js'
+import { DatastoreCreditStore } from './stores/datastoreCreditStore.js'
 import { PostgresCreditStore } from './stores/postgresCreditStore.js'
 
 export function createServer(options = {}) {
@@ -110,6 +111,12 @@ function resolveIdentity({ request, devCustomerBypass, shopifyAppProxySecret, se
 }
 
 function createDefaultStore() {
+  if (process.env.CREDIT_STORE === 'datastore') {
+    return new DatastoreCreditStore({
+      projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT,
+      namespace: process.env.DATASTORE_NAMESPACE,
+    })
+  }
   if (process.env.DATABASE_URL) {
     return new PostgresCreditStore({ connectionString: process.env.DATABASE_URL })
   }

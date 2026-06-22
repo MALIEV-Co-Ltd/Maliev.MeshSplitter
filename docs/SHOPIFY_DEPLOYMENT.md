@@ -40,6 +40,34 @@ ghcr.io/maliev-co-ltd/maliev.meshsplitter:main
 
 Commit-specific images are also tagged as `sha-<short-sha>`.
 
+## Google Cloud Run deployment
+
+The `maliev-website` Google Cloud project already has Firestore/Datastore
+enabled. For Cloud Run, use the Datastore credit ledger instead of provisioning
+Cloud SQL:
+
+```powershell
+gcloud run deploy maliev-mesh-splitter `
+  --project=maliev-website `
+  --region=europe-west1 `
+  --source=. `
+  --allow-unauthenticated `
+  --set-env-vars NODE_ENV=production,FRONTEND_DIST_DIR=/app/frontend/dist,CREDIT_STORE=datastore,GOOGLE_CLOUD_PROJECT=maliev-website,DATASTORE_NAMESPACE=mesh-splitter,VITE_MESH_API_BASE_URL=/api,VITE_CREDITS_ENFORCEMENT=required,VITE_SHOPIFY_STORE_DOMAIN=shop.maliev.com
+```
+
+Set these Cloud Run secrets or environment variables before wiring the Shopify
+app proxy:
+
+- `SHOPIFY_APP_PROXY_SECRET`
+- `SHOPIFY_WEBHOOK_SECRET`
+- `SESSION_SECRET`
+
+After deployment, verify:
+
+```powershell
+curl.exe -L https://<cloud-run-url>/health
+```
+
 ## Recommended commercial architecture
 
 Use the backend as the Shopify app-proxy target. It serves the built frontend,
