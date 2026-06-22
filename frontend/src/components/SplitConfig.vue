@@ -3,9 +3,9 @@
     <div class="pnl-head">
       <div class="pnl-title">
         <Rows3Icon />
-        Split &amp; connectors
+        {{ labels.title }}
       </div>
-      <span class="pnl-meta">{{ divisions[0] }}&times;{{ divisions[1] }}&times;{{ divisions[2] }} &middot; {{ totalParts }} part{{ totalParts === 1 ? '' : 's' }}</span>
+      <span class="pnl-meta">{{ divisions[0] }}&times;{{ divisions[1] }}&times;{{ divisions[2] }} &middot; {{ totalParts }} {{ totalParts === 1 ? labels.part : labels.parts }}</span>
     </div>
     <div class="pnl-body space-y-3">
       <div class="axis-row">
@@ -23,14 +23,14 @@
 
       <div class="conn-subhead">
         <Link2Icon :size="13" :stroke-width="1.75" />
-        Connectors
+        {{ labels.connectors }}
       </div>
-      <ConnectorConfig v-model="connectorConfig" />
+      <ConnectorConfig v-model="connectorConfig" :labels="labels.connectorConfig" />
 
       <p v-if="err" class="text-sm text-destructive">{{ err }}</p>
       <p v-if="success" class="text-sm text-positive">{{ success }}</p>
       <Button class="w-full justify-center" :disabled="!ok || loading" @click="onSplit">
-        {{ loading ? 'Working…' : 'Split mesh' }}
+        {{ loading ? labels.working : labels.splitMesh }}
       </Button>
     </div>
   </div>
@@ -50,6 +50,18 @@ const props = defineProps({
   success: { type: String, default: '' },
   divisions: { type: Array, default: () => [2, 2, 1] },
   loading: { type: Boolean, default: false },
+  labels: {
+    type: Object,
+    default: () => ({
+      title: 'Split & connectors',
+      part: 'part',
+      parts: 'parts',
+      connectors: 'Connectors',
+      working: 'Working...',
+      splitMesh: 'Split mesh',
+      connectorConfig: undefined,
+    }),
+  },
 })
 
 const emit = defineEmits(['split', 'update:divisions'])

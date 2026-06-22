@@ -3,7 +3,7 @@
     <div class="pnl-head">
       <div class="pnl-title">
         <BoxIcon />
-        Build volume
+        {{ labels.title }}
       </div>
     </div>
     <div class="pnl-body space-y-2">
@@ -12,7 +12,7 @@
         v-model="selectedPresetId"
         class="bv-select flex h-8 w-full rounded-sm border border-input bg-background px-2.5 font-mono text-xs text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
-        <option value="custom">Custom (manual)</option>
+        <option value="custom">{{ labels.customManual }}</option>
         <option v-for="preset in presets" :key="preset.id" :value="preset.id">
           {{ preset.label }}
         </option>
@@ -42,6 +42,13 @@ import { Input } from '@/components/ui/input'
 
 const props = defineProps({
   modelValue: { type: Array, required: true },
+  labels: {
+    type: Object,
+    default: () => ({
+      title: 'Build volume',
+      customManual: 'Custom (manual)',
+    }),
+  },
 })
 const emit = defineEmits(['update:modelValue'])
 

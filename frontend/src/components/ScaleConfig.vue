@@ -3,7 +3,7 @@
     <div class="pnl-head">
       <div class="pnl-title">
         <RulerIcon />
-        Scale
+        {{ labels.title }}
       </div>
       <span class="pnl-meta">{{ percent }}%</span>
     </div>
@@ -23,10 +23,7 @@
           />
         </div>
       </div>
-      <Button size="sm" variant="outline" class="w-full justify-center" :disabled="!enabled || loading || !isValid" @click="apply">
-        Apply
-      </Button>
-      <div class="flex flex-wrap gap-2" aria-label="Scale presets">
+      <div class="flex flex-wrap gap-2" :aria-label="labels.presets">
         <Button
           v-for="preset in presets"
           :key="preset.label"
@@ -54,6 +51,13 @@ const props = defineProps({
   enabled: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   meshInfo: { type: Object, default: null },
+  labels: {
+    type: Object,
+    default: () => ({
+      title: 'Scale',
+      presets: 'Scale presets',
+    }),
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'apply'])
@@ -112,6 +116,7 @@ function onSizeInput(axis, value) {
   const target = Number(value)
   if (!Number.isFinite(target) || target <= 0) return
   draftScale.value = target / baseSize.value[axis]
+  apply()
 }
 
 function applyPreset(value) {
