@@ -7,6 +7,7 @@ const {
   mockApplyScale,
   mockSplitMeshManifold,
   mockAddConnectorsManifold,
+  mockExportPackage,
   mockExportStl,
   mockExportPdf,
   mockStlParse,
@@ -16,6 +17,7 @@ const {
   mockApplyScale: vi.fn(),
   mockSplitMeshManifold: vi.fn(),
   mockAddConnectorsManifold: vi.fn(),
+  mockExportPackage: vi.fn(),
   mockExportStl: vi.fn(),
   mockExportPdf: vi.fn(),
   mockStlParse: vi.fn(),
@@ -27,6 +29,7 @@ vi.mock('../mesh/meshProcessor', () => ({
   applyScale: mockApplyScale,
   splitMeshManifold: mockSplitMeshManifold,
   addConnectorsManifold: mockAddConnectorsManifold,
+  exportPackage: mockExportPackage,
   exportStl: mockExportStl,
   exportPdf: mockExportPdf,
 }))
@@ -244,6 +247,33 @@ describe('useMeshProcessor', () => {
       expect(mockApplyScale).toHaveBeenCalledWith(expect.any(THREE.BufferGeometry), 2)
       expect(scaleFactor.value).toBe(2)
       expect(meshInfo.value.volume).toBe(8000)
+    })
+  })
+
+  describe('buildExportPackage', () => {
+    it('passes source geometry and public URL metadata into package export', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      mockExportPackage.mockResolvedValue(new Blob(['zip']))
+
+      const { loadStl, buildExportPackage, buildVolume } = useMeshProcessor()
+      await loadStl(createMockFile('packet.stl'))
+      buildVolume.value = [180, 180, 180]
+      const result = await buildExportPackage()
+
+      expect(mockExportPackage).toHaveBeenCalledWith(
+        [],
+        [180, 180, 180],
+        expect.objectContaining({
+          appUrl: 'https://shop.maliev.com/tools/mesh-splitter',
+          sourceFilename: 'packet.stl',
+          sourceGeometry: expect.any(THREE.BufferGeometry),
+        }),
+      )
+      expect(result.filename).toBe('packet-mesh-splitter-package.zip')
     })
   })
 

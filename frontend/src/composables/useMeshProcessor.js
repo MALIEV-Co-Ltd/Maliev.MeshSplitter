@@ -140,28 +140,41 @@ export function useMeshProcessor() {
     }
   }
 
-  async function downloadExportPackage() {
+  async function buildExportPackage() {
     loading.value = true
     error.value = null
     try {
-      const blob = await exportPackage(chunks.value, buildVolume.value)
-      const url = URL.createObjectURL(blob)
+      const blob = await exportPackage(chunks.value, buildVolume.value, {
+        appUrl: import.meta.env.VITE_MESH_SPLITTER_PUBLIC_URL || 'https://shop.maliev.com/tools/mesh-splitter',
+        sourceGeometry: meshGeometry.value,
+        sourceFilename: meshInfo.value?.filename,
+      })
       const filename = meshInfo.value?.filename
         ? meshInfo.value.filename.replace(/\.stl$/i, '')
         : 'mesh-split'
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${filename}-mesh-splitter-package.zip`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      return { blob, filename: `${filename}-mesh-splitter-package.zip` }
     } catch (e) {
       error.value = e.message
       throw e
     } finally {
       loading.value = false
     }
+  }
+
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function downloadExportPackage() {
+    const { blob, filename } = await buildExportPackage()
+    saveBlob(blob, filename)
   }
 
   function clearMesh() {
@@ -187,6 +200,8 @@ export function useMeshProcessor() {
     setScaleFactor,
     split,
     applyConnectors,
+    buildExportPackage,
+    saveBlob,
     downloadExportPackage,
     downloadStl: downloadExportPackage,
     downloadPdf: downloadExportPackage,

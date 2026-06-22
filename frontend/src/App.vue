@@ -61,7 +61,7 @@
         <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :success="connectorSuccess" :loading="splitAuthorizing || loading" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
         <ExportPanel
           :has-chunks="chunks.length > 0"
-          :loading="loading"
+          :loading="loading || exportingPackage"
           @export-package="onExportPackage"
         />
       </section>
@@ -129,7 +129,7 @@ import PublicLanding from './components/PublicLanding.vue'
 
 const {
   meshInfo, meshGeometry, chunks, loading, error, scaleFactor, buildVolume,
-  loadStl, setScaleFactor, split, applyConnectors, downloadExportPackage,
+  loadStl, setScaleFactor, split, applyConnectors, buildExportPackage, saveBlob,
 } = useMeshProcessor()
 
 const credits = useCredits()
@@ -147,6 +147,7 @@ const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
 const exportSessionId = ref('')
+const exportingPackage = ref(false)
 const scaleInput = ref(1)
 const selectedChunkIndex = ref(null)
 const visibleError = computed(() => error.value || creditError.value || '')
@@ -249,19 +250,26 @@ function closeCreditDialog() {
   creditDialog.value?.close()
 }
 
-async function exportAfterCredit(format, downloadFn) {
+async function exportAfterCredit(format, buildFn) {
   if (!chunks.value.length) return
-  await credits.consumeExport({
-    idempotencyKey: createExportKey(format),
-    metadata: {
-      filename: meshInfo.value?.filename,
-      format,
-      divisions: divisions.value,
-      buildVolume: buildVolume.value,
-      chunkCount: chunks.value.length,
-    },
-  })
-  await downloadFn()
+  exportingPackage.value = true
+  try {
+    // Build the file first — a failed/blank render must never burn a paid credit.
+    const { blob, filename } = await buildFn()
+    await credits.consumeExport({
+      idempotencyKey: createExportKey(format),
+      metadata: {
+        filename: meshInfo.value?.filename,
+        format,
+        divisions: divisions.value,
+        buildVolume: buildVolume.value,
+        chunkCount: chunks.value.length,
+      },
+    })
+    saveBlob(blob, filename)
+  } finally {
+    exportingPackage.value = false
+  }
 }
 
 function createExportKey(format) {
@@ -277,7 +285,7 @@ function createExportKey(format) {
 }
 
 function onExportPackage() {
-  return exportAfterCredit('package', downloadExportPackage)
+  return exportAfterCredit('package', buildExportPackage)
 }
 
 function createExportSessionId({ filename, divisions, buildVolume, chunkCount }) {
