@@ -6,6 +6,7 @@ import {
   computeVolume,
   exportStl,
   exportPackage,
+  repairMeshGeometry,
   splitMeshManifold,
   validateExportChunks,
   validateManifold,
@@ -51,6 +52,20 @@ describe('applyScale', () => {
 })
 
 describe('splitMeshManifold', () => {
+  it('repairs a simple non-manifold hole before splitting', async () => {
+    const geometry = boxWithMissingTriangle()
+    expect(validateManifold(geometry).watertight).toBe(false)
+
+    const repaired = repairMeshGeometry(geometry)
+    expect(validateManifold(repaired).watertight).toBe(true)
+
+    const chunks = await splitMeshManifold(new THREE.Mesh(geometry), [100, 100, 100], [2, 1, 1])
+    expect(chunks).toHaveLength(2)
+    chunks.forEach((chunk) => {
+      expect(validateManifold(chunk.geometry).watertight).toBe(true)
+    })
+  })
+
   it('uses browser-loadable WASM manifold operations to produce watertight chunks', async () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
     const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 2, 1])
@@ -191,6 +206,19 @@ function mergeTestGeometries(geometries) {
   merged.setIndex(indices)
   merged.computeVertexNormals()
   return merged
+}
+
+function boxWithMissingTriangle() {
+  const source = new THREE.BoxGeometry(20, 20, 20).toNonIndexed()
+  const position = source.attributes.position
+  const positions = []
+  for (let i = 3; i < position.count; i += 1) {
+    positions.push(position.getX(i), position.getY(i), position.getZ(i))
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.computeVertexNormals()
+  return geometry
 }
 
 describe('export validation', () => {

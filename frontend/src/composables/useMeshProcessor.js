@@ -4,6 +4,7 @@ import {
   addConnectorsManifold,
   applyScale,
   exportPackage,
+  repairMeshGeometry,
   splitMeshManifold,
   validateManifold,
 } from '../mesh/meshProcessor'
@@ -25,7 +26,7 @@ export function useMeshProcessor() {
   const scaleFactor = ref(1)
   const buildVolume = ref([250, 250, 250])
 
-  function setMeshState(geometry, filename) {
+  function setMeshState(geometry, filename, options = {}) {
     const info = validateManifold(geometry)
     geometry.computeBoundingBox()
     const box = geometry.boundingBox
@@ -35,6 +36,7 @@ export function useMeshProcessor() {
       verts: info.vertCount,
       faces: info.faceCount,
       is_watertight: info.watertight,
+      was_repaired: Boolean(options.wasRepaired),
       volume: info.volume,
       bounds: {
         min: { x: box.min.x, y: box.min.y, z: box.min.z },
@@ -57,10 +59,21 @@ export function useMeshProcessor() {
       const geometry = normalizeForPreview(loader.parse(buffer))
       geometry.computeBoundingBox()
       geometry.computeVertexNormals()
-      sourceGeometry.value = geometry
+      let workingGeometry = geometry
+      let wasRepaired = false
+      const initialInfo = validateManifold(workingGeometry)
+      if (!initialInfo.watertight) {
+        const repaired = repairMeshGeometry(workingGeometry)
+        if (validateManifold(repaired).watertight) {
+          workingGeometry = repaired
+          wasRepaired = true
+        }
+      }
+
+      sourceGeometry.value = workingGeometry
       scaleFactor.value = 1
 
-      return setMeshState(geometry.clone(), file.name)
+      return setMeshState(workingGeometry.clone(), file.name, { wasRepaired })
     } catch (e) {
       error.value = e.message
       throw e

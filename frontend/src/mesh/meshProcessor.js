@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url'
+import malievLogoWhiteSvg from '../assets/logos/maliev-wordmark-white.svg?raw'
 
 let manifoldModulePromise
 
@@ -114,6 +115,167 @@ export function computeVolume(geometry) {
   return computeVolumeImpl(geometry)
 }
 
+export function repairMeshGeometry(geometry, tolerance = 1e-4) {
+  const cleaned = weldGeometry(geometry, tolerance)
+  const boundaryLoops = findBoundaryLoops(cleaned, tolerance)
+  if (boundaryLoops.length === 0) {
+    cleaned.computeBoundingBox()
+    cleaned.computeVertexNormals()
+    return cleaned
+  }
+
+  const positions = Array.from(cleaned.attributes.position.array)
+  const indices = cleaned.index
+    ? Array.from(cleaned.index.array)
+    : Array.from({ length: cleaned.attributes.position.count }, (_, i) => i)
+  cleaned.computeBoundingBox()
+  const meshCenter = new THREE.Vector3()
+  cleaned.boundingBox.getCenter(meshCenter)
+
+  boundaryLoops.forEach((loop) => {
+    if (loop.length < 3 || loop.length > 96) return
+    const centerIndex = positions.length / 3
+    const center = loop.reduce((acc, idx) => {
+      acc.x += positions[idx * 3]
+      acc.y += positions[idx * 3 + 1]
+      acc.z += positions[idx * 3 + 2]
+      return acc
+    }, new THREE.Vector3()).divideScalar(loop.length)
+    positions.push(center.x, center.y, center.z)
+
+    for (let i = 0; i < loop.length; i += 1) {
+      const a = loop[i]
+      const b = loop[(i + 1) % loop.length]
+      const normal = triangleNormalFromPositions(positions, a, b, centerIndex)
+      const outward = center.clone().sub(meshCenter)
+      if (normal.dot(outward) < 0) {
+        indices.push(b, a, centerIndex)
+      } else {
+        indices.push(a, b, centerIndex)
+      }
+    }
+  })
+
+  const repaired = new THREE.BufferGeometry()
+  repaired.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  repaired.setIndex(indices)
+  repaired.computeBoundingBox()
+  repaired.computeVertexNormals()
+  return repaired
+}
+
+function triangleNormalFromPositions(positions, a, b, c) {
+  const va = new THREE.Vector3(positions[a * 3], positions[a * 3 + 1], positions[a * 3 + 2])
+  const vb = new THREE.Vector3(positions[b * 3], positions[b * 3 + 1], positions[b * 3 + 2])
+  const vc = new THREE.Vector3(positions[c * 3], positions[c * 3 + 1], positions[c * 3 + 2])
+  return vb.sub(va).cross(vc.sub(va)).normalize()
+}
+
+function weldGeometry(geometry, tolerance) {
+  const source = geometry
+  const position = source.attributes.position
+  const scale = 1 / tolerance
+  const vertices = []
+  const vertexMap = new Map()
+  const remap = []
+
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i)
+    const y = position.getY(i)
+    const z = position.getZ(i)
+    const key = `${Math.round(x * scale)}:${Math.round(y * scale)}:${Math.round(z * scale)}`
+    let mapped = vertexMap.get(key)
+    if (mapped === undefined) {
+      mapped = vertices.length / 3
+      vertexMap.set(key, mapped)
+      vertices.push(x, y, z)
+    }
+    remap[i] = mapped
+  }
+
+  const rawIndices = source.index
+    ? Array.from(source.index.array, (idx) => remap[idx])
+    : Array.from({ length: position.count }, (_, i) => remap[i])
+  const indices = []
+  for (let i = 0; i < rawIndices.length; i += 3) {
+    const a = rawIndices[i]
+    const b = rawIndices[i + 1]
+    const c = rawIndices[i + 2]
+    if (a === b || b === c || c === a) continue
+    indices.push(a, b, c)
+  }
+
+  const welded = new THREE.BufferGeometry()
+  welded.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
+  welded.setIndex(indices)
+  welded.computeBoundingBox()
+  welded.computeVertexNormals()
+  return welded
+}
+
+function findBoundaryLoops(geometry) {
+  const index = geometry.index
+  if (!index) return []
+
+  const edgeMap = new Map()
+  const addEdge = (a, b) => {
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`
+    const edge = edgeMap.get(key) || { a, b, count: 0 }
+    edge.count += 1
+    edgeMap.set(key, edge)
+  }
+
+  for (let i = 0; i < index.count; i += 3) {
+    const a = index.getX(i)
+    const b = index.getX(i + 1)
+    const c = index.getX(i + 2)
+    addEdge(a, b)
+    addEdge(b, c)
+    addEdge(c, a)
+  }
+
+  const adjacency = new Map()
+  edgeMap.forEach((edge) => {
+    if (edge.count !== 1) return
+    if (!adjacency.has(edge.a)) adjacency.set(edge.a, new Set())
+    if (!adjacency.has(edge.b)) adjacency.set(edge.b, new Set())
+    adjacency.get(edge.a).add(edge.b)
+    adjacency.get(edge.b).add(edge.a)
+  })
+
+  const visitedEdges = new Set()
+  const loops = []
+  const edgeKey = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`)
+
+  adjacency.forEach((neighbors, start) => {
+    neighbors.forEach((firstNeighbor) => {
+      const firstKey = edgeKey(start, firstNeighbor)
+      if (visitedEdges.has(firstKey)) return
+
+      const loop = [start]
+      let prev = start
+      let current = firstNeighbor
+      visitedEdges.add(firstKey)
+
+      for (let guard = 0; guard < adjacency.size + 3; guard += 1) {
+        loop.push(current)
+        const next = [...(adjacency.get(current) || [])].find((candidate) => {
+          if (candidate === prev && adjacency.get(current).size > 1) return false
+          return !visitedEdges.has(edgeKey(current, candidate)) || candidate === start
+        })
+        if (next === undefined || next === start) break
+        visitedEdges.add(edgeKey(current, next))
+        prev = current
+        current = next
+      }
+
+      if (loop.length >= 3) loops.push(loop)
+    })
+  })
+
+  return loops
+}
+
 export function applyScale(geometry, scaleFactor) {
   const factor = Number(scaleFactor)
   if (!Number.isFinite(factor) || factor <= 0) {
@@ -206,9 +368,15 @@ function chunkLabel(partNumber, ix, iy, iz) {
 }
 
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
-  const info = validateManifold(mesh.geometry)
+  let splitGeometry = mesh.geometry
+  const info = validateManifold(splitGeometry)
   if (!info.watertight) {
-    throw new Error('Mesh must be watertight for manifold splitting')
+    const repaired = repairMeshGeometry(splitGeometry)
+    const repairedInfo = validateManifold(repaired)
+    if (!repairedInfo.watertight) {
+      throw new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.')
+    }
+    splitGeometry = repaired
   }
 
   const [dx, dy, dz] = gridDivisions.map(Number)
@@ -218,7 +386,7 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   }
 
   const manifold = await getManifoldModule()
-  const manifoldMesh = geometryToManifoldMesh(mesh.geometry, manifold)
+  const manifoldMesh = geometryToManifoldMesh(splitGeometry, manifold)
   const solid = manifold.Manifold.ofMesh(manifoldMesh)
   const status = solid.status()
   if (status !== 'NoError') {
@@ -226,8 +394,8 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
     throw new Error(`Input mesh is not manifold (${status})`)
   }
 
-  mesh.geometry.computeBoundingBox()
-  const bb = mesh.geometry.boundingBox
+  splitGeometry.computeBoundingBox()
+  const bb = splitGeometry.boundingBox
   const meshCenter = new THREE.Vector3().copy(bb.min).add(bb.max).multiplyScalar(0.5)
   const meshSize = new THREE.Vector3().copy(bb.max).sub(bb.min)
   const cellSize = [meshSize.x / dx, meshSize.y / dy, meshSize.z / dz]
@@ -627,14 +795,21 @@ function setFont(pdf, size, style = 'normal', color = BRAND.ink) {
   setRgb(pdf, 'setTextColor', color)
 }
 
-function addHeader(pdf, title, subtitle, appUrl, qrImage) {
+async function addHeader(pdf, title, subtitle, appUrl, qrImage) {
   setRgb(pdf, 'setFillColor', BRAND.black)
   pdf.rect(0, 0, PDF_PAGE.width, 24, 'F')
 
-  setFont(pdf, 11, 'bold', [255, 255, 255])
-  pdf.text('MALIEV', PDF_PAGE.margin, 14)
+  if (canRenderSvgLogo()) {
+    try {
+      await pdf.addSvgAsImage(malievLogoWhiteSvg, PDF_PAGE.margin, 7, 18, 6)
+    } catch {
+      drawLogoFallback(pdf)
+    }
+  } else {
+    drawLogoFallback(pdf)
+  }
   setFont(pdf, 8, 'normal', [229, 231, 235])
-  pdf.text('MeshSplitter', PDF_PAGE.margin + 24, 14)
+  pdf.text('Mesh Splitter', PDF_PAGE.margin + 24, 14)
   pdf.text(appUrl, PDF_PAGE.width - PDF_PAGE.margin, 14, { align: 'right' })
 
   if (qrImage) {
@@ -649,17 +824,29 @@ function addHeader(pdf, title, subtitle, appUrl, qrImage) {
   }
 }
 
+function canRenderSvgLogo() {
+  if (typeof document === 'undefined') return false
+  if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')) return false
+  const canvas = document.createElement('canvas')
+  return typeof canvas.getContext === 'function'
+}
+
+function drawLogoFallback(pdf) {
+  setFont(pdf, 11, 'bold', [255, 255, 255])
+  pdf.text('MALIEV', PDF_PAGE.margin, 14)
+}
+
 function addFooter(pdf, appUrl, pageNumber) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.line(PDF_PAGE.margin, 283, PDF_PAGE.width - PDF_PAGE.margin, 283)
   setFont(pdf, 8, 'normal', BRAND.muted)
-  pdf.text(`Generated by MALIEV MeshSplitter | ${appUrl}`, PDF_PAGE.margin, 289)
+  pdf.text(`Generated by MALIEV Mesh Splitter | ${appUrl}`, PDF_PAGE.margin, 289)
   pdf.text(`Page ${pageNumber}`, PDF_PAGE.width - PDF_PAGE.margin, 289, { align: 'right' })
 }
 
-function addPage(pdf, title, subtitle, appUrl, qrImage, pageNumber) {
+async function addPage(pdf, title, subtitle, appUrl, qrImage, pageNumber) {
   if (pageNumber > 1) pdf.addPage()
-  addHeader(pdf, title, subtitle, appUrl, qrImage)
+  await addHeader(pdf, title, subtitle, appUrl, qrImage)
   addFooter(pdf, appUrl, pageNumber)
 }
 
@@ -790,10 +977,10 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
   }
 
   try {
-    addPage(
+    await addPage(
       pdf,
-      'MeshSplitter Assembly Packet',
-      'Print-ready split mesh package generated locally in your browser by MALIEV MeshSplitter.',
+      'Mesh Splitter Assembly Packet',
+      'Print-ready split mesh package generated locally in your browser by MALIEV Mesh Splitter.',
       appUrl,
       qrImage,
       pageNumber,
@@ -805,11 +992,11 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
     setFont(pdf, 10, 'normal', BRAND.ink)
     pdf.text([
       'Use this packet with the bundled STL files. Print every labeled part, dry fit the assembly,',
-      'then join parts by label and connector location. Scan the QR code for MeshSplitter.',
+      'then join parts by label and connector location. Scan the QR code for Mesh Splitter.',
     ], PDF_PAGE.margin, 224, { maxWidth: 180 })
 
     pageNumber += 1
-    addPage(
+    await addPage(
       pdf,
       'Labeled Part Index',
       'This page shows the full assembly with part labels and the printable part inventory.',
@@ -820,12 +1007,12 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
     addImageFrame(pdf, labeledAssemblyImage, PDF_PAGE.margin, 58, 180, 96, 'Complete assembly with labels')
     addPartsTable(pdf, chunks, 168)
 
-    ordered.forEach((chunk) => {
+    for (const chunk of ordered) {
       pageNumber += 1
       const size = partDimensions(chunk)
       const inContext = renderPartInContext(chunks, chunk.index)
       const isolated = renderPartIsolated(chunk)
-      addPage(
+      await addPage(
         pdf,
         `Part ${chunk.assemblyOrder ?? chunk.index + 1}: ${chunk.label}`,
         'Review the highlighted position before printing and assembling this part.',
@@ -846,11 +1033,11 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
         '2. Confirm connector fit before applying adhesive or permanent fasteners.',
         '3. If orientation matters for surface finish, choose the slicer orientation that protects visible faces.',
       ], PDF_PAGE.margin, 193, { maxWidth: 178 })
-    })
+    }
 
     for (let i = 0; i < ordered.length; i += 2) {
       pageNumber += 1
-      addPage(
+      await addPage(
         pdf,
         'Visual Assembly Guide',
         'Add parts in order. Newly added parts are colored; previously placed parts are grey.',

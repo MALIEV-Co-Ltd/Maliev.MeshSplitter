@@ -918,6 +918,51 @@
     margin: 4px 0 0;
   }
 
+  .login-modal {
+    max-width: min(500px, 92vw);
+    width: min(500px, 92vw);
+  }
+
+  .login-modal__benefits {
+    background: var(--steel-50);
+    border: 1px solid var(--steel-200);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 10px;
+    margin: 16px 0;
+    padding: 14px;
+  }
+
+  .login-modal__benefits div {
+    align-items: flex-start;
+    color: oklch(var(--foreground));
+    display: flex;
+    font-size: 13px;
+    gap: 10px;
+    line-height: 1.4;
+  }
+
+  .login-modal__check {
+    align-items: center;
+    background: var(--signal-100);
+    border: 1px solid var(--signal-300);
+    border-radius: 999px;
+    color: var(--signal-700);
+    display: inline-flex;
+    flex: none;
+    font-size: 11px;
+    font-weight: 800;
+    height: 18px;
+    justify-content: center;
+    width: 18px;
+  }
+
+  .login-modal__actions {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 1fr 1fr;
+  }
+
   /* ============================================================
      PUBLIC LANDING
      ============================================================ */
@@ -1623,6 +1668,10 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .login-modal__actions {
+      grid-template-columns: 1fr;
     }
 
     .lnd-nav {

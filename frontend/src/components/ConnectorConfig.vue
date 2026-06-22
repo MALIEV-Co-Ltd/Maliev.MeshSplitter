@@ -32,7 +32,7 @@
             </span>
           </button>
           <a :href="type.referenceUrl" target="_blank" rel="noreferrer" class="conn-option-link">
-            Reference
+            {{ labels.reference }}
           </a>
         </div>
       </div>
@@ -41,49 +41,49 @@
     <div v-if="connectorType !== 'None'" class="mt-3 space-y-2">
       <div v-if="isDowelConnector" class="conn-params">
         <div class="conn-field">
-          <label>Diameter (mm)</label>
+          <label>{{ labels.diameter }}</label>
           <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="diameter" />
         </div>
         <div class="conn-field">
-          <label>Depth (mm)</label>
+          <label>{{ labels.depth }}</label>
           <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="depth" />
         </div>
       </div>
       <div v-else-if="isMortiseConnector" class="conn-params">
         <div class="conn-field">
-          <label>Tenon width (mm)</label>
+          <label>{{ labels.tenonWidth }}</label>
           <Input type="number" step="0.5" min="1" class="h-8 font-mono text-xs" v-model.number="mortiseWidth" />
         </div>
         <div class="conn-field">
-          <label>Tenon thickness (mm)</label>
+          <label>{{ labels.tenonThickness }}</label>
           <Input type="number" step="0.5" min="0.5" class="h-8 font-mono text-xs" v-model.number="mortiseThickness" />
         </div>
         <div class="conn-field">
-          <label>Insert depth (mm)</label>
+          <label>{{ labels.insertDepth }}</label>
           <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="depth" />
         </div>
       </div>
       <div v-else class="conn-params">
         <div class="conn-field">
-          <label>Key width (mm)</label>
+          <label>{{ labels.keyWidth }}</label>
           <Input type="number" step="0.5" min="1" class="h-8 font-mono text-xs" v-model.number="keyWidth" />
         </div>
         <div class="conn-field">
-          <label>Key thickness (mm)</label>
+          <label>{{ labels.keyThickness }}</label>
           <Input type="number" step="0.5" min="0.5" class="h-8 font-mono text-xs" v-model.number="keyThickness" />
         </div>
         <div class="conn-field">
-          <label>Insert depth (mm)</label>
+          <label>{{ labels.insertDepth }}</label>
           <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="depth" />
         </div>
       </div>
       <div class="conn-params">
         <div class="conn-field">
-          <label>Clearance (mm)</label>
+          <label>{{ labels.clearance }}</label>
           <Input type="number" step="0.05" min="0" class="h-8 font-mono text-xs" v-model.number="clearance" />
         </div>
         <div class="conn-field">
-          <label>Connectors per face</label>
+          <label>{{ labels.perFace }}</label>
           <select v-model.number="perFace"
             class="flex h-8 w-full rounded-sm border border-input bg-background px-2 font-mono text-xs text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
             <option :value="1">1</option>
@@ -103,6 +103,27 @@ import { Input } from '@/components/ui/input'
 
 const props = defineProps({
   modelValue: { type: Object, default: () => ({ type: 'None' }) },
+  labels: {
+    type: Object,
+    default: () => ({
+      reference: 'Reference',
+      diameter: 'Diameter (mm)',
+      depth: 'Depth (mm)',
+      tenonWidth: 'Tenon width (mm)',
+      tenonThickness: 'Tenon thickness (mm)',
+      insertDepth: 'Insert depth (mm)',
+      keyWidth: 'Key width (mm)',
+      keyThickness: 'Key thickness (mm)',
+      clearance: 'Clearance (mm)',
+      perFace: 'Connectors per face',
+      types: {
+        dowel: 'Dowel',
+        mortise: 'Mortise & Tenon',
+        key: 'Key',
+        none: 'None',
+      },
+    }),
+  },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -162,36 +183,36 @@ const NoneVisual = defineComponent({
   ]),
 })
 
-const connectorTypes = [
+const connectorTypes = computed(() => [
   {
     value: 'Dowel',
-    title: 'Dowel',
+    title: props.labels.types?.dowel || 'Dowel',
     visual: DowelVisual,
     referenceUrl: 'https://en.wikipedia.org/wiki/Dowel',
   },
   {
     value: 'Mortise & Tenon',
-    title: 'Mortise & Tenon',
+    title: props.labels.types?.mortise || 'Mortise & Tenon',
     visual: MortiseVisual,
     referenceUrl: 'https://en.wikipedia.org/wiki/Mortise_and_tenon_joint',
   },
   {
     value: 'Key',
-    title: 'Key',
+    title: props.labels.types?.key || 'Key',
     visual: KeyVisual,
     referenceUrl: 'https://en.wikipedia.org/wiki/Key_joint',
   },
   {
     value: 'None',
-    title: 'None',
+    title: props.labels.types?.none || 'None',
     visual: NoneVisual,
     referenceUrl: 'https://en.wikipedia.org/wiki/Fit_%28joining%29',
   },
-]
+])
 
 const connectorType = ref(props.modelValue?.type || 'None')
 const isOpen = ref(false)
-const selectedType = computed(() => connectorTypes.find((type) => type.value === connectorType.value) || connectorTypes.at(-1))
+const selectedType = computed(() => connectorTypes.value.find((type) => type.value === connectorType.value) || connectorTypes.value.at(-1))
 const isDowelConnector = computed(() => connectorType.value === 'Dowel')
 const isMortiseConnector = computed(() => connectorType.value === 'Mortise & Tenon')
 const isKeyConnector = computed(() => connectorType.value === 'Key')
