@@ -9,6 +9,8 @@
     :home-url="storeHomeUrl"
     :launch-url="launchUrl"
     :sign-in-url="signInUrl"
+    :locale="locale"
+    @toggle-locale="toggleLocale"
   />
   <main v-else class="app-shell">
     <header class="app-header">
@@ -18,9 +20,9 @@
       </a>
       <div class="app-status" aria-label="Workflow status">
         <span class="status-chip" :class="{ ok: meshInfo?.is_watertight }">
-          <span class="dot"></span>{{ meshInfo?.is_watertight ? 'Watertight' : 'Awaiting mesh' }}
+          <span class="dot"></span>{{ meshInfo?.is_watertight ? uiCopy.watertight : uiCopy.awaitingMesh }}
         </span>
-        <span class="status-chip">{{ chunks.length || 0 }} parts</span>
+        <span class="status-chip">{{ chunks.length || 0 }} {{ uiCopy.parts }}</span>
         <span class="status-chip credit-chip" :title="creditChipTitle">
           <Loader2Icon v-if="showCreditSpinner" :size="12" :stroke-width="2" class="coin-icon animate-spin" />
           <CoinsIcon v-else :size="12" :stroke-width="1.75" class="coin-icon" />
@@ -28,8 +30,11 @@
         </span>
       </div>
       <div class="header-right">
+        <Button variant="ghost" size="sm" class="language-toggle" @click="toggleLocale">
+          {{ locale === 'th' ? 'EN' : 'ไทย' }}
+        </Button>
         <Button variant="outline" size="sm" @click="showCreditDialog">
-          Buy credits
+          {{ uiCopy.buyCredits }}
         </Button>
       </div>
     </header>
@@ -59,19 +64,19 @@
         </Card>
         <div v-if="meshInfo" class="canvas-inspector" aria-label="Mesh details">
           <div class="canvas-inspector__head">
-            <span>Mesh details</span>
-            <span>{{ meshInfo.is_watertight ? 'Watertight' : 'Check mesh' }}</span>
+            <span>{{ uiCopy.meshDetails }}</span>
+            <span>{{ meshInfo.is_watertight ? uiCopy.watertight : uiCopy.checkMesh }}</span>
           </div>
           <div class="canvas-inspector__grid">
-            <div><span>File</span><strong>{{ meshInfo.filename }}</strong></div>
-            <div><span>Vertices</span><strong>{{ meshInfo.verts?.toLocaleString() }}</strong></div>
-            <div><span>Faces</span><strong>{{ meshInfo.faces?.toLocaleString() }}</strong></div>
-            <div><span>Bounds</span><strong>{{ previewDims }}</strong></div>
-            <div><span>Scale</span><strong>{{ scaleFactor.toFixed(3) }}x</strong></div>
+            <div><span>{{ uiCopy.file }}</span><strong>{{ meshInfo.filename }}</strong></div>
+            <div><span>{{ uiCopy.vertices }}</span><strong>{{ meshInfo.verts?.toLocaleString() }}</strong></div>
+            <div><span>{{ uiCopy.faces }}</span><strong>{{ meshInfo.faces?.toLocaleString() }}</strong></div>
+            <div><span>{{ uiCopy.bounds }}</span><strong>{{ previewDims }}</strong></div>
+            <div><span>{{ uiCopy.scale }}</span><strong>{{ scaleFactor.toFixed(3) }}x</strong></div>
           </div>
         </div>
-        <div class="canvas-label">3D PREVIEW{{ previewDims ? ` · ${previewDims}` : '' }} · SCALE {{ scaleFactor.toFixed(3) }}&times;</div>
-        <div class="canvas-hint">DRAG TO ROTATE &middot; SCROLL TO ZOOM</div>
+        <div class="canvas-label">{{ uiCopy.preview }}{{ previewDims ? ` · ${previewDims}` : '' }} · {{ uiCopy.scale.toUpperCase() }} {{ scaleFactor.toFixed(3) }}&times;</div>
+        <div class="canvas-hint">{{ uiCopy.canvasHint }}</div>
       </section>
 
       <section class="col-right">
@@ -91,10 +96,10 @@
           <div>
             <p class="credit-modal__eyebrow">
               <CoinsIcon :size="13" :stroke-width="1.75" class="coin-icon" />
-              Credits
+              {{ uiCopy.credits }}
             </p>
-            <h2>Get extra credits</h2>
-            <p class="credit-modal__sub">Purchase a pack to split and export more parts.</p>
+            <h2>{{ uiCopy.getCredits }}</h2>
+            <p class="credit-modal__sub">{{ uiCopy.creditSub }}</p>
           </div>
           <button class="credit-modal__close" type="button" aria-label="Close" @click="closeCreditDialog">
             <XIcon :size="16" :stroke-width="1.75" />
@@ -102,7 +107,7 @@
         </header>
 
         <div class="credit-modal__free">
-          <span>Free this month</span>
+          <span>{{ uiCopy.freeThisMonth }}</span>
           <span class="credit-modal__free-val">{{ creditAccount.freeRemaining }} / {{ creditAccount.freeLimit }}</span>
         </div>
 
@@ -117,11 +122,11 @@
             <span class="credit-pack__price">{{ formatPrice(pack.priceCents, pack.currency) }}</span>
           </a>
           <p class="credit-modal__currency-note">
-            Prices in {{ creditPricing.creditPacks[0].currency }} via the MALIEV Shopify store.
+            {{ uiCopy.pricesIn }} {{ creditPricing.creditPacks[0].currency }} {{ uiCopy.viaStore }}
           </p>
         </div>
         <p v-else class="text-sm text-muted-foreground">
-          Credit packs load from the backend when connected to Shopify.
+          {{ uiCopy.creditPacksLoading }}
         </p>
       </div>
     </dialog>
@@ -163,6 +168,7 @@ const currentPath = window.location.pathname.replace(/\/+$/, '')
 const showPublicLanding = currentPath === storefrontBasePath
 const launchUrl = `${storefrontBasePath}/app`
 const storeHomeUrl = shopifyStoreDomain ? `https://${shopifyStoreDomain}/` : 'https://shop.maliev.com/'
+const locale = ref(resolveInitialLocale())
 const signInUrl = computed(() => buildCustomerLoginUrl(currentPath || storefrontBasePath))
 const connectorSuccess = ref('')
 const creditDialog = ref(null)
@@ -173,16 +179,65 @@ const exportSessionId = ref('')
 const exportingPackage = ref(false)
 const scaleInput = ref(1)
 const selectedChunkIndex = ref(null)
+const appTranslations = {
+  en: {
+    buyCredits: 'Buy credits',
+    watertight: 'Watertight',
+    awaitingMesh: 'Awaiting mesh',
+    parts: 'parts',
+    free: 'free',
+    credits: 'credits',
+    meshDetails: 'Mesh details',
+    checkMesh: 'Check mesh',
+    file: 'File',
+    vertices: 'Vertices',
+    faces: 'Faces',
+    bounds: 'Bounds',
+    scale: 'Scale',
+    preview: '3D PREVIEW',
+    canvasHint: 'DRAG TO ROTATE · SCROLL TO ZOOM',
+    getCredits: 'Get extra credits',
+    creditSub: 'Purchase a pack to split and export more parts.',
+    freeThisMonth: 'Free this month',
+    pricesIn: 'Prices in',
+    viaStore: 'via the MALIEV Shopify store.',
+    creditPacksLoading: 'Credit packs load from the backend when connected to Shopify.',
+  },
+  th: {
+    buyCredits: 'ซื้อเครดิต',
+    watertight: 'Watertight',
+    awaitingMesh: 'รอเมช',
+    parts: 'ชิ้น',
+    free: 'ฟรี',
+    credits: 'เครดิต',
+    meshDetails: 'รายละเอียดเมช',
+    checkMesh: 'ตรวจสอบเมช',
+    file: 'ไฟล์',
+    vertices: 'จุดยอด',
+    faces: 'หน้า',
+    bounds: 'ขนาด',
+    scale: 'สเกล',
+    preview: 'พรีวิว 3D',
+    canvasHint: 'ลากเพื่อหมุน · เลื่อนเพื่อซูม',
+    getCredits: 'ซื้อเครดิตเพิ่ม',
+    creditSub: 'ซื้อแพ็กเครดิตเพื่อแยกและส่งออกชิ้นงานเพิ่ม',
+    freeThisMonth: 'ฟรีเดือนนี้',
+    pricesIn: 'ราคาเป็น',
+    viaStore: 'ผ่านร้าน MALIEV Shopify',
+    creditPacksLoading: 'แพ็กเครดิตจะโหลดจาก backend เมื่อเชื่อมต่อ Shopify',
+  },
+}
+const uiCopy = computed(() => appTranslations[locale.value] || appTranslations.en)
 const visibleError = computed(() => error.value || creditError.value || '')
 const showCreditSpinner = computed(() => creditLoading.value && !hasCreditAccount.value)
 const creditChipText = computed(() => {
-  if (showCreditSpinner.value) return 'Credits'
+  if (showCreditSpinner.value) return uiCopy.value.credits
   const freeRemaining = Number(creditAccount.value.freeRemaining ?? creditPricing.value.freeGenerationsPerMonth ?? 0)
   if (hasCreditAccount.value) {
     const paidCredits = Number(creditAccount.value.paidCredits ?? Math.max(0, (creditAccount.value.availableGenerations ?? 0) - freeRemaining))
-    return `${freeRemaining} free · ${paidCredits} credits`
+    return `${freeRemaining} ${uiCopy.value.free} · ${paidCredits} ${uiCopy.value.credits}`
   }
-  return `${freeRemaining} free`
+  return `${freeRemaining} ${uiCopy.value.free}`
 })
 const creditChipTitle = computed(() => {
   if (showCreditSpinner.value) return 'Fetching credit data'
@@ -212,6 +267,18 @@ function buildCustomerLoginUrl(returnPath) {
   loginUrl.searchParams.set('return_to', normalizedReturnPath)
   loginUrl.searchParams.set('return_url', normalizedReturnPath)
   return loginUrl.toString()
+}
+
+function resolveInitialLocale() {
+  const queryLocale = new URLSearchParams(window.location.search).get('lang')
+  const storedLocale = window.localStorage?.getItem('meshSplitterLocale')
+  const browserLocale = navigator.language?.toLowerCase().startsWith('th') ? 'th' : 'en'
+  return ['en', 'th'].includes(queryLocale) ? queryLocale : ['en', 'th'].includes(storedLocale) ? storedLocale : browserLocale
+}
+
+function toggleLocale() {
+  locale.value = locale.value === 'th' ? 'en' : 'th'
+  window.localStorage?.setItem('meshSplitterLocale', locale.value)
 }
 
 function calcAutoDivisions(meshBounds, bv) {

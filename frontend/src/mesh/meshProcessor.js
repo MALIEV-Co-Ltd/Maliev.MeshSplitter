@@ -429,14 +429,27 @@ export async function addConnectorsManifold(chunks, config) {
           continue
         }
 
-        for (let p = 0; p < perFace; p++) {
-          const frac = (p + 1) / (perFace + 1)
-          const offset = new THREE.Vector3()
-          if (perFace > 1) {
-            offset.setComponent(otherAxes[0], (frac - 0.5) * extentA)
-            offset.setComponent(otherAxes[1], (frac - 0.5) * extentB)
-          }
-          const pos = center.clone().add(offset)
+        const faceTolerance = Math.max(bboxTouchTolerance * 20, 1e-3)
+        const connectorRadius = type === 'dowel'
+          ? Math.max(size / 2, 0.1)
+          : Math.max(size2, thickness) / 2
+        const candidates = findSharedCutFaceCandidates(
+          chunks[i].geometry,
+          chunks[j].geometry,
+          axis,
+          center.getComponent(axis),
+          interBox,
+          otherAxes,
+          Math.max(connectorRadius * 1.75, faceTolerance * 4),
+          faceTolerance,
+        )
+
+        if (candidates.length === 0) {
+          continue
+        }
+
+        const positions = distributeConnectorCandidates(candidates, perFace, otherAxes)
+        for (const pos of positions) {
           const peg = orientConnector(shape.makePeg(), axis).translate([pos.x, pos.y, pos.z])
           const socket = orientConnector(shape.makeSocket(), axis).translate([pos.x, pos.y, pos.z])
 
@@ -467,6 +480,74 @@ export async function addConnectorsManifold(chunks, config) {
   } finally {
     solids.forEach((solid) => solid.delete?.())
   }
+}
+
+function findSharedCutFaceCandidates(geometryA, geometryB, axis, plane, interBox, otherAxes, matchDistance, tolerance) {
+  const pointsA = collectCutFaceCentroids(geometryA, axis, plane, interBox, tolerance)
+  const pointsB = collectCutFaceCentroids(geometryB, axis, plane, interBox, tolerance)
+  if (pointsA.length === 0 || pointsB.length === 0) return []
+
+  const maxDistanceSq = matchDistance * matchDistance
+  return pointsA
+    .filter((point) => pointsB.some((other) => distanceOnAxesSq(point, other, otherAxes) <= maxDistanceSq))
+    .sort((a, b) => {
+      const primary = a.getComponent(otherAxes[0]) - b.getComponent(otherAxes[0])
+      if (Math.abs(primary) > tolerance) return primary
+      return a.getComponent(otherAxes[1]) - b.getComponent(otherAxes[1])
+    })
+}
+
+function collectCutFaceCentroids(geometry, axis, plane, interBox, tolerance) {
+  const position = geometry.attributes.position
+  if (!position) return []
+
+  const points = []
+  const vertex = new THREE.Vector3()
+
+  for (let i = 0; i < position.count; i += 1) {
+    vertex.set(position.getX(i), position.getY(i), position.getZ(i))
+    if (Math.abs(vertex.getComponent(axis) - plane) > tolerance) continue
+    if (!interBox.containsPoint(vertex)) continue
+    points.push(vertex.clone())
+  }
+
+  return dedupePoints(points, tolerance)
+}
+
+function dedupePoints(points, tolerance) {
+  const scale = 1 / Math.max(tolerance, 1e-6)
+  const seen = new Set()
+  const unique = []
+  points.forEach((point) => {
+    const key = `${Math.round(point.x * scale)}:${Math.round(point.y * scale)}:${Math.round(point.z * scale)}`
+    if (seen.has(key)) return
+    seen.add(key)
+    unique.push(point)
+  })
+  return unique
+}
+
+function distanceOnAxesSq(a, b, axes) {
+  const da = a.getComponent(axes[0]) - b.getComponent(axes[0])
+  const db = a.getComponent(axes[1]) - b.getComponent(axes[1])
+  return da * da + db * db
+}
+
+function distributeConnectorCandidates(candidates, count, otherAxes) {
+  if (candidates.length <= count) return candidates
+
+  const selected = []
+  const sorted = [...candidates].sort((a, b) => {
+    const primary = a.getComponent(otherAxes[0]) - b.getComponent(otherAxes[0])
+    if (Math.abs(primary) > 1e-6) return primary
+    return a.getComponent(otherAxes[1]) - b.getComponent(otherAxes[1])
+  })
+
+  for (let i = 0; i < count; i += 1) {
+    const index = Math.round(((i + 1) / (count + 1)) * (sorted.length - 1))
+    selected.push(sorted[index])
+  }
+  return selected
 }
 
 function orientConnector(connector, axis) {

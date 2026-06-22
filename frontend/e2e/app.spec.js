@@ -178,6 +178,30 @@ test.describe('public presentation', () => {
     )
     await expect(page.getByRole('link', { name: 'Launch MeshSplitter' }).first()).toHaveAttribute('href', '/tools/mesh-splitter/app')
   })
+
+  test('renders Thai landing copy when requested', async ({ page }) => {
+    await page.goto('/tools/mesh-splitter?lang=th')
+
+    await expect(page.getByText('แยกไฟล์ STL ขนาดใหญ่เป็นชิ้นงานพร้อมพิมพ์และมีป้ายกำกับ')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'เปิด MeshSplitter' }).first()).toBeVisible()
+    await expect(page.locator('#pricing')).toContainText('เริ่มใช้ฟรี แล้วซื้อเครดิตเมื่อจำเป็นต้องส่งออกเพิ่ม')
+    await expect(page.locator('#pricing')).toContainText('คุ้มที่สุด')
+    await expect(page.getByRole('button', { name: 'EN' })).toBeVisible()
+  })
+
+  test('mobile landing header and pricing do not overflow', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/tools/mesh-splitter')
+
+    await expect(page.getByText('Split oversized STL files into print-ready, labeled parts.')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Launch MeshSplitter' }).first()).toBeVisible()
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(1)
+    const headerBox = await page.locator('.lnd-header').boundingBox()
+    expect(headerBox?.width).toBeLessThanOrEqual(390)
+    await page.locator('#pricing').scrollIntoViewIfNeeded()
+    await expect(page.locator('#pricing')).toContainText('Starter Credit Pack')
+  })
 })
 
 test.describe('responsive design', () => {

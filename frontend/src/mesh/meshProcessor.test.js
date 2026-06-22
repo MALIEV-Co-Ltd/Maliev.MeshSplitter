@@ -135,7 +135,63 @@ describe('addConnectorsManifold', () => {
     expect(result[0].volume).toBeCloseTo(expectedLeftVolume, 2)
     expect(result[1].volume).toBeCloseTo(expectedRightVolume, 2)
   })
+
+  it('does not place connectors in bounding-box overlap where no cut surface exists', async () => {
+    const lowerLeft = new THREE.BoxGeometry(20, 20, 20).translate(-10, -40, -40)
+    const upperLeft = new THREE.BoxGeometry(20, 20, 20).translate(-10, 40, 40)
+    const upperRight = new THREE.BoxGeometry(20, 20, 20).translate(10, 40, 40)
+    const offsetRight = new THREE.BoxGeometry(20, 20, 20).translate(30, -40, -40)
+    const left = mergeTestGeometries([lowerLeft, upperLeft])
+    const right = mergeTestGeometries([upperRight, offsetRight])
+    const expectedLeftVolume = computeVolume(left)
+    const expectedRightVolume = computeVolume(right)
+    const chunks = [
+      { index: 0, geometry: left, label: 'P00', volume: expectedLeftVolume },
+      { index: 1, geometry: right, label: 'P01', volume: expectedRightVolume },
+    ]
+
+    const result = await addConnectorsManifold(chunks, { type: 'Dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 1 })
+
+    expect(result).toHaveLength(2)
+    expect(result[0].volume).toBeGreaterThan(expectedLeftVolume)
+    expect(result[1].volume).toBeLessThan(expectedRightVolume)
+    const addedVolume = result[0].volume - expectedLeftVolume
+    expect(addedVolume).toBeLessThan(800)
+    expect(result[0].centroid.y).toBeGreaterThan(0)
+    expect(result[0].centroid.z).toBeGreaterThan(0)
+  })
 })
+
+function mergeTestGeometries(geometries) {
+  const positions = []
+  const indices = []
+  let vertexOffset = 0
+
+  geometries.forEach((geometry) => {
+    const source = geometry.index ? geometry : geometry.toNonIndexed()
+    const position = source.attributes.position
+    for (let i = 0; i < position.count; i += 1) {
+      positions.push(position.getX(i), position.getY(i), position.getZ(i))
+    }
+
+    if (source.index) {
+      for (let i = 0; i < source.index.count; i += 1) {
+        indices.push(source.index.getX(i) + vertexOffset)
+      }
+    } else {
+      for (let i = 0; i < position.count; i += 1) {
+        indices.push(vertexOffset + i)
+      }
+    }
+    vertexOffset += position.count
+  })
+
+  const merged = new THREE.BufferGeometry()
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  merged.setIndex(indices)
+  merged.computeVertexNormals()
+  return merged
+}
 
 describe('export validation', () => {
   it('rejects non-manifold chunks before STL export', async () => {
