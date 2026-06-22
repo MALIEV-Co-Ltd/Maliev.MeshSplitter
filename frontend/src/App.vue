@@ -41,7 +41,11 @@
           </CardContent>
         </Card>
         <PartList :chunks="chunks" @select="onSelectChunk" />
-        <ExportPanel :has-chunks="chunks.length > 0" :loading="loading" @export-stl="downloadStl" @export-pdf="downloadPdf" />
+        <ExportPanel
+          :has-chunks="chunks.length > 0"
+          :loading="loading"
+          @export-package="onExportPackage"
+        />
       </div>
     </div>
     </div>
@@ -67,7 +71,7 @@ import PublicLanding from './components/PublicLanding.vue'
 
 const {
   meshInfo, meshGeometry, chunks, loading, error, scaleFactor, buildVolume,
-  loadStl, setScaleFactor, split, applyConnectors, downloadStl, downloadPdf, clearMesh,
+  loadStl, setScaleFactor, split, applyConnectors, downloadExportPackage,
 } = useMeshProcessor()
 
 const credits = useCredits()
@@ -83,6 +87,7 @@ const connectorSuccess = ref('')
 const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
+const exportSessionId = ref('')
 const scaleInput = ref(1)
 const visibleError = computed(() => error.value || creditError.value || '')
 
@@ -131,15 +136,13 @@ async function onSplit(volume, gridDivisions) {
   connectorSuccess.value = ''
   splitAuthorizing.value = true
   try {
-    await credits.consumeGeneration({
-      idempotencyKey: createGenerationKey(gridDivisions),
-      metadata: {
-        filename: meshInfo.value?.filename,
-        divisions: gridDivisions,
-        buildVolume: volume,
-      },
-    })
     await split(volume, gridDivisions)
+    exportSessionId.value = createExportSessionId({
+      filename: meshInfo.value?.filename,
+      divisions: gridDivisions,
+      buildVolume: volume,
+      chunkCount: chunks.value.length,
+    })
   } catch {
     // error set by composable
   } finally {
@@ -159,8 +162,39 @@ function onSelectChunk(index) {
   // future: highlight chunk in preview
 }
 
-function createGenerationKey(gridDivisions) {
+async function exportAfterCredit(format, downloadFn) {
+  if (!chunks.value.length) return
+  await credits.consumeExport({
+    idempotencyKey: createExportKey(format),
+    metadata: {
+      filename: meshInfo.value?.filename,
+      format,
+      divisions: divisions.value,
+      buildVolume: buildVolume.value,
+      chunkCount: chunks.value.length,
+    },
+  })
+  await downloadFn()
+}
+
+function createExportKey(format) {
+  if (!exportSessionId.value) {
+    exportSessionId.value = createExportSessionId({
+      filename: meshInfo.value?.filename,
+      divisions: divisions.value,
+      buildVolume: buildVolume.value,
+      chunkCount: chunks.value.length,
+    })
+  }
+  return `${format}:${exportSessionId.value}`
+}
+
+function onExportPackage() {
+  return exportAfterCredit('package', downloadExportPackage)
+}
+
+function createExportSessionId({ filename, divisions, buildVolume, chunkCount }) {
   const random = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
-  return `split:${meshInfo.value?.filename || 'mesh'}:${gridDivisions.join('x')}:${random}`
+  return `session:${filename || 'mesh'}:${buildVolume.join('x')}:${divisions.join('x')}:${chunkCount}:${random}`
 }
 </script>

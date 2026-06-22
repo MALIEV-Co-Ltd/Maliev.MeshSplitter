@@ -2,7 +2,7 @@ import { FREE_GENERATIONS_PER_MONTH } from './pricing.js'
 
 export class InsufficientCreditsError extends Error {
   constructor(account) {
-    super('No free generations or paid credits remain')
+    super('No free exports or paid credits remain')
     this.name = 'InsufficientCreditsError'
     this.statusCode = 402
     this.account = account
@@ -50,6 +50,10 @@ export class CreditLedger {
   }
 
   async consumeGeneration(customerId, { idempotencyKey, metadata = {} }) {
+    return this.consumeExport(customerId, { idempotencyKey, metadata })
+  }
+
+  async consumeExport(customerId, { idempotencyKey, metadata = {} }) {
     if (!idempotencyKey) throw new Error('idempotencyKey is required')
 
     const existing = await this.store.getTransaction(idempotencyKey)
@@ -75,7 +79,7 @@ export class CreditLedger {
     const transaction = {
       idempotencyKey,
       customerId: normalizedCustomerId,
-      type: 'generation',
+      type: 'export',
       source,
       metadata,
       createdAt: this.now().toISOString(),

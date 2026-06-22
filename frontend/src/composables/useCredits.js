@@ -53,7 +53,7 @@ export function useCredits(options = {}) {
     }
   }
 
-  async function consumeGeneration({ idempotencyKey, metadata = {} }) {
+  async function consumeExport({ idempotencyKey, metadata = {} }) {
     if (!apiBaseUrl) {
       if (enforcement === 'required') {
         throw new Error('Credit authorization is unavailable')
@@ -64,7 +64,7 @@ export function useCredits(options = {}) {
     loading.value = true
     error.value = null
     try {
-      const response = await request(`${apiBaseUrl}/generations`, {
+      const response = await request(`${apiBaseUrl}/exports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idempotencyKey, metadata }),
@@ -79,6 +79,10 @@ export function useCredits(options = {}) {
     }
   }
 
+  async function consumeGeneration({ idempotencyKey, metadata = {} }) {
+    return consumeExport({ idempotencyKey, metadata })
+  }
+
   return {
     account: readonly(account),
     pricing: readonly(pricing),
@@ -86,6 +90,7 @@ export function useCredits(options = {}) {
     error: readonly(error),
     refresh,
     refreshPricing,
+    consumeExport,
     consumeGeneration,
   }
 }

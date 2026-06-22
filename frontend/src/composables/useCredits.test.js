@@ -38,20 +38,20 @@ describe('useCredits', () => {
     expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-30')
   })
 
-  it('posts generation consumption with a stable idempotency key', async () => {
+  it('posts export consumption with a stable idempotency key', async () => {
     fetch.mockResolvedValueOnce(jsonResponse({
       transaction: { source: 'free_monthly' },
       account: { freeRemaining: 2, paidCredits: 0, availableGenerations: 2 },
     }))
 
     const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
-    const result = await credits.consumeGeneration({
+    const result = await credits.consumeExport({
       idempotencyKey: 'mesh:test.stl:2x2x1',
       metadata: { filename: 'test.stl' },
     })
 
     expect(result.source).toBe('free_monthly')
-    expect(fetch).toHaveBeenCalledWith('/api/generations', expect.objectContaining({
+    expect(fetch).toHaveBeenCalledWith('/api/exports', expect.objectContaining({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -67,7 +67,7 @@ describe('useCredits', () => {
 
     const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
 
-    await expect(credits.consumeGeneration({
+    await expect(credits.consumeExport({
       idempotencyKey: 'mesh:test.stl:1x1x1',
     })).rejects.toThrow('Credit authorization is unavailable')
   })
@@ -75,7 +75,7 @@ describe('useCredits', () => {
   it('allows demo mode without an API for local testing', async () => {
     const credits = useCredits({ apiBaseUrl: '', enforcement: 'demo' })
 
-    await expect(credits.consumeGeneration({
+    await expect(credits.consumeExport({
       idempotencyKey: 'mesh:test.stl:1x1x1',
     })).resolves.toMatchObject({ source: 'local_demo' })
   })

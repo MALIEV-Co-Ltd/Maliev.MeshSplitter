@@ -1,10 +1,7 @@
 <template>
   <div class="flex gap-3">
-    <Button class="flex-1" :disabled="!hasChunks || loading" @click="$emit('export-stl')">
-      Download STLs (ZIP)
-    </Button>
-    <Button class="flex-1" variant="secondary" :disabled="!hasChunks || loading" @click="$emit('export-pdf')">
-      Assembly PDF
+    <Button class="flex-1" :disabled="!hasChunks || loading" @click="$emit('export-package')">
+      Download package (STL + PDF ZIP)
     </Button>
   </div>
 </template>
@@ -16,5 +13,5 @@ defineProps({
   hasChunks: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
 })
-defineEmits(['export-stl', 'export-pdf'])
+defineEmits(['export-package'])
 </script>

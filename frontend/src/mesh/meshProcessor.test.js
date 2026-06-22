@@ -5,6 +5,7 @@ import {
   applyScale,
   computeVolume,
   exportStl,
+  exportPackage,
   splitMeshManifold,
   validateExportChunks,
   validateManifold,
@@ -89,5 +90,17 @@ describe('export validation', () => {
 
     expect(() => validateExportChunks([badChunk])).toThrow('not manifold')
     await expect(exportStl([badChunk])).rejects.toThrow('not manifold')
+  })
+
+  it('exports STL + PDF in a single ZIP package', async () => {
+    const chunks = await splitMeshManifold(new THREE.Mesh(new THREE.BoxGeometry(20, 20, 20)), [20, 20, 20], [2, 1, 1])
+    const packageBlob = await exportPackage(chunks, [20, 20, 20])
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(packageBlob)
+    const files = Object.keys(zip.files)
+
+    expect(files.some((f) => f.endsWith('.pdf'))).toBe(true)
+    expect(files.some((f) => f.endsWith('.stl'))).toBe(true)
+    expect(files.some((f) => f.includes('mesh-splitter-assembly.pdf'))).toBe(true)
   })
 })

@@ -88,12 +88,19 @@ async function route(context) {
     return sendJson(response, 200, { account })
   }
 
-  if (request.method === 'POST' && url.pathname === '/api/generations') {
+  if (
+    request.method === 'POST'
+    && (url.pathname === '/api/exports' || url.pathname === '/api/generations')
+  ) {
     const identity = resolveIdentity(context, url)
     const body = await readJson(request)
-    const transaction = await ledger.consumeGeneration(identity.customerId, {
+    const requestType = url.pathname === '/api/exports' ? 'export' : 'generation'
+    const transaction = await ledger.consumeExport(identity.customerId, {
       idempotencyKey: body.idempotencyKey,
-      metadata: body.metadata || {},
+      metadata: {
+        ...(body.metadata || {}),
+        requestType,
+      },
     })
     return sendJson(response, 201, { transaction, account: transaction.account })
   }

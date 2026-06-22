@@ -167,8 +167,8 @@ describe('HTTP API', () => {
     }
   })
 
-  it('consumes one generation through the API', async () => {
-    const response = await fetch(`${baseUrl}/api/generations`, {
+  it('consumes one export through the API', async () => {
+    const response = await fetch(`${baseUrl}/api/exports`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

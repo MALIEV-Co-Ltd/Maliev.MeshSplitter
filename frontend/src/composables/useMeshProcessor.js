@@ -3,8 +3,7 @@ import * as THREE from 'three'
 import {
   addConnectorsManifold,
   applyScale,
-  exportPdf,
-  exportStl,
+  exportPackage,
   splitMeshManifold,
   validateManifold,
 } from '../mesh/meshProcessor'
@@ -119,37 +118,18 @@ export function useMeshProcessor() {
     }
   }
 
-  async function downloadStl() {
+  async function downloadExportPackage() {
     loading.value = true
     error.value = null
     try {
-      const blob = await exportStl(chunks.value)
+      const blob = await exportPackage(chunks.value, buildVolume.value)
       const url = URL.createObjectURL(blob)
+      const filename = meshInfo.value?.filename
+        ? meshInfo.value.filename.replace(/\.stl$/i, '')
+        : 'mesh-split'
       const a = document.createElement('a')
       a.href = url
-      a.download = 'mesh-split-parts.zip'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch (e) {
-      error.value = e.message
-      throw e
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function downloadPdf() {
-    loading.value = true
-    error.value = null
-    try {
-      const data = await exportPdf(chunks.value, buildVolume.value)
-      const blob = new Blob([data], { type: 'application/pdf' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'mesh-split-assembly.pdf'
+      a.download = `${filename}-mesh-splitter-package.zip`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -184,8 +164,9 @@ export function useMeshProcessor() {
     setScaleFactor,
     split,
     applyConnectors,
-    downloadStl,
-    downloadPdf,
+    downloadExportPackage,
+    downloadStl: downloadExportPackage,
+    downloadPdf: downloadExportPackage,
     clearMesh,
   }
 }

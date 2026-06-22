@@ -15,8 +15,7 @@ test.describe('Mesh Split Application', () => {
     await expect(page.getByText('Drag & drop an STL file or click to browse')).toBeVisible()
     await expect(page.getByText('Parts (0)')).toBeVisible()
     await expect(page.getByText('No parts yet. Upload and split a mesh.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Download STLs (ZIP)' })).toBeDisabled()
-    await expect(page.getByRole('button', { name: 'Assembly PDF' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeDisabled()
   })
 
   test('upload STL file and display metadata', async ({ page }) => {
@@ -80,8 +79,7 @@ test.describe('Mesh Split Application', () => {
 
     await expect(page.getByText('Parts (1)')).toBeVisible({ timeout: 15000 })
     await expect(page.getByText('P01-X0Y0Z0').first()).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Download STLs (ZIP)' })).toBeEnabled()
-    await expect(page.getByRole('button', { name: 'Assembly PDF' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeEnabled()
   })
 
   test('split mesh with custom divisions produces 4 parts', async ({ page }) => {
@@ -120,10 +118,10 @@ test.describe('Mesh Split Application', () => {
     await page.getByText('Dowel').click()
     await page.getByRole('button', { name: 'Apply' }).last().click()
     await expect(page.getByText('Connectors applied')).toBeVisible({ timeout: 15000 })
-    await expect(page.getByRole('button', { name: 'Download STLs (ZIP)' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeEnabled()
   })
 
-  test('download STL zip after split', async ({ page }) => {
+  test('download package zip after split', async ({ page }) => {
     const fc = page.waitForEvent('filechooser')
     await page.getByText('Drag & drop an STL file or click to browse').click()
     await (await fc).setFiles(TEST_STL)
@@ -133,24 +131,9 @@ test.describe('Mesh Split Application', () => {
     await expect(page.getByText('Parts (1)')).toBeVisible({ timeout: 15000 })
 
     const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'Download STLs (ZIP)' }).click()
+    await page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' }).click()
     const download = await downloadPromise
     expect(download.suggestedFilename()).toContain('.zip')
-  })
-
-  test('download assembly PDF after split', async ({ page }) => {
-    const fc = page.waitForEvent('filechooser')
-    await page.getByText('Drag & drop an STL file or click to browse').click()
-    await (await fc).setFiles(TEST_STL)
-    await page.waitForTimeout(2000)
-
-    await page.getByRole('button', { name: 'Split' }).click()
-    await expect(page.getByText('Parts (1)')).toBeVisible({ timeout: 15000 })
-
-    const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'Assembly PDF' }).click()
-    const download = await downloadPromise
-    expect(download.suggestedFilename()).toContain('.pdf')
   })
 
   test('swap STL file clears previous results', async ({ page }) => {
@@ -174,7 +157,7 @@ test.describe('Mesh Split Application', () => {
 
     await expect(page.getByText('Parts (0)')).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('No parts yet. Upload and split a mesh.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Download STLs (ZIP)' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeDisabled()
   })
 
 })
@@ -184,7 +167,7 @@ test.describe('public presentation', () => {
     await page.goto('/tools/mesh-splitter')
 
     await expect(page.getByText('Split oversized STL files into print-ready, labeled parts.')).toBeVisible()
-    await expect(page.getByText('free generations monthly')).toBeVisible()
+    await expect(page.getByText('free exports monthly')).toBeVisible()
     await expect(page.getByText('Upload STL')).toBeVisible()
     await expect(page.getByRole('link', { name: 'Launch MeshSplitter' }).first()).toHaveAttribute('href', '/tools/mesh-splitter/app')
   })

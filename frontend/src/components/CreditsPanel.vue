@@ -1,14 +1,14 @@
 <template>
   <Card>
     <CardHeader>
-      <h3 class="text-lg font-semibold">Generation Credits</h3>
+      <h3 class="text-lg font-semibold">Export Credits</h3>
       <p class="text-sm text-muted-foreground">
         {{ account.freeRemaining }} free this month · {{ account.paidCredits }} paid credits
       </p>
     </CardHeader>
     <CardContent class="space-y-3">
       <div class="rounded-md border p-3">
-        <div class="text-sm font-medium">Available generations</div>
+        <div class="text-sm font-medium">Available exports</div>
         <div class="text-3xl font-semibold">{{ account.availableGenerations }}</div>
       </div>
       <p v-if="error" class="text-sm text-destructive">{{ error }}</p>

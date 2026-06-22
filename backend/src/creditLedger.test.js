@@ -12,24 +12,24 @@ describe('CreditLedger', () => {
     })
   })
 
-  it('allows exactly three free generations per customer each month', async () => {
-    await ledger.consumeGeneration('customer-1', { idempotencyKey: 'gen-1' })
-    await ledger.consumeGeneration('customer-1', { idempotencyKey: 'gen-2' })
-    const third = await ledger.consumeGeneration('customer-1', { idempotencyKey: 'gen-3' })
+  it('allows exactly three free exports per customer each month', async () => {
+    await ledger.consumeExport('customer-1', { idempotencyKey: 'gen-1' })
+    await ledger.consumeExport('customer-1', { idempotencyKey: 'gen-2' })
+    const third = await ledger.consumeExport('customer-1', { idempotencyKey: 'gen-3' })
 
     expect(third.source).toBe('free_monthly')
     await expect(
-      ledger.consumeGeneration('customer-1', { idempotencyKey: 'gen-4' })
+      ledger.consumeExport('customer-1', { idempotencyKey: 'gen-4' })
     ).rejects.toBeInstanceOf(InsufficientCreditsError)
   })
 
   it('uses paid credits after the monthly allowance is exhausted', async () => {
     await ledger.addCredits('customer-1', 2, { source: 'manual-test', idempotencyKey: 'grant-1' })
 
-    await ledger.consumeGeneration('customer-1', { idempotencyKey: 'gen-1' })
-    await ledger.consumeGeneration('customer-1', { idempotencyKey: 'gen-2' })
-    await ledger.consumeGeneration('customer-1', { idempotencyKey: 'gen-3' })
-    const fourth = await ledger.consumeGeneration('customer-1', { idempotencyKey: 'gen-4' })
+    await ledger.consumeExport('customer-1', { idempotencyKey: 'gen-1' })
+    await ledger.consumeExport('customer-1', { idempotencyKey: 'gen-2' })
+    await ledger.consumeExport('customer-1', { idempotencyKey: 'gen-3' })
+    const fourth = await ledger.consumeExport('customer-1', { idempotencyKey: 'gen-4' })
 
     expect(fourth.source).toBe('paid_credit')
     await expect(ledger.getAccount('customer-1')).resolves.toMatchObject({
@@ -38,9 +38,9 @@ describe('CreditLedger', () => {
     })
   })
 
-  it('is idempotent for repeated generation requests', async () => {
-    const first = await ledger.consumeGeneration('customer-1', { idempotencyKey: 'same-request' })
-    const second = await ledger.consumeGeneration('customer-1', { idempotencyKey: 'same-request' })
+  it('is idempotent for repeated export requests', async () => {
+    const first = await ledger.consumeExport('customer-1', { idempotencyKey: 'same-request' })
+    const second = await ledger.consumeExport('customer-1', { idempotencyKey: 'same-request' })
 
     expect(second).toEqual(first)
     await expect(ledger.getAccount('customer-1')).resolves.toMatchObject({

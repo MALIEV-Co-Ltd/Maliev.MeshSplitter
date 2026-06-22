@@ -16,7 +16,7 @@
         <dl class="landing-proof">
           <div>
             <dt>3</dt>
-            <dd>free generations monthly</dd>
+            <dd>free exports monthly</dd>
           </div>
           <div>
             <dt>100%</dt>
@@ -82,13 +82,13 @@
     <section id="pricing" class="landing-band pricing-band" aria-label="Pricing">
       <div class="section-heading">
         <p>Pricing</p>
-        <h2>Start free, then buy generation credits only when needed.</h2>
+        <h2>Start free, then buy export credits only when needed.</h2>
       </div>
       <div class="pricing-grid">
         <article class="free-plan">
           <p class="plan-eyebrow">Included</p>
-          <h3>3 free generations</h3>
-          <p>Every logged-in customer gets three free generations each month.</p>
+          <h3>3 free exports</h3>
+          <p>Every logged-in customer gets three free exports each month.</p>
         </article>
         <a v-for="pack in pricing.creditPacks" :key="pack.sku" class="price-plan" :href="productUrl(pack)">
           <p class="plan-eyebrow">{{ pack.name }}</p>
@@ -102,7 +102,7 @@
     <section class="landing-cta">
       <div>
         <p class="landing-kicker">Ready to test a real model?</p>
-        <h2>Sign in, use the free monthly generations, and verify the output.</h2>
+        <h2>Sign in, use the free monthly exports, and verify the output.</h2>
       </div>
       <a class="landing-primary" :href="launchUrl">Launch MeshSplitter</a>
     </section>

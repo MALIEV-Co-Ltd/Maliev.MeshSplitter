@@ -395,7 +395,7 @@ export function validateExportChunks(chunks) {
   return true
 }
 
-export async function exportStl(chunks) {
+async function createStlZip(chunks) {
   validateExportChunks(chunks)
   const { STLExporter } = await import('three/addons/exporters/STLExporter.js')
   const exporter = new STLExporter()
@@ -407,7 +407,18 @@ export async function exportStl(chunks) {
     const stlString = exporter.parse(mesh, { binary: false })
     zip.file(`part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`, stlString)
   })
+  return zip
+}
 
+export async function exportStl(chunks) {
+  const zip = await createStlZip(chunks)
+  return zip.generateAsync({ type: 'blob' })
+}
+
+export async function exportPackage(chunks, buildVolume) {
+  const zip = await createStlZip(chunks)
+  const pdfData = await exportPdf(chunks, buildVolume)
+  zip.file('mesh-splitter-assembly.pdf', pdfData)
   return zip.generateAsync({ type: 'blob' })
 }
 
