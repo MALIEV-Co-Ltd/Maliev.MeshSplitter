@@ -137,13 +137,6 @@ async function route(context) {
     }
     if (query.signature) {
       verifyAppProxySignature(query, context.shopifyAppProxySecret)
-      if (!query.logged_in_customer_id && isProtectedAppPath(url.pathname, query.path_prefix)) {
-        response.writeHead(302, {
-          Location: buildLoginUrl(context.customerLoginUrl, url.pathname, query),
-        })
-        response.end()
-        return
-      }
       if (query.logged_in_customer_id) {
         const identity = verifyAppProxyIdentity(query, context.shopifyAppProxySecret)
         const session = createSignedSession(identity, context.sessionSecret)
@@ -154,52 +147,6 @@ async function route(context) {
   }
 
   return sendJson(response, 404, { error: 'Not found' })
-}
-
-function isProtectedAppPath(pathname, pathPrefix) {
-  if (!pathname || pathname === '/') return false
-  const normalizedPath = normalizePath(pathname)
-  if (normalizedPath === '/app' || normalizedPath.startsWith('/app/')) return true
-
-  const normalizedPrefix = normalizePathPrefix(pathPrefix)
-  if (!normalizedPrefix) return false
-  return (
-    normalizedPath === `${normalizedPrefix}/app`
-    || normalizedPath.startsWith(`${normalizedPrefix}/app/`)
-  )
-}
-
-function buildLoginUrl(customerLoginUrl, pathname, query) {
-  const loginUrl = new URL(customerLoginUrl)
-  const returnPath = resolveLoginReturnPath(pathname, query?.path_prefix)
-  loginUrl.searchParams.set('return_url', returnPath)
-  loginUrl.searchParams.set('return_to', returnPath)
-  return loginUrl.toString()
-}
-
-function resolveLoginReturnPath(pathname, pathPrefix) {
-  const normalizedPath = normalizePath(pathname)
-  const normalizedPrefix = normalizePathPrefix(pathPrefix)
-  if (normalizedPath.startsWith('/app') && !normalizedPrefix) return normalizedPath
-  if (normalizedPath.startsWith('/app') && normalizedPrefix) return `${normalizedPrefix}${normalizedPath}`
-  if (normalizedPrefix && (normalizedPath === `${normalizedPrefix}/app` || normalizedPath.startsWith(`${normalizedPrefix}/app/`))) {
-    return normalizedPath
-  }
-  return normalizedPrefix ? `${normalizedPrefix}/app` : '/app'
-}
-
-function normalizePathPrefix(pathPrefix) {
-  if (!pathPrefix || typeof pathPrefix !== 'string') return ''
-  const trimmed = pathPrefix.trim()
-  if (!trimmed || trimmed === '/') return ''
-  return normalizePath(trimmed)
-}
-
-function normalizePath(value) {
-  if (!value || typeof value !== 'string') return '/'
-  const trimmed = value.trim()
-  if (!trimmed) return '/'
-  return trimmed.startsWith('/') ? trimmed.replace(/\/+$/, '') : `/${trimmed.replace(/\/+$/, '')}`
 }
 
 function startShopifyOAuth({ request, response, shopifyApiKey, shopifyApiSecret, shopifyScopes, appUrl, sessionSecret }, url) {

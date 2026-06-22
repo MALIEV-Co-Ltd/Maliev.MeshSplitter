@@ -86,7 +86,7 @@ describe('HTTP API', () => {
     expect(response.headers.get('location')).toBeNull()
   })
 
-  it('redirects anonymous app launches to Shopify login', async () => {
+  it('serves the app for anonymous app-proxy visitors so they can test before export', async () => {
     const query = {
       shop: 'example.myshopify.com',
       path_prefix: '/tools/mesh-splitter',
@@ -97,11 +97,11 @@ describe('HTTP API', () => {
       redirect: 'manual',
     })
 
-    expect(response.status).toBe(302)
-    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp&return_to=%2Ftools%2Fmesh-splitter%2Fapp')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('location')).toBeNull()
   })
 
-  it('retains redirect return path for prefixed mesh splitter app route', async () => {
+  it('serves the prefixed mesh splitter app route for anonymous visitors', async () => {
     const query = {
       shop: 'example.myshopify.com',
       path_prefix: '/tools/mesh-splitter',
@@ -112,8 +112,8 @@ describe('HTTP API', () => {
       redirect: 'manual',
     })
 
-    expect(response.status).toBe(302)
-    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp&return_to=%2Ftools%2Fmesh-splitter%2Fapp')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('location')).toBeNull()
   })
 
   it('starts Shopify OAuth installation', async () => {
