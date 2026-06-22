@@ -15,6 +15,8 @@ The production package is Docker-ready. The repository includes:
 
 - `Dockerfile` for a single web service that serves the built frontend and the
   credit/session/webhook backend.
+- `.github/workflows/publish-container.yml` for publishing the production
+  container to GitHub Container Registry.
 - `render.yaml` for a Render Blueprint with one Docker web service and one
   Postgres database.
 - `shopify.app.example.toml` for the Shopify app proxy and paid-order webhook
@@ -29,6 +31,14 @@ https://maliev-mesh-splitter.onrender.com
 
 If Render assigns a different URL, replace that URL in the Shopify app config
 before validation/deploy.
+
+The published container image is:
+
+```text
+ghcr.io/maliev-co-ltd/maliev.meshsplitter:main
+```
+
+Commit-specific images are also tagged as `sha-<short-sha>`.
 
 ## Recommended commercial architecture
 
@@ -69,6 +79,12 @@ Set the unsynced secret values in Render before the first production deploy:
 
 Render supplies `DATABASE_URL` from `maliev-mesh-splitter-db` and generates
 `SESSION_SECRET` automatically.
+
+If Render is connected to GHCR instead of the GitHub repository, deploy:
+
+```text
+ghcr.io/maliev-co-ltd/maliev.meshsplitter:main
+```
 
 After deployment, verify:
 
