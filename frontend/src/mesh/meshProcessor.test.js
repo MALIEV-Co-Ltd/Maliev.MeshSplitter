@@ -79,6 +79,28 @@ describe('addConnectorsManifold', () => {
     expect(() => validateExportChunks(result)).not.toThrow()
   })
 
+  it('creates different geometry for mortise & tenon connectors', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+
+    const dowel = await addConnectorsManifold(chunks, { type: 'Dowel', diameter: 6, depth: 8, clearance: 0.2, perFace: 1 })
+    const mortise = await addConnectorsManifold(chunks, { type: 'Mortise & Tenon', tenonWidth: 6, tenonThickness: 4, depth: 8, clearance: 0.2, perFace: 1 })
+
+    expect(dowel[0].geometry.attributes.position.count).not.toEqual(mortise[0].geometry.attributes.position.count)
+    expect(dowel[1].geometry.attributes.position.count).not.toEqual(mortise[1].geometry.attributes.position.count)
+  })
+
+  it('creates different geometry for key connectors', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+
+    const dowel = await addConnectorsManifold(chunks, { type: 'Dowel', diameter: 6, depth: 8, clearance: 0.2, perFace: 1 })
+    const key = await addConnectorsManifold(chunks, { type: 'Key', keyWidth: 6, keyHeight: 3.5, depth: 8, clearance: 0.2, perFace: 1 })
+
+    expect(dowel[0].geometry.attributes.position.count).not.toEqual(key[0].geometry.attributes.position.count)
+    expect(dowel[1].geometry.attributes.position.count).not.toEqual(key[1].geometry.attributes.position.count)
+  })
+
   it('does not create duplicate connectors when applying the same config to the same split', async () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
     const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])

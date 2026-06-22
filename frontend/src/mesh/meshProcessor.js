@@ -290,22 +290,83 @@ function computeCentroid(geometry) {
   return centroid
 }
 
+function toPositive(value, fallback) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return fallback
+  return num
+}
+
+function resolveConnectorType(type) {
+  const normalized = String(type || 'none').toLowerCase().trim()
+  if (normalized === 'none') return 'none'
+  if (normalized.includes('mortise')) return 'mortise-and-tenon'
+  if (normalized === 'key') return 'key'
+  if (normalized.includes('dowel')) return 'dowel'
+  return 'dowel'
+}
+
+function clampConnectorSpacing(value, min = 0.1) {
+  return value < min ? min : value
+}
+
+function createConnectorShape(manifold, type, { size, thickness, depth, clearance }) {
+  if (type === 'dowel') {
+    const radius = clampConnectorSpacing(size / 2, 0.1)
+    const socketRadius = clampConnectorSpacing(radius + (clearance || 0), 0.1)
+    return {
+      makePeg: () => manifold.Manifold.cylinder(depth * 2, radius, radius, 24, true),
+      makeSocket: () => manifold.Manifold.cylinder(depth * 2, socketRadius, socketRadius, 24, true),
+    }
+  }
+
+  if (type === 'mortise-and-tenon') {
+    const width = clampConnectorSpacing(size, 1.5)
+    const keyHeight = clampConnectorSpacing(thickness, 1.5)
+    return {
+      makePeg: () => manifold.Manifold.cube([width, keyHeight, depth * 2], true),
+      makeSocket: () => manifold.Manifold.cube(
+        [width + (clearance || 0) * 2, keyHeight + (clearance || 0) * 2, depth * 2 + (clearance || 0) * 2],
+        true,
+      ),
+    }
+  }
+
+  const keyWidth = clampConnectorSpacing(size, 1.5)
+  const keyHeight = clampConnectorSpacing(thickness, 1.0)
+  return {
+    makePeg: () => manifold.Manifold.cube([keyWidth * 1.25, keyHeight, depth * 2], true),
+    makeSocket: () => {
+      return manifold.Manifold.cube(
+        [keyWidth + (clearance || 0) * 2, keyHeight + (clearance || 0) * 2, depth * 2 + (clearance || 0) * 2],
+        true,
+      )
+    },
+  }
+}
+
 export async function addConnectorsManifold(chunks, config) {
-  const type = (config.type || 'None').toLowerCase()
+  const type = resolveConnectorType(config.type)
   if (type === 'none') return chunks
   if (chunks.length < 2) return chunks
 
   const manifold = await getManifoldModule()
-  const radius = Number(config.diameter || 6) / 2
-  const clearance = Number(config.clearance || 0.1)
   const depth = Number(config.depth || 10)
   const perFace = Math.max(1, Number(config.perFace || 1))
-  if (!Number.isFinite(radius) || radius <= 0) {
-    throw new Error('Connector diameter must be greater than zero')
-  }
   if (!Number.isFinite(depth) || depth <= 0) {
     throw new Error('Connector depth must be greater than zero')
   }
+
+  const clearance = Number(config.clearance || 0.1)
+  const size = toPositive(config.diameter, 6)
+  const size2 = toPositive(config.tenonWidth ?? config.keyWidth ?? config.width, size)
+  const thickness = toPositive(config.tenonThickness ?? config.keyHeight ?? config.thickness, type === 'key' ? Math.max(1.5, size * 0.55) : Math.max(1.5, size * 0.45))
+  const shape = createConnectorShape(manifold, type, {
+    size: type === 'dowel' ? size : size2,
+    thickness,
+    depth,
+    clearance,
+  })
+
   if (!Number.isFinite(clearance) || clearance < 0) {
     throw new Error('Connector clearance cannot be negative')
   }
@@ -328,14 +389,14 @@ export async function addConnectorsManifold(chunks, config) {
 
   try {
     for (let i = 0; i < chunks.length; i++) {
-      for (let j = i + 1; j < chunks.length; j++) {
-        const bbA = bboxes[i]
-        const bbB = bboxes[j]
-        if (!bbA.intersectsBox(bbB)) continue
+    for (let j = i + 1; j < chunks.length; j++) {
+      const bbA = bboxes[i]
+      const bbB = bboxes[j]
+      if (!bbA.intersectsBox(bbB)) continue
 
-        const interMin = new THREE.Vector3(
-          Math.max(bbA.min.x, bbB.min.x),
-          Math.max(bbA.min.y, bbB.min.y),
+      const interMin = new THREE.Vector3(
+        Math.max(bbA.min.x, bbB.min.x),
+        Math.max(bbA.min.y, bbB.min.y),
           Math.max(bbA.min.z, bbB.min.z),
         )
         const interMax = new THREE.Vector3(
@@ -346,13 +407,14 @@ export async function addConnectorsManifold(chunks, config) {
         const interBox = new THREE.Box3(interMin, interMax)
         const interSize = new THREE.Vector3()
         interBox.getSize(interSize)
+        if (interSize.x <= -bboxTouchTolerance || interSize.y <= -bboxTouchTolerance || interSize.z <= -bboxTouchTolerance) continue
 
         const touchingAxes = [0, 1, 2]
           .map((axis) => ({
             axis,
             overlap: interSize.getComponent(axis),
           }))
-          .filter((entry) => entry.overlap <= bboxTouchTolerance)
+          .filter((entry) => entry.overlap >= -bboxTouchTolerance && entry.overlap <= bboxTouchTolerance)
         if (touchingAxes.length !== 1) {
           continue
         }
@@ -375,8 +437,8 @@ export async function addConnectorsManifold(chunks, config) {
             offset.setComponent(otherAxes[1], (frac - 0.5) * extentB)
           }
           const pos = center.clone().add(offset)
-          const peg = orientConnector(manifold.Manifold.cylinder(depth * 2, radius, radius, 24, true), axis).translate([pos.x, pos.y, pos.z])
-          const socket = orientConnector(manifold.Manifold.cylinder(depth * 2, radius + clearance, radius + clearance, 24, true), axis).translate([pos.x, pos.y, pos.z])
+          const peg = orientConnector(shape.makePeg(), axis).translate([pos.x, pos.y, pos.z])
+          const socket = orientConnector(shape.makeSocket(), axis).translate([pos.x, pos.y, pos.z])
 
           const male = solids[i].add(peg)
           const female = solids[j].subtract(socket)
