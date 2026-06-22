@@ -5,45 +5,43 @@
         <img :src="logoUrl" alt="MALIEV" />
       </a>
       <nav class="lnd-nav">
-        <a href="#">Home</a>
-        <a href="#capabilities">Capabilities</a>
-        <a href="#how-it-works">How it works</a>
-        <a href="#pricing">Pricing</a>
+        <a href="#">{{ copy.nav.home }}</a>
+        <a href="#capabilities">{{ copy.nav.capabilities }}</a>
+        <a href="#how-it-works">{{ copy.nav.workflow }}</a>
+        <a href="#pricing">{{ copy.nav.pricing }}</a>
       </nav>
       <div class="lnd-header-right">
+        <button class="language-toggle" type="button" @click="emit('toggle-locale')">{{ localeLabel }}</button>
         <span v-if="hasAccountData" class="lnd-credit-chip">
-          {{ account.freeRemaining }} free · {{ account.paidCredits }} credits
+          {{ account.freeRemaining }} {{ copy.credit.free }} &middot; {{ account.paidCredits }} {{ copy.credit.credits }}
         </span>
-        <span v-else-if="creditsLoading" class="lnd-credit-chip lnd-credit-chip--loading">Credits loading</span>
-        <a v-else class="lnd-btn lnd-btn-outline" :href="signInUrl">Sign in</a>
-        <a class="lnd-btn lnd-btn-ink" :href="launchUrl">Launch MeshSplitter</a>
+        <span v-else-if="creditsLoading" class="lnd-credit-chip lnd-credit-chip--loading">{{ copy.credit.loading }}</span>
+        <a v-else class="lnd-btn lnd-btn-outline" :href="signInUrl">{{ copy.actions.signIn }}</a>
+        <a class="lnd-btn lnd-btn-ink" :href="launchUrl">{{ copy.actions.launch }}</a>
       </div>
     </header>
+
     <section class="landing-hero">
       <div class="landing-copy">
-        <p class="landing-kicker">MALIEV MeshSplitter</p>
-        <h1>Split oversized STL files into print-ready, labeled parts.</h1>
-        <p class="landing-lede">
-          Prepare large models for smaller printers in the browser. Upload, scale,
-          define build volume, add connectors, review the split, and export a ZIP
-          of labeled STLs with a PDF assembly guide.
-        </p>
+        <p class="landing-kicker">{{ copy.hero.kicker }}</p>
+        <h1>{{ copy.hero.title }}</h1>
+        <p class="landing-lede">{{ copy.hero.lede }}</p>
         <div class="landing-actions">
-          <a class="landing-primary" :href="launchUrl">Launch MeshSplitter</a>
-          <a class="landing-secondary" href="#pricing">View pricing</a>
+          <a class="landing-primary" :href="launchUrl">{{ copy.actions.launch }}</a>
+          <a class="landing-secondary" href="#pricing">{{ copy.actions.viewPricing }}</a>
         </div>
         <dl class="landing-proof">
           <div>
             <dt>3</dt>
-            <dd>free exports monthly</dd>
+            <dd>{{ copy.proof.free }}</dd>
           </div>
           <div>
             <dt>100%</dt>
-            <dd>local mesh processing</dd>
+            <dd>{{ copy.proof.local }}</dd>
           </div>
           <div>
             <dt>STL + PDF</dt>
-            <dd>export package</dd>
+            <dd>{{ copy.proof.package }}</dd>
           </div>
         </dl>
       </div>
@@ -61,29 +59,26 @@
     <section id="pricing" class="pricing-section" aria-label="Pricing">
       <div class="pricing-shell">
         <div class="pricing-heading">
-          <p>Pricing</p>
-          <h2>Start free, then buy export credits only when needed.</h2>
-          <span>Test the workflow with monthly free exports. Pay only when you download more STL + PDF ZIP packages.</span>
+          <p>{{ copy.nav.pricing }}</p>
+          <h2>{{ copy.pricing.title }}</h2>
+          <span>{{ copy.pricing.lede }}</span>
         </div>
         <div class="pricing-grid">
           <article class="pricing-card free-plan">
             <div class="pricing-card-top">
-              <p class="plan-eyebrow">Free monthly plan</p>
-              <h3>3 exports</h3>
+              <p class="plan-eyebrow">{{ copy.pricing.freePlan }}</p>
+              <h3>{{ copy.pricing.freeExports }}</h3>
               <p class="plan-price">
-                <span>Free</span>
-                <small>per month</small>
+                <span>{{ copy.credit.freeLabel }}</span>
+                <small>{{ copy.pricing.perMonth }}</small>
               </p>
-              <p class="plan-summary">Included for every signed-in customer to test real models first.</p>
-              <a class="plan-cta" :href="signInUrl">Sign in to start</a>
+              <p class="plan-summary">{{ copy.pricing.freeSummary }}</p>
+              <a class="plan-cta" :href="signInUrl">{{ copy.actions.signInStart }}</a>
             </div>
             <div class="plan-features">
-              <p>Includes</p>
+              <p>{{ copy.pricing.includes }}</p>
               <ul>
-                <li>Upload and inspect STL files locally</li>
-                <li>Scale and define printer build volume</li>
-                <li>Split, label, review, and export packages</li>
-                <li>Resets every calendar month</li>
+                <li v-for="feature in copy.pricing.freeFeatures" :key="feature">{{ feature }}</li>
               </ul>
             </div>
           </article>
@@ -98,23 +93,21 @@
             <div class="pricing-card-top">
               <div class="plan-title-row">
                 <p class="plan-eyebrow">{{ pack.name }}</p>
-                <span v-if="isFeaturedPack(pack)" class="popular-badge">Best value</span>
+                <span v-if="isFeaturedPack(pack)" class="popular-badge">{{ copy.pricing.bestValue }}</span>
               </div>
-              <h3>{{ pack.credits }} credits</h3>
+              <h3>{{ pack.credits }} {{ copy.credit.credits }}</h3>
               <p class="plan-price">
                 <span>{{ formatPrice(pack.priceCents, pack.currency) }}</span>
-                <small>{{ pricePerCredit(pack) }} / export</small>
+                <small>{{ pricePerCredit(pack) }} / {{ copy.pricing.exportUnit }}</small>
               </p>
               <p class="plan-summary">{{ pack.bestFor }}</p>
-              <span class="plan-cta">Buy credits</span>
+              <span class="plan-cta">{{ copy.actions.buyCredits }}</span>
             </div>
             <div class="plan-features">
-              <p>Includes</p>
+              <p>{{ copy.pricing.includes }}</p>
               <ul>
-                <li>{{ pack.credits }} paid exports after free allowance</li>
-                <li>Credits stay in your customer account</li>
-                <li>One ZIP with labeled STLs and PDF guide</li>
-                <li>Browser-local mesh processing</li>
+                <li>{{ pack.credits }} {{ copy.pricing.paidExports }}</li>
+                <li v-for="feature in copy.pricing.paidFeatures" :key="feature">{{ feature }}</li>
               </ul>
             </div>
           </a>
@@ -124,8 +117,8 @@
 
     <section id="how-it-works" class="landing-band workflow-band" aria-label="Workflow">
       <div class="section-heading">
-        <p>Workflow</p>
-        <h2>From one large mesh to a printable assembly packet.</h2>
+        <p>{{ copy.nav.workflow }}</p>
+        <h2>{{ copy.workflowTitle }}</h2>
       </div>
       <div class="workflow-grid">
         <article v-for="step in workflow" :key="step.title">
@@ -138,13 +131,9 @@
 
     <section id="capabilities" class="landing-band capability-band" aria-label="Capabilities">
       <div class="capability-copy">
-        <p class="landing-kicker">Built for fabrication decisions</p>
-        <h2>Know what will happen before you spend a generation.</h2>
-        <p>
-          MeshSplitter keeps computation on the customer's device. The server only
-          verifies customer access and credits; geometry stays local for speed and
-          privacy.
-        </p>
+        <p class="landing-kicker">{{ copy.capabilityKicker }}</p>
+        <h2>{{ copy.capabilityTitle }}</h2>
+        <p>{{ copy.capabilityCopy }}</p>
       </div>
       <div class="capability-list">
         <div v-for="item in capabilities" :key="item.title">
@@ -156,15 +145,16 @@
 
     <section class="landing-cta">
       <div>
-        <p class="landing-kicker">Ready to test a real model?</p>
-        <h2>Sign in, use the free monthly exports, and verify the output.</h2>
+        <p class="landing-kicker">{{ copy.cta.kicker }}</p>
+        <h2>{{ copy.cta.title }}</h2>
       </div>
-      <a class="landing-primary" :href="launchUrl">Launch MeshSplitter</a>
+      <a class="landing-primary" :href="launchUrl">{{ copy.actions.launch }}</a>
     </section>
   </main>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import logoUrl from '../assets/logos/maliev-wordmark-black.svg'
 import heroImageUrl from '../assets/mesh-splitter-hero.webp'
 
@@ -177,37 +167,101 @@ const props = defineProps({
   homeUrl: { type: String, default: 'https://shop.maliev.com/' },
   launchUrl: { type: String, required: true },
   signInUrl: { type: String, default: '/account/login' },
+  locale: { type: String, default: 'en' },
 })
+const emit = defineEmits(['toggle-locale'])
 
-const workflow = [
-  {
-    number: '01',
-    title: 'Upload and inspect',
-    copy: 'Load STL geometry locally, read bounds, faces, vertices, and watertight status before splitting.',
+const translations = {
+  en: {
+    nav: { home: 'Home', capabilities: 'Capabilities', workflow: 'How it works', pricing: 'Pricing' },
+    actions: { signIn: 'Sign in', signInStart: 'Sign in to start', launch: 'Launch MeshSplitter', viewPricing: 'View pricing', buyCredits: 'Buy credits' },
+    credit: { free: 'free', credits: 'credits', loading: 'Credits loading', freeLabel: 'Free' },
+    hero: {
+      kicker: 'MALIEV MeshSplitter',
+      title: 'Split oversized STL files into print-ready, labeled parts.',
+      lede: 'Prepare large models for smaller printers in the browser. Upload, scale, define build volume, add connectors, review the split, and export a ZIP of labeled STLs with a PDF assembly guide.',
+    },
+    proof: { free: 'free exports monthly', local: 'local mesh processing', package: 'export package' },
+    pricing: {
+      title: 'Start free, then buy export credits only when needed.',
+      lede: 'Test the workflow with monthly free exports. Pay only when you download more STL + PDF ZIP packages.',
+      freePlan: 'Free monthly plan',
+      freeExports: '3 exports',
+      perMonth: 'per month',
+      freeSummary: 'Included for every signed-in customer to test real models first.',
+      includes: 'Includes',
+      bestValue: 'Best value',
+      exportUnit: 'export',
+      paidExports: 'paid exports after free allowance',
+      freeFeatures: ['Upload and inspect STL files locally', 'Scale and define printer build volume', 'Split, label, review, and export packages', 'Resets every calendar month'],
+      paidFeatures: ['Credits stay in your customer account', 'One ZIP with labeled STLs and PDF guide', 'Browser-local mesh processing'],
+    },
+    workflowTitle: 'From one large mesh to a printable assembly packet.',
+    capabilityKicker: 'Built for fabrication decisions',
+    capabilityTitle: 'Know what will happen before you spend a generation.',
+    capabilityCopy: 'MeshSplitter keeps computation on the customer device. The server only verifies customer access and credits; geometry stays local for speed and privacy.',
+    cta: { kicker: 'Ready to test a real model?', title: 'Sign in, use the free monthly exports, and verify the output.' },
+    workflow: [
+      { number: '01', title: 'Upload and inspect', copy: 'Load STL geometry locally, read bounds, faces, vertices, and watertight status before splitting.' },
+      { number: '02', title: 'Fit the printer', copy: 'Apply scale and build-volume presets for common printers or enter the exact usable chamber.' },
+      { number: '03', title: 'Split with connectors', copy: 'Create labeled parts and optional alignment connectors so the assembly stays understandable.' },
+      { number: '04', title: 'Export the packet', copy: 'Download labeled STL parts in a ZIP and a PDF assembly instruction sheet for the job.' },
+    ],
+    capabilities: [
+      { title: 'Local WASM geometry', copy: 'No server-side mesh computation or uploaded model storage.' },
+      { title: 'Manifold-minded output', copy: 'The workflow validates watertight meshes and blocks broken exports.' },
+      { title: '3D review canvas', copy: 'Inspect split parts and labels before downloading production files.' },
+      { title: 'Credit controlled', copy: 'Free monthly allowance first, then paid credits through Shopify checkout.' },
+    ],
   },
-  {
-    number: '02',
-    title: 'Fit the printer',
-    copy: 'Apply scale and build-volume presets for common printers or enter the exact usable chamber.',
+  th: {
+    nav: { home: 'หน้าแรก', capabilities: 'ความสามารถ', workflow: 'วิธีใช้งาน', pricing: 'ราคา' },
+    actions: { signIn: 'เข้าสู่ระบบ', signInStart: 'เข้าสู่ระบบเพื่อเริ่ม', launch: 'เปิด MeshSplitter', viewPricing: 'ดูราคา', buyCredits: 'ซื้อเครดิต' },
+    credit: { free: 'ฟรี', credits: 'เครดิต', loading: 'กำลังโหลดเครดิต', freeLabel: 'ฟรี' },
+    hero: {
+      kicker: 'MALIEV MeshSplitter',
+      title: 'แยกไฟล์ STL ขนาดใหญ่เป็นชิ้นงานพร้อมพิมพ์และมีป้ายกำกับ',
+      lede: 'เตรียมโมเดลขนาดใหญ่ให้พิมพ์กับเครื่องพิมพ์ขนาดเล็กได้จากเบราว์เซอร์ อัปโหลด ปรับสเกล กำหนดพื้นที่พิมพ์ เพิ่มตัวต่อ ตรวจสอบชิ้นงาน และส่งออก ZIP ที่มี STL พร้อม PDF คู่มือประกอบ',
+    },
+    proof: { free: 'ส่งออกฟรีทุกเดือน', local: 'ประมวลผลบนเครื่องผู้ใช้', package: 'แพ็กเกจ STL + PDF' },
+    pricing: {
+      title: 'เริ่มใช้ฟรี แล้วซื้อเครดิตเมื่อจำเป็นต้องส่งออกเพิ่ม',
+      lede: 'ทดลองขั้นตอนการทำงานด้วยสิทธิ์ส่งออกฟรีรายเดือน จ่ายเงินเฉพาะเมื่อดาวน์โหลดแพ็กเกจ STL + PDF เพิ่ม',
+      freePlan: 'แผนใช้ฟรีรายเดือน',
+      freeExports: 'ส่งออก 3 ครั้ง',
+      perMonth: 'ต่อเดือน',
+      freeSummary: 'มีให้ลูกค้าที่เข้าสู่ระบบทุกคน เพื่อทดลองกับโมเดลจริงก่อนจ่ายเงิน',
+      includes: 'รวม',
+      bestValue: 'คุ้มที่สุด',
+      exportUnit: 'การส่งออก',
+      paidExports: 'การส่งออกแบบชำระเงินหลังใช้สิทธิ์ฟรี',
+      freeFeatures: ['อัปโหลดและตรวจสอบไฟล์ STL บนเครื่อง', 'ปรับสเกลและกำหนดพื้นที่พิมพ์', 'แยกชิ้นงาน ใส่ป้าย ตรวจสอบ และส่งออก', 'รีเซ็ตใหม่ทุกเดือน'],
+      paidFeatures: ['เครดิตอยู่ในบัญชีลูกค้า', 'ZIP เดียวพร้อม STL ที่ติดป้ายและคู่มือ PDF', 'ประมวลผลเมชในเบราว์เซอร์'],
+    },
+    workflowTitle: 'จากเมชขนาดใหญ่หนึ่งไฟล์ สู่แพ็กเกจประกอบที่พร้อมพิมพ์',
+    capabilityKicker: 'ออกแบบเพื่อการตัดสินใจงานผลิต',
+    capabilityTitle: 'รู้ผลลัพธ์ก่อนใช้เครดิตส่งออก',
+    capabilityCopy: 'MeshSplitter ประมวลผลเรขาคณิตบนอุปกรณ์ของลูกค้า เซิร์ฟเวอร์ใช้ตรวจสอบบัญชีและเครดิตเท่านั้น ไฟล์เมชจึงอยู่ในเครื่องเพื่อความเร็วและความเป็นส่วนตัว',
+    cta: { kicker: 'พร้อมทดลองกับโมเดลจริงแล้วหรือยัง?', title: 'เข้าสู่ระบบ ใช้สิทธิ์ส่งออกฟรีรายเดือน และตรวจสอบผลลัพธ์ได้ทันที' },
+    workflow: [
+      { number: '01', title: 'อัปโหลดและตรวจสอบ', copy: 'โหลด STL บนเครื่อง อ่านขนาด จำนวนหน้า จุดยอด และสถานะ watertight ก่อนแยกชิ้นงาน' },
+      { number: '02', title: 'ปรับให้พอดีเครื่องพิมพ์', copy: 'ใช้พรีเซ็ตพื้นที่พิมพ์ของเครื่องยอดนิยม หรือใส่ขนาดพื้นที่ใช้งานจริงเอง' },
+      { number: '03', title: 'แยกชิ้นพร้อมตัวต่อ', copy: 'สร้างชิ้นงานมีป้ายกำกับและตัวต่อช่วยจัดแนว เพื่อให้ประกอบง่าย' },
+      { number: '04', title: 'ส่งออกแพ็กเกจ', copy: 'ดาวน์โหลด STL ที่ติดป้ายใน ZIP พร้อม PDF คู่มือประกอบสำหรับงานนั้น' },
+    ],
+    capabilities: [
+      { title: 'WASM บนเครื่องผู้ใช้', copy: 'ไม่มีการคำนวณเมชหรือเก็บโมเดลบนเซิร์ฟเวอร์' },
+      { title: 'คำนึงถึงเมช manifold', copy: 'ระบบตรวจสอบเมช watertight และป้องกันการส่งออกไฟล์ที่เสีย' },
+      { title: 'ตรวจสอบด้วย 3D canvas', copy: 'ดูชิ้นงานที่แยกและป้ายกำกับก่อนดาวน์โหลดไฟล์ผลิตจริง' },
+      { title: 'ควบคุมด้วยเครดิต', copy: 'เริ่มจากสิทธิ์ฟรีรายเดือน แล้วซื้อเครดิตผ่าน Shopify checkout' },
+    ],
   },
-  {
-    number: '03',
-    title: 'Split with connectors',
-    copy: 'Create labeled parts and optional alignment connectors so the assembly stays understandable.',
-  },
-  {
-    number: '04',
-    title: 'Export the packet',
-    copy: 'Download labeled STL parts in a ZIP and a PDF assembly instruction sheet for the job.',
-  },
-]
+}
 
-const capabilities = [
-  { title: 'Local WASM geometry', copy: 'No server-side mesh computation or uploaded model storage.' },
-  { title: 'Manifold-minded output', copy: 'The workflow validates watertight meshes and blocks broken exports.' },
-  { title: '3D review canvas', copy: 'Inspect split parts and labels before downloading production files.' },
-  { title: 'Credit controlled', copy: 'Free monthly allowance first, then paid credits through Shopify checkout.' },
-]
+const copy = computed(() => translations[props.locale] || translations.en)
+const workflow = computed(() => copy.value.workflow)
+const capabilities = computed(() => copy.value.capabilities)
+const localeLabel = computed(() => (props.locale === 'th' ? 'EN' : 'ไทย'))
 
 function productUrl(pack) {
   if (!pack?.handle) return '#pricing'
@@ -217,7 +271,7 @@ function productUrl(pack) {
 
 function formatPrice(priceCents, currency) {
   const hasFraction = priceCents % 100 !== 0
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat(props.locale === 'th' ? 'th-TH' : 'en-US', {
     style: 'currency',
     currency: currency || 'USD',
     minimumFractionDigits: 0,
