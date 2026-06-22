@@ -78,6 +78,41 @@ describe('addConnectorsManifold', () => {
     })
     expect(() => validateExportChunks(result)).not.toThrow()
   })
+
+  it('does not create duplicate connectors when applying the same config to the same split', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 2 }
+
+    const firstApply = await addConnectorsManifold(chunks, config)
+    const secondApply = await addConnectorsManifold(chunks, config)
+
+    expect(secondApply).toHaveLength(2)
+    firstApply.forEach((chunk, i) => {
+      expect(secondApply[i].geometry.attributes.position.count)
+        .toBe(chunk.geometry.attributes.position.count)
+      expect(secondApply[i].geometry.index.count)
+        .toBe(chunk.geometry.index.count)
+      expect(secondApply[i].manifoldStatus).toBe(chunk.manifoldStatus)
+    })
+  })
+
+  it('ignores non-adjacent pieces so floating connectors are not emitted', async () => {
+    const left = new THREE.BoxGeometry(10, 10, 10).translate(-25, 0, 0)
+    const right = new THREE.BoxGeometry(10, 10, 10).translate(25, 0, 0)
+    const expectedLeftVolume = computeVolume(left)
+    const expectedRightVolume = computeVolume(right)
+    const chunks = [
+      { index: 0, geometry: left, label: 'P00', volume: computeVolume(left) },
+      { index: 1, geometry: right, label: 'P01', volume: computeVolume(right) },
+    ]
+    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 1 }
+    const result = await addConnectorsManifold(chunks, config)
+
+    expect(result).toHaveLength(2)
+    expect(result[0].volume).toBeCloseTo(expectedLeftVolume, 2)
+    expect(result[1].volume).toBeCloseTo(expectedRightVolume, 2)
+  })
 })
 
 describe('export validation', () => {

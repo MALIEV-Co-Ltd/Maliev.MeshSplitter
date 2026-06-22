@@ -18,6 +18,7 @@ export function useMeshProcessor() {
   const meshInfo = ref(null)
   const sourceGeometry = ref(null)
   const meshGeometry = ref(null)
+  const splitChunks = ref([])
   const chunks = ref([])
   const loading = ref(false)
   const error = ref(null)
@@ -41,6 +42,7 @@ export function useMeshProcessor() {
       },
     }
     meshGeometry.value = geometry
+    splitChunks.value = []
     chunks.value = []
     return meshInfo.value
   }
@@ -52,7 +54,7 @@ export function useMeshProcessor() {
       const buffer = await file.arrayBuffer()
       const { STLLoader } = await import('three/addons/loaders/STLLoader.js')
       const loader = new STLLoader()
-      const geometry = loader.parse(buffer)
+      const geometry = normalizeForPreview(loader.parse(buffer))
       geometry.computeBoundingBox()
       geometry.computeVertexNormals()
       sourceGeometry.value = geometry
@@ -65,6 +67,21 @@ export function useMeshProcessor() {
     } finally {
       loading.value = false
     }
+  }
+
+  function normalizeForPreview(geometry) {
+    const normalized = geometry.clone()
+    normalized.computeBoundingBox()
+    const box = normalized.boundingBox
+    const center = new THREE.Vector3()
+    box.getCenter(center)
+    const min = box.min
+
+    const offset = new THREE.Vector3(-center.x, -center.y, -min.z)
+    normalized.translate(offset.x, offset.y, offset.z)
+
+    normalized.computeBoundingBox()
+    return normalized
   }
 
   function setScaleFactor(value) {
@@ -89,7 +106,11 @@ export function useMeshProcessor() {
     try {
       const mesh = new THREE.Mesh(meshGeometry.value)
       const rawChunks = await splitMeshManifold(mesh, bv, divisions)
-      chunks.value = rawChunks.map((chunk, i) => ({
+      splitChunks.value = rawChunks.map((chunk, i) => ({
+        ...chunk,
+        color: COLORS[i % COLORS.length],
+      }))
+      chunks.value = splitChunks.value.map((chunk, i) => ({
         ...chunk,
         color: COLORS[i % COLORS.length],
       }))
@@ -105,7 +126,8 @@ export function useMeshProcessor() {
     loading.value = true
     error.value = null
     try {
-      const updated = await addConnectorsManifold(chunks.value, config)
+      const base = splitChunks.value.length > 0 ? splitChunks.value : chunks.value
+      const updated = await addConnectorsManifold(base, config)
       chunks.value = updated.map((chunk, i) => ({
         ...chunk,
         color: COLORS[i % COLORS.length],
@@ -146,6 +168,7 @@ export function useMeshProcessor() {
     meshInfo.value = null
     sourceGeometry.value = null
     meshGeometry.value = null
+    splitChunks.value = []
     chunks.value = []
     loading.value = false
     error.value = null

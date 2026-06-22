@@ -45,6 +45,12 @@ function createMockGeometry() {
   return geo
 }
 
+function createTranslatedMockGeometry() {
+  const geo = new THREE.BoxGeometry(20, 20, 30).translate(25, -3, 7)
+  geo.computeBoundingBox()
+  return geo
+}
+
 function createMockFile(name, content = 'stl data') {
   const file = new File([content], name, { type: 'application/sla' })
   file.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(8))
@@ -101,6 +107,30 @@ describe('useMeshProcessor', () => {
       expect(error.value).toBe('Invalid STL')
       expect(loading.value).toBe(false)
     })
+
+    it('centers mesh on X/Y and places it on floor', async () => {
+      const geometry = createTranslatedMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true,
+        volume: 12000,
+        euler: 2,
+        faceCount: 24,
+        vertCount: 48,
+      })
+
+      const file = createMockFile('offset.stl')
+      const { loadStl, meshInfo } = useMeshProcessor()
+      await loadStl(file)
+
+      const { min, max } = meshInfo.value.bounds
+      expect(min.z).toBeCloseTo(0, 5)
+      expect(((max.x + min.x) / 2)).toBeCloseTo(0, 5)
+      expect(((max.y + min.y) / 2)).toBeCloseTo(0, 5)
+      expect(max.z).toBeGreaterThan(0)
+      expect(min.x).toBeLessThan(0)
+      expect(max.x).toBeGreaterThan(0)
+    })
   })
 
   describe('split', () => {
@@ -133,6 +163,69 @@ describe('useMeshProcessor', () => {
     })
   })
 
+  describe('applyConnectors', () => {
+    it('uses baseline split chunks so connector updates replace prior connectors', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      geometry.userData = { splitSource: 'base' }
+      const rawChunks = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+        { index: 1, geometry, label: 'P01', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+      ]
+      const withConnectorA = [
+        (() => {
+          const geometry = new THREE.BoxGeometry(1, 1, 1)
+          geometry.userData = { source: 'connectorA' }
+          return { index: 0, geometry, label: 'P00', volume: 250, centroid: new THREE.Vector3(0, 0, 0) }
+        })(),
+        (() => {
+          const geometry = new THREE.BoxGeometry(1, 1, 1)
+          geometry.userData = { source: 'connectorA' }
+          return { index: 1, geometry, label: 'P01', volume: 250, centroid: new THREE.Vector3(0, 0, 0) }
+        })(),
+      ]
+      const withConnectorB = [
+        (() => {
+          const geometry = new THREE.BoxGeometry(2, 2, 2)
+          geometry.userData = { source: 'connectorB' }
+          return { index: 0, geometry, label: 'P00', volume: 250, centroid: new THREE.Vector3(0, 0, 0) }
+        })(),
+        (() => {
+          const geometry = new THREE.BoxGeometry(2, 2, 2)
+          geometry.userData = { source: 'connectorB' }
+          return { index: 1, geometry, label: 'P01', volume: 250, centroid: new THREE.Vector3(0, 0, 0) }
+        })(),
+      ]
+
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
+      mockAddConnectorsManifold
+        .mockResolvedValueOnce(withConnectorA)
+        .mockResolvedValueOnce(withConnectorB)
+
+      const file = createMockFile('test.stl')
+      const { loadStl, split, applyConnectors, chunks } = useMeshProcessor()
+      await loadStl(file)
+      await split([250, 250, 250], [2, 1, 1])
+
+      await applyConnectors({ type: 'Dowel', diameter: 5 })
+      await applyConnectors({ type: 'Mortise & Tenon', diameter: 6 })
+
+      const firstCallInput = mockAddConnectorsManifold.mock.calls[0][0]
+      const secondCallInput = mockAddConnectorsManifold.mock.calls[1][0]
+
+      expect(mockAddConnectorsManifold).toHaveBeenCalledTimes(2)
+      expect(firstCallInput[0].geometry.userData).toMatchObject({ splitSource: 'base' })
+      expect(firstCallInput[1].geometry.userData).toMatchObject({ splitSource: 'base' })
+      expect(secondCallInput[0].geometry.userData).toMatchObject({ splitSource: 'base' })
+      expect(secondCallInput[1].geometry.userData).toMatchObject({ splitSource: 'base' })
+      expect(chunks.value[0].geometry.userData).toMatchObject({ source: 'connectorB' })
+      expect(chunks.value[1].geometry.userData).toMatchObject({ source: 'connectorB' })
+    })
+  })
+
   describe('setScaleFactor', () => {
     it('regenerates working mesh from the uploaded source geometry', async () => {
       const geometry = createMockGeometry()
@@ -148,7 +241,7 @@ describe('useMeshProcessor', () => {
       await loadStl(createMockFile('test.stl'))
       setScaleFactor(2)
 
-      expect(mockApplyScale).toHaveBeenCalledWith(geometry, 2)
+      expect(mockApplyScale).toHaveBeenCalledWith(expect.any(THREE.BufferGeometry), 2)
       expect(scaleFactor.value).toBe(2)
       expect(meshInfo.value.volume).toBe(8000)
     })

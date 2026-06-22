@@ -14,9 +14,11 @@ const props = defineProps({
   buildVolume: { type: Array, default: () => [250, 250, 250] },
   divisions: { type: Array, default: () => [2, 2, 1] },
   upAxis: { type: String, default: 'Z' },
+  selectedChunkIndex: { type: Number, default: null },
 })
 
 const container = ref(null)
+const selectedOpacity = 0.22
 
 let renderer, scene, camera, controls, meshGroup, gridOverlay
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
@@ -84,18 +86,33 @@ function buildMeshes(chunks) {
   chunks.forEach((chunk, i) => {
     if (!chunk.geometry) return
     const geom = chunk.geometry.clone()
+    const color = chunk.color || COLORS[i % COLORS.length]
     const mat = new THREE.MeshPhongMaterial({
-      color: chunk.color || COLORS[i % COLORS.length],
+      color,
       transparent: true, opacity: 0.85, side: THREE.DoubleSide,
     })
     const mesh = new THREE.Mesh(geom, mat)
+    mesh.userData.chunkIndex = chunk.index
     meshGroup.add(mesh)
-    meshGroup.add(createLabelSprite(chunk.label || `P${i + 1}`, chunk.centroid || computeGeometryCenter(geom), chunk.color || COLORS[i % COLORS.length]))
+    meshGroup.add(createLabelSprite(chunk.label || `P${i + 1}`, chunk.centroid || computeGeometryCenter(geom), color))
     box.expandByObject(mesh)
   })
   if (meshGroup.children.length === 0) return
   scene.add(meshGroup)
+  applyChunkVisibility(props.selectedChunkIndex)
   fitCamera(box)
+}
+
+function applyChunkVisibility(selectedChunkIndex) {
+  if (!meshGroup) return
+  meshGroup.children.forEach((child) => {
+    if (!child.isMesh) return
+    const isSelected = selectedChunkIndex === null || selectedChunkIndex === child.userData.chunkIndex
+    child.material.opacity = isSelected ? 0.9 : selectedOpacity
+    child.material.transparent = true
+    child.material.needsUpdate = true
+    child.renderOrder = isSelected ? 1 : 0
+  })
 }
 
 function computeGeometryCenter(geometry) {
@@ -279,4 +296,8 @@ watch(() => props.divisions, (val) => {
     showOriginal(props.meshGeometry, val)
   }
 }, { deep: true })
+
+watch(() => props.selectedChunkIndex, (selectedChunkIndex) => {
+  applyChunkVisibility(selectedChunkIndex)
+})
 </script>

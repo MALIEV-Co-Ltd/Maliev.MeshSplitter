@@ -9,7 +9,8 @@
       </div>
       <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
         <Card v-for="chunk in chunks" :key="chunk.index"
-          class="cursor-pointer hover:shadow-md transition-shadow"
+          class="cursor-pointer transition-shadow"
+          :class="chunk.index === selectedChunkIndex ? 'ring-2 ring-primary shadow-md bg-accent' : 'hover:shadow-md'"
           @click="$emit('select', chunk.index)">
           <CardContent class="p-3 flex items-center gap-2">
             <div class="w-3 h-3 rounded-full shrink-0" :style="{ backgroundColor: colorHex(chunk.color) }"></div>
@@ -30,10 +31,12 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 
 defineProps({
   chunks: { type: Array, default: () => [] },
+  selectedChunkIndex: { type: Number, default: null },
 })
 defineEmits(['select'])
 
 function colorHex(color) {
+  if (typeof color !== 'number' || !Number.isFinite(color)) return '#64748b'
   return '#' + color.toString(16).padStart(6, '0')
 }
 </script>

@@ -52,7 +52,7 @@ gcloud run deploy maliev-mesh-splitter `
   --region=europe-west1 `
   --source=. `
   --allow-unauthenticated `
-  --set-env-vars NODE_ENV=production,FRONTEND_DIST_DIR=/app/frontend/dist,CREDIT_STORE=datastore,GOOGLE_CLOUD_PROJECT=maliev-website,DATASTORE_NAMESPACE=mesh-splitter,VITE_MESH_API_BASE_URL=/tools/mesh-splitter/api,VITE_CREDITS_ENFORCEMENT=required,VITE_SHOPIFY_STORE_DOMAIN=shop.maliev.com,SHOPIFY_APP_URL=https://maliev-mesh-splitter-1036965383273.europe-west1.run.app,STOREFRONT_URL=https://shop.maliev.com/tools/mesh-splitter,CUSTOMER_LOGIN_URL=https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter,SHOPIFY_SCOPES=read_orders
+  --set-env-vars NODE_ENV=production,FRONTEND_DIST_DIR=/app/frontend/dist,CREDIT_STORE=datastore,GOOGLE_CLOUD_PROJECT=maliev-website,DATASTORE_NAMESPACE=mesh-splitter,VITE_MESH_API_BASE_URL=/tools/mesh-splitter/api,VITE_CREDITS_ENFORCEMENT=required,VITE_SHOPIFY_STORE_DOMAIN=shop.maliev.com,SHOPIFY_APP_URL=https://maliev-mesh-splitter-1036965383273.europe-west1.run.app,STOREFRONT_URL=https://shop.maliev.com/tools/mesh-splitter,CUSTOMER_LOGIN_URL=https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp,SHOPIFY_SCOPES=read_orders
 ```
 
 Set these Cloud Run secrets or environment variables before wiring the Shopify
