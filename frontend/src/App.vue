@@ -16,9 +16,10 @@
           <span class="dot"></span>{{ meshInfo?.is_watertight ? 'Watertight' : 'Awaiting mesh' }}
         </span>
         <span class="status-chip">{{ chunks.length || 0 }} parts</span>
-        <span class="status-chip">
-          <CoinsIcon :size="12" :stroke-width="1.75" class="coin-icon" />
-          {{ creditAccount.freeRemaining }} free &middot; {{ creditAccount.availableGenerations }} credits
+        <span class="status-chip credit-chip" :title="creditChipTitle">
+          <Loader2Icon v-if="showCreditSpinner" :size="12" :stroke-width="2" class="coin-icon animate-spin" />
+          <CoinsIcon v-else :size="12" :stroke-width="1.75" class="coin-icon" />
+          {{ creditChipText }}
         </span>
       </div>
       <div class="header-right">
@@ -30,8 +31,6 @@
     <div class="workspace-grid">
       <section class="col-left">
         <MeshUploader :mesh-info="meshInfo" :loading="loading" :error="error" @upload="onUpload" />
-        <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" @apply="onScaleApply" />
-        <BuildVolumeConfig v-model="buildVolume" />
         <PartList
           :chunks="chunks"
           :selected-chunk-index="selectedChunkIndex"
@@ -53,11 +52,26 @@
             />
           </CardContent>
         </Card>
+        <div v-if="meshInfo" class="canvas-inspector" aria-label="Mesh details">
+          <div class="canvas-inspector__head">
+            <span>Mesh details</span>
+            <span>{{ meshInfo.is_watertight ? 'Watertight' : 'Check mesh' }}</span>
+          </div>
+          <div class="canvas-inspector__grid">
+            <div><span>File</span><strong>{{ meshInfo.filename }}</strong></div>
+            <div><span>Vertices</span><strong>{{ meshInfo.verts?.toLocaleString() }}</strong></div>
+            <div><span>Faces</span><strong>{{ meshInfo.faces?.toLocaleString() }}</strong></div>
+            <div><span>Bounds</span><strong>{{ previewDims }}</strong></div>
+            <div><span>Scale</span><strong>{{ scaleFactor.toFixed(3) }}x</strong></div>
+          </div>
+        </div>
         <div class="canvas-label">3D PREVIEW{{ previewDims ? ` · ${previewDims}` : '' }} · SCALE {{ scaleFactor.toFixed(3) }}&times;</div>
         <div class="canvas-hint">DRAG TO ROTATE &middot; SCROLL TO ZOOM</div>
       </section>
 
       <section class="col-right">
+        <BuildVolumeConfig v-model="buildVolume" />
+        <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" @apply="onScaleApply" />
         <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :success="connectorSuccess" :loading="splitAuthorizing || loading" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
         <ExportPanel
           :has-chunks="chunks.length > 0"
@@ -111,7 +125,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { Coins as CoinsIcon, X as XIcon } from '@lucide/vue'
+import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon } from '@lucide/vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
@@ -136,6 +150,8 @@ const credits = useCredits()
 const creditAccount = credits.account
 const creditPricing = credits.pricing
 const creditError = credits.error
+const creditLoading = credits.loading
+const hasCreditAccount = credits.hasAccountData
 const shopifyStoreDomain = import.meta.env.VITE_SHOPIFY_STORE_DOMAIN || ''
 const storefrontBasePath = '/tools/mesh-splitter'
 const currentPath = window.location.pathname.replace(/\/+$/, '')
@@ -151,6 +167,21 @@ const exportingPackage = ref(false)
 const scaleInput = ref(1)
 const selectedChunkIndex = ref(null)
 const visibleError = computed(() => error.value || creditError.value || '')
+const showCreditSpinner = computed(() => creditLoading.value && !hasCreditAccount.value)
+const creditChipText = computed(() => {
+  if (showCreditSpinner.value) return 'Credits'
+  const freeRemaining = Number(creditAccount.value.freeRemaining ?? creditPricing.value.freeGenerationsPerMonth ?? 0)
+  if (hasCreditAccount.value) {
+    const paidCredits = Number(creditAccount.value.paidCredits ?? Math.max(0, (creditAccount.value.availableGenerations ?? 0) - freeRemaining))
+    return `${freeRemaining} free · ${paidCredits} credits`
+  }
+  return `${freeRemaining} free`
+})
+const creditChipTitle = computed(() => {
+  if (showCreditSpinner.value) return 'Fetching credit data'
+  if (hasCreditAccount.value) return 'Free monthly exports and paid account credits'
+  return 'Free monthly exports shown until account credit data loads'
+})
 const previewDims = computed(() => {
   const bounds = meshInfo.value?.bounds
   if (!bounds) return ''
@@ -254,7 +285,7 @@ async function exportAfterCredit(format, buildFn) {
   if (!chunks.value.length) return
   exportingPackage.value = true
   try {
-    // Build the file first — a failed/blank render must never burn a paid credit.
+    // Build the file first; a failed/blank render must never burn a paid credit.
     const { blob, filename } = await buildFn()
     await credits.consumeExport({
       idempotencyKey: createExportKey(format),

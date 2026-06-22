@@ -10,7 +10,7 @@ describe('MeshUploader', () => {
     expect(wrapper.text()).toContain('Drag & drop')
   })
 
-  it('shows mesh info when loaded', () => {
+  it('shows watertight status without rendering mesh metadata rows', () => {
     const wrapper = mount(MeshUploader, {
       props: {
         meshInfo: { filename: 'test.stl', verts: 100, faces: 50, is_watertight: true, bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 100, y: 100, z: 100 } } },
@@ -18,8 +18,9 @@ describe('MeshUploader', () => {
         error: '',
       }
     })
-    expect(wrapper.text()).toContain('test.stl')
-    expect(wrapper.text()).toContain('100')
+    expect(wrapper.text()).toContain('Watertight')
+    expect(wrapper.text()).not.toContain('test.stl')
+    expect(wrapper.text()).not.toContain('Vertices')
   })
 
   it('shows loading state', () => {

@@ -18,9 +18,11 @@ describe('useCredits', () => {
       }))
 
     const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+    expect(credits.hasAccountData.value).toBe(false)
     await credits.refresh()
 
     expect(credits.account.value.availableGenerations).toBe(3)
+    expect(credits.hasAccountData.value).toBe(true)
     expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-10')
   })
 
@@ -92,6 +94,7 @@ describe('useCredits', () => {
     await expect(credits.consumeExport({
       idempotencyKey: 'mesh:test.stl:1x1x1',
     })).resolves.toMatchObject({ source: 'local_demo' })
+    expect(credits.hasAccountData.value).toBe(false)
   })
 })
 

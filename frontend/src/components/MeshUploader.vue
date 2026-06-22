@@ -36,25 +36,19 @@
       <p v-if="localError && !loading" class="mt-3 text-sm text-destructive">{{ localError }}</p>
       <p v-if="error && !loading" class="mt-3 text-sm text-destructive">{{ error }}</p>
 
-      <div v-if="meshInfo" class="mt-3">
-        <div class="spec-row"><span class="k">File</span><span class="v">{{ meshInfo.filename }}</span></div>
-        <div class="spec-row"><span class="k">Vertices</span><span class="v">{{ meshInfo.verts?.toLocaleString() }}</span></div>
-        <div class="spec-row"><span class="k">Faces</span><span class="v">{{ meshInfo.faces?.toLocaleString() }}</span></div>
-        <div v-if="meshInfo.bounds" class="spec-row"><span class="k">Bounds</span><span class="v">{{ boundsLabel }}</span></div>
-      </div>
       <p v-if="meshInfo && !meshInfo.is_watertight" class="mt-2 text-xs font-medium text-destructive">
-        Mesh is not watertight — splitting may produce unexpected results.
+        Mesh is not watertight - splitting may produce unexpected results.
       </p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { File as FileIcon, Upload as UploadIcon } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 
-const props = defineProps({
+defineProps({
   meshInfo: { type: Object, default: null },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
@@ -64,16 +58,6 @@ const emit = defineEmits(['upload'])
 
 const dragOver = ref(false)
 const fileInput = ref(null)
-
-const boundsLabel = computed(() => {
-  const bounds = props.meshInfo?.bounds
-  if (!bounds) return ''
-  if (typeof bounds === 'object' && bounds.min && bounds.max) {
-    return `${(bounds.max.x - bounds.min.x).toFixed(1)} × ${(bounds.max.y - bounds.min.y).toFixed(1)} × ${(bounds.max.z - bounds.min.z).toFixed(1)} mm`
-  }
-  if (Array.isArray(bounds)) return `${bounds.map((v) => Number(v).toFixed(1)).join(' × ')} mm`
-  return String(bounds)
-})
 
 async function onDrop(e) {
   dragOver.value = false

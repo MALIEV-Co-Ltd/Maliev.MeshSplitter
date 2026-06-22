@@ -17,8 +17,9 @@ export function useCredits(options = {}) {
   const enforcement = options.enforcement ?? import.meta.env.VITE_CREDITS_ENFORCEMENT ?? 'demo'
   const account = ref({ ...DEFAULT_ACCOUNT })
   const pricing = ref({ ...DEFAULT_PRICING })
-  const loading = ref(false)
+  const loading = ref(Boolean(apiBaseUrl))
   const error = ref(null)
+  const hasAccountData = ref(false)
 
   async function refresh() {
     if (!apiBaseUrl) return
@@ -31,6 +32,7 @@ export function useCredits(options = {}) {
       ])
       account.value = accountResponse.account
       pricing.value = pricingResponse
+      hasAccountData.value = true
     } catch (e) {
       error.value = e.message
       if (enforcement === 'required') throw e
@@ -70,6 +72,7 @@ export function useCredits(options = {}) {
         body: JSON.stringify({ idempotencyKey, metadata }),
       })
       account.value = response.account
+      hasAccountData.value = true
       return response.transaction
     } catch (e) {
       error.value = e.message || 'Credit authorization is unavailable'
@@ -88,6 +91,7 @@ export function useCredits(options = {}) {
     pricing: readonly(pricing),
     loading: readonly(loading),
     error: readonly(error),
+    hasAccountData: readonly(hasAccountData),
     refresh,
     refreshPricing,
     consumeExport,
