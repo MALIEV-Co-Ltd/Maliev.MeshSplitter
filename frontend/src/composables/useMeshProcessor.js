@@ -54,7 +54,7 @@ export function useMeshProcessor() {
       const buffer = await file.arrayBuffer()
       const { STLLoader } = await import('three/addons/loaders/STLLoader.js')
       const loader = new STLLoader()
-      const geometry = loader.parse(buffer)
+      const geometry = normalizeForPreview(loader.parse(buffer))
       geometry.computeBoundingBox()
       geometry.computeVertexNormals()
       sourceGeometry.value = geometry
@@ -67,6 +67,21 @@ export function useMeshProcessor() {
     } finally {
       loading.value = false
     }
+  }
+
+  function normalizeForPreview(geometry) {
+    const normalized = geometry.clone()
+    normalized.computeBoundingBox()
+    const box = normalized.boundingBox
+    const center = new THREE.Vector3()
+    box.getCenter(center)
+    const min = box.min
+
+    const offset = new THREE.Vector3(-center.x, -center.y, -min.z)
+    normalized.translate(offset.x, offset.y, offset.z)
+
+    normalized.computeBoundingBox()
+    return normalized
   }
 
   function setScaleFactor(value) {

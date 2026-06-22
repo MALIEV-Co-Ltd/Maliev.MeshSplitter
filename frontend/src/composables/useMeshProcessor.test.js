@@ -45,6 +45,12 @@ function createMockGeometry() {
   return geo
 }
 
+function createTranslatedMockGeometry() {
+  const geo = new THREE.BoxGeometry(20, 20, 30).translate(25, -3, 7)
+  geo.computeBoundingBox()
+  return geo
+}
+
 function createMockFile(name, content = 'stl data') {
   const file = new File([content], name, { type: 'application/sla' })
   file.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(8))
@@ -100,6 +106,30 @@ describe('useMeshProcessor', () => {
       await expect(loadStl(file)).rejects.toThrow('Invalid STL')
       expect(error.value).toBe('Invalid STL')
       expect(loading.value).toBe(false)
+    })
+
+    it('centers mesh on X/Y and places it on floor', async () => {
+      const geometry = createTranslatedMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true,
+        volume: 12000,
+        euler: 2,
+        faceCount: 24,
+        vertCount: 48,
+      })
+
+      const file = createMockFile('offset.stl')
+      const { loadStl, meshInfo } = useMeshProcessor()
+      await loadStl(file)
+
+      const { min, max } = meshInfo.value.bounds
+      expect(min.z).toBeCloseTo(0, 5)
+      expect(((max.x + min.x) / 2)).toBeCloseTo(0, 5)
+      expect(((max.y + min.y) / 2)).toBeCloseTo(0, 5)
+      expect(max.z).toBeGreaterThan(0)
+      expect(min.x).toBeLessThan(0)
+      expect(max.x).toBeGreaterThan(0)
     })
   })
 
@@ -211,7 +241,7 @@ describe('useMeshProcessor', () => {
       await loadStl(createMockFile('test.stl'))
       setScaleFactor(2)
 
-      expect(mockApplyScale).toHaveBeenCalledWith(geometry, 2)
+      expect(mockApplyScale).toHaveBeenCalledWith(expect.any(THREE.BufferGeometry), 2)
       expect(scaleFactor.value).toBe(2)
       expect(meshInfo.value.volume).toBe(8000)
     })
