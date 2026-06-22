@@ -300,15 +300,37 @@ export async function addConnectorsManifold(chunks, config) {
   const clearance = Number(config.clearance || 0.1)
   const depth = Number(config.depth || 10)
   const perFace = Math.max(1, Number(config.perFace || 1))
+  if (!Number.isFinite(radius) || radius <= 0) {
+    throw new Error('Connector diameter must be greater than zero')
+  }
+  if (!Number.isFinite(depth) || depth <= 0) {
+    throw new Error('Connector depth must be greater than zero')
+  }
+  if (!Number.isFinite(clearance) || clearance < 0) {
+    throw new Error('Connector clearance cannot be negative')
+  }
+
+  const bboxes = chunks.map((chunk) => {
+    chunk.geometry.computeBoundingBox()
+    return chunk.geometry.boundingBox.clone()
+  })
   const solids = chunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
+
+  const worldSpan = new THREE.Vector3()
+  bboxes.forEach((box) => {
+    worldSpan.set(
+      Math.max(worldSpan.x, box.max.x - box.min.x),
+      Math.max(worldSpan.y, box.max.y - box.min.y),
+      Math.max(worldSpan.z, box.max.z - box.min.z),
+    )
+  })
+  const bboxTouchTolerance = Math.max(1e-4, (worldSpan.x + worldSpan.y + worldSpan.z) * 1e-6)
 
   try {
     for (let i = 0; i < chunks.length; i++) {
       for (let j = i + 1; j < chunks.length; j++) {
-        chunks[i].geometry.computeBoundingBox()
-        chunks[j].geometry.computeBoundingBox()
-        const bbA = chunks[i].geometry.boundingBox
-        const bbB = chunks[j].geometry.boundingBox
+        const bbA = bboxes[i]
+        const bbB = bboxes[j]
         if (!bbA.intersectsBox(bbB)) continue
 
         const interMin = new THREE.Vector3(
@@ -324,13 +346,26 @@ export async function addConnectorsManifold(chunks, config) {
         const interBox = new THREE.Box3(interMin, interMax)
         const interSize = new THREE.Vector3()
         interBox.getSize(interSize)
-        const axis = interSize.x <= interSize.y && interSize.x <= interSize.z ? 0
-          : interSize.y <= interSize.z ? 1 : 2
+
+        const touchingAxes = [0, 1, 2]
+          .map((axis) => ({
+            axis,
+            overlap: interSize.getComponent(axis),
+          }))
+          .filter((entry) => entry.overlap <= bboxTouchTolerance)
+        if (touchingAxes.length !== 1) {
+          continue
+        }
+
+        const axis = touchingAxes[0].axis
         const center = new THREE.Vector3()
         interBox.getCenter(center)
         const otherAxes = [(axis + 1) % 3, (axis + 2) % 3]
         const extentA = interSize.getComponent(otherAxes[0])
         const extentB = interSize.getComponent(otherAxes[1])
+        if (extentA <= bboxTouchTolerance || extentB <= bboxTouchTolerance) {
+          continue
+        }
 
         for (let p = 0; p < perFace; p++) {
           const frac = (p + 1) / (perFace + 1)

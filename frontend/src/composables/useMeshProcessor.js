@@ -18,6 +18,7 @@ export function useMeshProcessor() {
   const meshInfo = ref(null)
   const sourceGeometry = ref(null)
   const meshGeometry = ref(null)
+  const splitChunks = ref([])
   const chunks = ref([])
   const loading = ref(false)
   const error = ref(null)
@@ -41,6 +42,7 @@ export function useMeshProcessor() {
       },
     }
     meshGeometry.value = geometry
+    splitChunks.value = []
     chunks.value = []
     return meshInfo.value
   }
@@ -89,7 +91,11 @@ export function useMeshProcessor() {
     try {
       const mesh = new THREE.Mesh(meshGeometry.value)
       const rawChunks = await splitMeshManifold(mesh, bv, divisions)
-      chunks.value = rawChunks.map((chunk, i) => ({
+      splitChunks.value = rawChunks.map((chunk, i) => ({
+        ...chunk,
+        color: COLORS[i % COLORS.length],
+      }))
+      chunks.value = splitChunks.value.map((chunk, i) => ({
         ...chunk,
         color: COLORS[i % COLORS.length],
       }))
@@ -105,7 +111,8 @@ export function useMeshProcessor() {
     loading.value = true
     error.value = null
     try {
-      const updated = await addConnectorsManifold(chunks.value, config)
+      const base = splitChunks.value.length > 0 ? splitChunks.value : chunks.value
+      const updated = await addConnectorsManifold(base, config)
       chunks.value = updated.map((chunk, i) => ({
         ...chunk,
         color: COLORS[i % COLORS.length],
@@ -146,6 +153,7 @@ export function useMeshProcessor() {
     meshInfo.value = null
     sourceGeometry.value = null
     meshGeometry.value = null
+    splitChunks.value = []
     chunks.value = []
     loading.value = false
     error.value = null
