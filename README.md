@@ -2,6 +2,15 @@
 
 Commercial STL mesh splitting app for Shopify customers.
 
+## License and repository use
+
+This public repository is source-available for review, deployment transparency,
+and security inspection only. It is not open source.
+
+MALIEV Co., Ltd. grants no permission to copy, modify, redistribute, host, sell,
+commercialize, or create derivative works from this code without prior written
+permission. See `LICENSE`.
+
 Customers get 3 free generations every month. Additional generations are sold as
 Shopify credit products and enforced by the backend credit ledger.
 
