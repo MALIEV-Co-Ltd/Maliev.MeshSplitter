@@ -9,7 +9,35 @@ const DEFAULT_ACCOUNT = {
 
 const DEFAULT_PRICING = {
   freeGenerationsPerMonth: 3,
-  creditPacks: [],
+  creditPacks: [
+    {
+      sku: 'MS-CREDITS-10',
+      handle: 'mesh-splitter-starter-credit-pack',
+      name: 'Starter Credit Pack',
+      credits: 10,
+      priceCents: 32900,
+      currency: 'THB',
+      bestFor: 'Trying real customer parts after the monthly free allowance.',
+    },
+    {
+      sku: 'MS-CREDITS-30',
+      handle: 'mesh-splitter-maker-credit-pack',
+      name: 'Maker Credit Pack',
+      credits: 30,
+      priceCents: 87900,
+      currency: 'THB',
+      bestFor: 'Regular makers splitting several large models per month.',
+    },
+    {
+      sku: 'MS-CREDITS-100',
+      handle: 'mesh-splitter-studio-credit-pack',
+      name: 'Studio Credit Pack',
+      credits: 100,
+      priceCents: 249000,
+      currency: 'THB',
+      bestFor: 'Print farms, studios, and service bureaus.',
+    },
+  ],
 }
 
 export function useCredits(options = {}) {

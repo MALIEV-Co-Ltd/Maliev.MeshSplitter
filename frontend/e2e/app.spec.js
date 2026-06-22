@@ -162,8 +162,17 @@ test.describe('public presentation', () => {
     await expect(page.getByText('free exports monthly')).toBeVisible()
     await expect(page.locator('.splitter-visual img')).toBeVisible()
     await expect(page.locator('.splitter-visual img')).toHaveAttribute('src', /mesh-splitter-hero/)
+    await expect(page.locator('#pricing')).toBeVisible()
+    await expect(page.locator('#pricing')).toContainText('Start free, then buy export credits only when needed.')
+    await expect(page.locator('#pricing')).toContainText('Starter Credit Pack')
+    await expect(page.locator('#pricing')).toContainText('Maker Credit Pack')
+    await expect(page.locator('#pricing')).toContainText('Best value')
+    await expect(page.locator('#pricing').evaluate((pricing) => {
+      const workflow = document.querySelector('#how-it-works')
+      return Boolean(workflow && pricing.compareDocumentPosition(workflow) & Node.DOCUMENT_POSITION_FOLLOWING)
+    })).resolves.toBe(true)
     await expect(page.locator('.lnd-logo')).toHaveAttribute('href', 'https://shop.maliev.com/')
-    await expect(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toHaveAttribute(
       'href',
       'https://shop.maliev.com/account/login?return_to=%2Ftools%2Fmesh-splitter&return_url=%2Ftools%2Fmesh-splitter',
     )

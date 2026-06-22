@@ -58,6 +58,70 @@
       </div>
     </section>
 
+    <section id="pricing" class="pricing-section" aria-label="Pricing">
+      <div class="pricing-shell">
+        <div class="pricing-heading">
+          <p>Pricing</p>
+          <h2>Start free, then buy export credits only when needed.</h2>
+          <span>Test the workflow with monthly free exports. Pay only when you download more STL + PDF ZIP packages.</span>
+        </div>
+        <div class="pricing-grid">
+          <article class="pricing-card free-plan">
+            <div class="pricing-card-top">
+              <p class="plan-eyebrow">Free monthly plan</p>
+              <h3>3 exports</h3>
+              <p class="plan-price">
+                <span>Free</span>
+                <small>per month</small>
+              </p>
+              <p class="plan-summary">Included for every signed-in customer to test real models first.</p>
+              <a class="plan-cta" :href="signInUrl">Sign in to start</a>
+            </div>
+            <div class="plan-features">
+              <p>Includes</p>
+              <ul>
+                <li>Upload and inspect STL files locally</li>
+                <li>Scale and define printer build volume</li>
+                <li>Split, label, review, and export packages</li>
+                <li>Resets every calendar month</li>
+              </ul>
+            </div>
+          </article>
+
+          <a
+            v-for="pack in pricing.creditPacks"
+            :key="pack.sku"
+            class="pricing-card price-plan"
+            :class="{ featured: isFeaturedPack(pack) }"
+            :href="productUrl(pack)"
+          >
+            <div class="pricing-card-top">
+              <div class="plan-title-row">
+                <p class="plan-eyebrow">{{ pack.name }}</p>
+                <span v-if="isFeaturedPack(pack)" class="popular-badge">Best value</span>
+              </div>
+              <h3>{{ pack.credits }} credits</h3>
+              <p class="plan-price">
+                <span>{{ formatPrice(pack.priceCents, pack.currency) }}</span>
+                <small>{{ pricePerCredit(pack) }} / export</small>
+              </p>
+              <p class="plan-summary">{{ pack.bestFor }}</p>
+              <span class="plan-cta">Buy credits</span>
+            </div>
+            <div class="plan-features">
+              <p>Includes</p>
+              <ul>
+                <li>{{ pack.credits }} paid exports after free allowance</li>
+                <li>Credits stay in your customer account</li>
+                <li>One ZIP with labeled STLs and PDF guide</li>
+                <li>Browser-local mesh processing</li>
+              </ul>
+            </div>
+          </a>
+        </div>
+      </div>
+    </section>
+
     <section id="how-it-works" class="landing-band workflow-band" aria-label="Workflow">
       <div class="section-heading">
         <p>Workflow</p>
@@ -87,26 +151,6 @@
           <strong>{{ item.title }}</strong>
           <span>{{ item.copy }}</span>
         </div>
-      </div>
-    </section>
-
-    <section id="pricing" class="landing-band pricing-band" aria-label="Pricing">
-      <div class="section-heading">
-        <p>Pricing</p>
-        <h2>Start free, then buy export credits only when needed.</h2>
-      </div>
-      <div class="pricing-grid">
-        <article class="free-plan">
-          <p class="plan-eyebrow">Included</p>
-          <h3>3 free exports</h3>
-          <p>Every logged-in customer gets three free exports each month.</p>
-        </article>
-        <a v-for="pack in pricing.creditPacks" :key="pack.sku" class="price-plan" :href="productUrl(pack)">
-          <p class="plan-eyebrow">{{ pack.name }}</p>
-          <h3>{{ pack.credits }} credits</h3>
-          <p>{{ formatPrice(pack.priceCents, pack.currency) }}</p>
-          <span>{{ pack.bestFor }}</span>
-        </a>
       </div>
     </section>
 
@@ -172,9 +216,21 @@ function productUrl(pack) {
 }
 
 function formatPrice(priceCents, currency) {
+  const hasFraction = priceCents % 100 !== 0
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: currency || 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: hasFraction ? 2 : 0,
   }).format(priceCents / 100)
+}
+
+function pricePerCredit(pack) {
+  if (!pack?.credits || !pack?.priceCents) return 'Priced per export'
+  return formatPrice(Math.round(pack.priceCents / pack.credits), pack.currency)
+}
+
+function isFeaturedPack(pack) {
+  return pack?.sku === 'MS-CREDITS-30'
 }
 </script>
