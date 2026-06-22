@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createServer } from './server.js'
 import { createHmac } from 'node:crypto'
-import { signAppProxyQuery } from './shopifySecurity.js'
+import { signAppProxyQuery, signShopifyOAuthQuery } from './shopifySecurity.js'
 
 describe('HTTP API', () => {
   let baseUrl
@@ -12,6 +12,12 @@ describe('HTTP API', () => {
       devCustomerBypass: true,
       shopifyAppProxySecret: 'proxy-secret',
       shopifyWebhookSecret: 'webhook-secret',
+      shopifyApiKey: 'api-key',
+      shopifyApiSecret: 'api-secret',
+      shopifyScopes: 'read_orders',
+      appUrl: 'https://mesh.example.com',
+      storefrontUrl: 'https://shop.example.com/tools/mesh-splitter',
+      customerLoginUrl: 'https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter',
       now: () => new Date('2026-06-21T12:00:00.000Z'),
     })
     await new Promise(resolve => server.listen(0, resolve))
@@ -60,6 +66,87 @@ describe('HTTP API', () => {
     expect(cookie).toContain('mesh_splitter_session=')
     expect(accountResponse.status).toBe(200)
     expect(body.account).toMatchObject({ customerId: 'shopify:12345', freeRemaining: 3 })
+  })
+
+  it('redirects anonymous app-proxy visitors to Shopify login', async () => {
+    const query = {
+      shop: 'example.myshopify.com',
+      path_prefix: '/tools/mesh-splitter',
+      timestamp: '1782050000',
+    }
+    const signature = signAppProxyQuery(query, 'proxy-secret')
+    const response = await fetch(`${baseUrl}/?shop=${query.shop}&path_prefix=${encodeURIComponent(query.path_prefix)}&timestamp=${query.timestamp}&signature=${signature}`, {
+      redirect: 'manual',
+    })
+
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter')
+  })
+
+  it('starts Shopify OAuth installation', async () => {
+    const response = await fetch(`${baseUrl}/auth?shop=example.myshopify.com`, {
+      redirect: 'manual',
+    })
+    const location = new URL(response.headers.get('location'))
+
+    expect(response.status).toBe(302)
+    expect(location.origin).toBe('https://example.myshopify.com')
+    expect(location.pathname).toBe('/admin/oauth/authorize')
+    expect(location.searchParams.get('client_id')).toBe('api-key')
+    expect(location.searchParams.get('scope')).toBe('read_orders')
+    expect(location.searchParams.get('redirect_uri')).toBe('https://mesh.example.com/auth/callback')
+    expect(response.headers.get('set-cookie')).toContain('mesh_splitter_oauth_state=')
+  })
+
+  it('finishes Shopify OAuth installation after HMAC and state validation', async () => {
+    let exchange
+    const installServer = createServer({
+      devCustomerBypass: true,
+      shopifyAppProxySecret: 'proxy-secret',
+      shopifyWebhookSecret: 'webhook-secret',
+      shopifyApiKey: 'api-key',
+      shopifyApiSecret: 'api-secret',
+      shopifyScopes: 'read_orders',
+      appUrl: 'https://mesh.example.com',
+      storefrontUrl: 'https://shop.example.com/tools/mesh-splitter',
+      customerLoginUrl: 'https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter',
+      exchangeShopifyCode: async payload => {
+        exchange = payload
+        return { access_token: 'token' }
+      },
+    })
+    await new Promise(resolve => installServer.listen(0, resolve))
+    const installBaseUrl = `http://127.0.0.1:${installServer.address().port}`
+
+    try {
+      const startResponse = await fetch(`${installBaseUrl}/auth?shop=example.myshopify.com`, {
+        redirect: 'manual',
+      })
+      const state = new URL(startResponse.headers.get('location')).searchParams.get('state')
+      const query = {
+        shop: 'example.myshopify.com',
+        code: 'install-code',
+        state,
+        timestamp: '1782050000',
+      }
+      const hmac = signShopifyOAuthQuery(query, 'api-secret')
+
+      const callbackResponse = await fetch(`${installBaseUrl}/auth/callback?shop=${query.shop}&code=${query.code}&state=${query.state}&timestamp=${query.timestamp}&hmac=${hmac}`, {
+        headers: { cookie: startResponse.headers.get('set-cookie') },
+        redirect: 'manual',
+      })
+
+      expect(callbackResponse.status).toBe(302)
+      expect(callbackResponse.headers.get('location')).toBe('https://shop.example.com/tools/mesh-splitter')
+      expect(exchange).toEqual({
+        shop: 'example.myshopify.com',
+        code: 'install-code',
+        clientId: 'api-key',
+        clientSecret: 'api-secret',
+      })
+    } finally {
+      await new Promise(resolve => installServer.close(resolve))
+    }
   })
 
   it('consumes one generation through the API', async () => {

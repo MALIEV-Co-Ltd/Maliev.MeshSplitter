@@ -2,12 +2,18 @@ import { createServer as createHttpServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { randomBytes } from 'node:crypto'
 import { CreditLedger, InsufficientCreditsError } from './creditLedger.js'
 import { serializePricing } from './pricing.js'
 import { applyPaidOrderCredits } from './shopifyOrders.js'
 import {
+  createOAuthState,
   createSignedSession,
+  isValidShop,
   verifyAppProxyIdentity,
+  verifyAppProxySignature,
+  verifyOAuthState,
+  verifyShopifyOAuthCallback,
   verifyShopifyWebhookHmac,
   verifySignedSession,
 } from './shopifySecurity.js'
@@ -21,6 +27,13 @@ export function createServer(options = {}) {
   const devCustomerBypass = options.devCustomerBypass ?? process.env.DEV_CUSTOMER_BYPASS === 'true'
   const shopifyAppProxySecret = options.shopifyAppProxySecret || process.env.SHOPIFY_APP_PROXY_SECRET
   const shopifyWebhookSecret = options.shopifyWebhookSecret || process.env.SHOPIFY_WEBHOOK_SECRET
+  const shopifyApiKey = options.shopifyApiKey || process.env.SHOPIFY_API_KEY
+  const shopifyApiSecret = options.shopifyApiSecret || process.env.SHOPIFY_API_SECRET || shopifyAppProxySecret
+  const shopifyScopes = options.shopifyScopes || process.env.SHOPIFY_SCOPES || 'read_orders'
+  const appUrl = options.appUrl || process.env.SHOPIFY_APP_URL || process.env.APPLICATION_URL
+  const storefrontUrl = options.storefrontUrl || process.env.STOREFRONT_URL || 'https://shop.maliev.com/tools/mesh-splitter'
+  const customerLoginUrl = options.customerLoginUrl || process.env.CUSTOMER_LOGIN_URL || 'https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter'
+  const exchangeShopifyCode = options.exchangeShopifyCode || exchangeShopifyAccessToken
   const sessionSecret = options.sessionSecret || process.env.SESSION_SECRET || shopifyAppProxySecret
   const frontendDistDir = options.frontendDistDir || process.env.FRONTEND_DIST_DIR || defaultFrontendDistDir()
 
@@ -33,6 +46,13 @@ export function createServer(options = {}) {
         devCustomerBypass,
         shopifyAppProxySecret,
         shopifyWebhookSecret,
+        shopifyApiKey,
+        shopifyApiSecret,
+        shopifyScopes,
+        appUrl,
+        storefrontUrl,
+        customerLoginUrl,
+        exchangeShopifyCode,
         sessionSecret,
         frontendDistDir,
       })
@@ -45,6 +65,14 @@ export function createServer(options = {}) {
 async function route(context) {
   const { request, response, ledger, shopifyWebhookSecret } = context
   const url = new URL(request.url, 'http://localhost')
+
+  if (request.method === 'GET' && url.pathname === '/auth') {
+    return startShopifyOAuth(context, url)
+  }
+
+  if (request.method === 'GET' && url.pathname === '/auth/callback') {
+    return finishShopifyOAuth(context, url)
+  }
 
   if (request.method === 'GET' && url.pathname === '/health') {
     return sendJson(response, 200, { ok: true })
@@ -84,7 +112,16 @@ async function route(context) {
 
   if (request.method === 'GET' && !url.pathname.startsWith('/api/')) {
     const query = Object.fromEntries(url.searchParams.entries())
+    if (query.shop && !query.signature && !url.pathname.startsWith('/assets/')) {
+      return startShopifyOAuth(context, url)
+    }
     if (query.signature) {
+      verifyAppProxySignature(query, context.shopifyAppProxySecret)
+      if (!query.logged_in_customer_id) {
+        response.writeHead(302, { Location: context.customerLoginUrl })
+        response.end()
+        return
+      }
       const identity = verifyAppProxyIdentity(query, context.shopifyAppProxySecret)
       const session = createSignedSession(identity, context.sessionSecret)
       response.setHeader('Set-Cookie', serializeSessionCookie(session))
@@ -93,6 +130,81 @@ async function route(context) {
   }
 
   return sendJson(response, 404, { error: 'Not found' })
+}
+
+function startShopifyOAuth({ request, response, shopifyApiKey, shopifyApiSecret, shopifyScopes, appUrl, sessionSecret }, url) {
+  const shop = url.searchParams.get('shop')
+  if (!isValidShop(shop)) {
+    return sendHtml(response, 400, 'Invalid Shopify shop domain.')
+  }
+  if (!shopifyApiKey || !shopifyApiSecret) {
+    return sendHtml(response, 500, 'Shopify OAuth is not configured.')
+  }
+
+  const publicAppUrl = appUrl || inferPublicAppUrl(request)
+  const redirectUri = new URL('/auth/callback', publicAppUrl).toString()
+  const state = createOAuthState({
+    shop,
+    nonce: randomBytes(16).toString('base64url'),
+    timestamp: Date.now(),
+  }, sessionSecret || shopifyApiSecret)
+  const installUrl = new URL(`https://${shop}/admin/oauth/authorize`)
+  installUrl.searchParams.set('client_id', shopifyApiKey)
+  installUrl.searchParams.set('scope', shopifyScopes)
+  installUrl.searchParams.set('redirect_uri', redirectUri)
+  installUrl.searchParams.set('state', state)
+
+  response.writeHead(302, {
+    Location: installUrl.toString(),
+    'Set-Cookie': serializeOAuthStateCookie(state),
+  })
+  response.end()
+}
+
+async function finishShopifyOAuth(context, url) {
+  const {
+    request,
+    response,
+    shopifyApiKey,
+    shopifyApiSecret,
+    sessionSecret,
+    storefrontUrl,
+    exchangeShopifyCode,
+  } = context
+  if (!shopifyApiKey || !shopifyApiSecret) {
+    return sendHtml(response, 500, 'Shopify OAuth is not configured.')
+  }
+
+  const query = Object.fromEntries(url.searchParams.entries())
+  const { shop, code } = verifyShopifyOAuthCallback(query, shopifyApiSecret)
+  const state = verifyOAuthState(query.state, sessionSecret || shopifyApiSecret)
+  const stateCookie = parseCookies(request.headers.cookie || '').mesh_splitter_oauth_state
+  if (state.shop !== shop || (stateCookie && stateCookie !== query.state)) {
+    return sendHtml(response, 400, 'Invalid Shopify OAuth state.')
+  }
+
+  await exchangeShopifyCode({ shop, code, clientId: shopifyApiKey, clientSecret: shopifyApiSecret })
+  response.writeHead(302, {
+    Location: storefrontUrl,
+    'Set-Cookie': 'mesh_splitter_oauth_state=; Path=/auth/callback; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+  })
+  response.end()
+}
+
+async function exchangeShopifyAccessToken({ shop, code, clientId, clientSecret }) {
+  const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`Shopify OAuth token exchange failed with ${response.status}`)
+  }
+  return response.json()
 }
 
 function resolveIdentity({ request, devCustomerBypass, shopifyAppProxySecret, sessionSecret }, url) {
@@ -153,6 +265,12 @@ function sendHtml(response, statusCode, body) {
   response.end(body)
 }
 
+function inferPublicAppUrl(request) {
+  const proto = request.headers['x-forwarded-proto'] || 'https'
+  const host = request.headers['x-forwarded-host'] || request.headers.host
+  return `${proto}://${host}`
+}
+
 async function serveFrontend(response, frontendDistDir, requestPath) {
   const normalizedPath = requestPath === '/' ? '/index.html' : requestPath
   const candidate = path.normalize(path.join(frontendDistDir, normalizedPath))
@@ -193,6 +311,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 function serializeSessionCookie(value) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
   return `mesh_splitter_session=${value}; Path=/; HttpOnly; SameSite=Lax${secure}`
+}
+
+function serializeOAuthStateCookie(value) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  return `mesh_splitter_oauth_state=${value}; Path=/auth/callback; HttpOnly; SameSite=Lax${secure}`
 }
 
 function parseCookies(cookieHeader) {

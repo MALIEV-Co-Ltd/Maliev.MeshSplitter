@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { createHmac } from 'node:crypto'
 import {
   createSignedSession,
+  createOAuthState,
   signAppProxyQuery,
+  signShopifyOAuthQuery,
   verifyAppProxyIdentity,
+  verifyOAuthState,
+  verifyShopifyOAuthCallback,
   verifyShopifyWebhookHmac,
   verifySignedSession,
 } from './shopifySecurity.js'
@@ -40,6 +44,43 @@ describe('shopifySecurity', () => {
 
     expect(verifyShopifyWebhookHmac(rawBody, hmac, secret)).toBe(true)
     expect(verifyShopifyWebhookHmac(Buffer.from('{}'), hmac, secret)).toBe(false)
+  })
+
+  it('verifies Shopify OAuth callback HMAC', () => {
+    const query = {
+      shop: 'example.myshopify.com',
+      code: 'install-code',
+      state: 'state-token',
+      timestamp: '1782050000',
+    }
+    const hmac = signShopifyOAuthQuery(query, 'shared-secret')
+
+    expect(verifyShopifyOAuthCallback({ ...query, hmac }, 'shared-secret')).toEqual({
+      shop: 'example.myshopify.com',
+      code: 'install-code',
+    })
+  })
+
+  it('rejects tampered Shopify OAuth callback HMACs', () => {
+    expect(() => verifyShopifyOAuthCallback({
+      shop: 'example.myshopify.com',
+      code: 'install-code',
+      state: 'state-token',
+      hmac: 'bad',
+    }, 'shared-secret')).toThrow('Invalid Shopify OAuth HMAC')
+  })
+
+  it('round-trips signed Shopify OAuth state', () => {
+    const state = createOAuthState({
+      shop: 'example.myshopify.com',
+      nonce: 'nonce',
+      timestamp: 1782050000,
+    }, 'session-secret')
+
+    expect(verifyOAuthState(state, 'session-secret')).toMatchObject({
+      shop: 'example.myshopify.com',
+      nonce: 'nonce',
+    })
   })
 
   it('round-trips a signed customer session cookie', () => {
