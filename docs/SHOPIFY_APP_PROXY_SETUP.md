@@ -41,7 +41,7 @@ Configure a Shopify app proxy that points to the deployed backend URL:
 
 - Subpath prefix: `tools`
 - Subpath: `mesh-splitter`
-- Proxy URL: `https://maliev-mesh-splitter.onrender.com/`
+- Proxy URL: `https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/`
 
 The first page request through `/tools/mesh-splitter` is signed by Shopify. The
 backend verifies that signature, requires `logged_in_customer_id`, then sets a
@@ -52,7 +52,7 @@ signed `mesh_splitter_session` cookie. API requests use that cookie.
 Subscribe the app to `orders/paid` and route it to:
 
 ```text
-https://maliev-mesh-splitter.onrender.com/webhooks/shopify/orders-paid
+https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/webhooks/shopify/orders-paid
 ```
 
 Set `SHOPIFY_WEBHOOK_SECRET` to the webhook signing secret so the backend can
@@ -79,6 +79,12 @@ Required backend environment:
 - `DATABASE_URL`
 - `SHOPIFY_APP_PROXY_SECRET`
 - `SHOPIFY_WEBHOOK_SECRET`
+- `SHOPIFY_API_KEY`
+- `SHOPIFY_API_SECRET`
+- `SHOPIFY_APP_URL`
+- `SHOPIFY_SCOPES=read_orders`
+- `STOREFRONT_URL=https://shop.maliev.com/tools/mesh-splitter`
+- `CUSTOMER_LOGIN_URL=https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter`
 - `SESSION_SECRET`
 - `FRONTEND_DIST_DIR`
 

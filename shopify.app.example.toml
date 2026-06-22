@@ -5,27 +5,27 @@
 
 client_id = "<shopify-app-client-id>"
 name = "MALIEV MeshSplitter"
-application_url = "https://maliev-mesh-splitter.onrender.com"
+application_url = "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/auth"
 embedded = false
 
 [build]
 automatically_update_urls_on_dev = true
 
 [webhooks]
-api_version = "2026-04"
+api_version = "2026-07"
 
 [[webhooks.subscriptions]]
 topics = ["orders/paid"]
-uri = "https://maliev-mesh-splitter.onrender.com/webhooks/shopify/orders-paid"
+uri = "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/webhooks/shopify/orders-paid"
 
 [auth]
 redirect_urls = [
-  "https://maliev-mesh-splitter.onrender.com/auth/callback",
-  "https://maliev-mesh-splitter.onrender.com/auth/shopify/callback",
-  "https://maliev-mesh-splitter.onrender.com/api/auth/callback"
+  "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/auth/callback",
+  "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/auth/shopify/callback",
+  "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://maliev-mesh-splitter.onrender.com/"
+url = "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/"
 prefix = "tools"
 subpath = "mesh-splitter"

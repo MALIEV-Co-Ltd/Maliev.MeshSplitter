@@ -17,20 +17,20 @@ The production package is Docker-ready. The repository includes:
   credit/session/webhook backend.
 - `.github/workflows/publish-container.yml` for publishing the production
   container to GitHub Container Registry.
-- `render.yaml` for a Render Blueprint with one Docker web service and one
-  Postgres database.
+- `render.yaml` for an optional Render Blueprint with one Docker web service and
+  one Postgres database.
 - `shopify.app.example.toml` for the Shopify app proxy and paid-order webhook
   configuration once the public backend URL is known.
 - `.env.production.example` documenting required runtime secrets.
 
-The expected Render service URL is:
+The production Cloud Run service URL is:
 
 ```text
-https://maliev-mesh-splitter.onrender.com
+https://maliev-mesh-splitter-1036965383273.europe-west1.run.app
 ```
 
-If Render assigns a different URL, replace that URL in the Shopify app config
-before validation/deploy.
+If the Cloud Run service URL changes, replace that URL in the Shopify app config
+before validation and deploy.
 
 The published container image is:
 
@@ -52,7 +52,7 @@ gcloud run deploy maliev-mesh-splitter `
   --region=europe-west1 `
   --source=. `
   --allow-unauthenticated `
-  --set-env-vars NODE_ENV=production,FRONTEND_DIST_DIR=/app/frontend/dist,CREDIT_STORE=datastore,GOOGLE_CLOUD_PROJECT=maliev-website,DATASTORE_NAMESPACE=mesh-splitter,VITE_MESH_API_BASE_URL=/api,VITE_CREDITS_ENFORCEMENT=required,VITE_SHOPIFY_STORE_DOMAIN=shop.maliev.com
+  --set-env-vars NODE_ENV=production,FRONTEND_DIST_DIR=/app/frontend/dist,CREDIT_STORE=datastore,GOOGLE_CLOUD_PROJECT=maliev-website,DATASTORE_NAMESPACE=mesh-splitter,VITE_MESH_API_BASE_URL=/api,VITE_CREDITS_ENFORCEMENT=required,VITE_SHOPIFY_STORE_DOMAIN=shop.maliev.com,SHOPIFY_APP_URL=https://maliev-mesh-splitter-1036965383273.europe-west1.run.app,STOREFRONT_URL=https://shop.maliev.com/tools/mesh-splitter,CUSTOMER_LOGIN_URL=https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter,SHOPIFY_SCOPES=read_orders
 ```
 
 Set these Cloud Run secrets or environment variables before wiring the Shopify
@@ -60,6 +60,8 @@ app proxy:
 
 - `SHOPIFY_APP_PROXY_SECRET`
 - `SHOPIFY_WEBHOOK_SECRET`
+- `SHOPIFY_API_KEY`
+- `SHOPIFY_API_SECRET`
 - `SESSION_SECRET`
 
 After deployment, verify:
@@ -85,6 +87,7 @@ WASM and JavaScript.
 
 The implemented launch path uses:
 
+- Shopify OAuth installation through `/auth` and `/auth/callback`.
 - Shopify app proxy so customer requests stay under the shop domain.
 - Signed app-proxy request verification.
 - `logged_in_customer_id` checks before creating the customer session.
@@ -130,7 +133,7 @@ Expected response:
 
 Copy `shopify.app.example.toml` to `shopify.app.toml` only after the Shopify
 Partner app is linked or created. Replace `client_id` and the backend URL if
-Render assigned a different service hostname, then validate:
+Cloud Run assigned a different service hostname, then validate:
 
 ```powershell
 shopify app config validate --json

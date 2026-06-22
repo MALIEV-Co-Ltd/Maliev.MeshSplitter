@@ -1,0 +1,32 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "1b68296a3a7eee5019781d140af68915"
+application_url = "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/auth"
+embedded = false
+name = "MALIEV MeshSplitter"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_orders"
+
+[auth]
+redirect_urls = [
+  "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/auth/callback",
+  "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/auth/shopify/callback",
+  "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2026-07"
+
+[[webhooks.subscriptions]]
+topics = [ "orders/paid" ]
+uri = "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/webhooks/shopify/orders-paid"
+
+[app_proxy]
+url = "https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/"
+prefix = "tools"
+subpath = "mesh-splitter"
+
+[build]
+automatically_update_urls_on_dev = true
