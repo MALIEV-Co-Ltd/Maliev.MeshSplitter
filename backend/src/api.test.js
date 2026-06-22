@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createServer } from './server.js'
 import { createHmac } from 'node:crypto'
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { signAppProxyQuery, signShopifyOAuthQuery } from './shopifySecurity.js'
 
 describe('HTTP API', () => {
@@ -200,5 +203,39 @@ describe('HTTP API', () => {
 
     expect(response.status).toBe(200)
     expect(body).toMatchObject({ customerId: 'shopify:991', creditsAdded: 10 })
+  })
+
+  it('serves current entry assets for stale hashed index asset requests', async () => {
+    const distDir = await mkdtemp(path.join(os.tmpdir(), 'mesh-splitter-dist-'))
+    const assetDir = path.join(distDir, 'assets')
+    await mkdir(assetDir)
+    await writeFile(path.join(distDir, 'index.html'), '<div id="app"></div>')
+    await writeFile(path.join(assetDir, 'index-current.js'), 'console.log("current")')
+    await writeFile(path.join(assetDir, 'index-current.css'), '.current{}')
+
+    const assetServer = createServer({
+      devCustomerBypass: true,
+      shopifyAppProxySecret: 'proxy-secret',
+      shopifyWebhookSecret: 'webhook-secret',
+      frontendDistDir: distDir,
+    })
+    await new Promise(resolve => assetServer.listen(0, resolve))
+    const assetBaseUrl = `http://127.0.0.1:${assetServer.address().port}`
+
+    try {
+      const jsResponse = await fetch(`${assetBaseUrl}/assets/index-stale.js`)
+      const cssResponse = await fetch(`${assetBaseUrl}/assets/index-stale.css`)
+      const missingResponse = await fetch(`${assetBaseUrl}/assets/vendor-stale.js`)
+
+      expect(jsResponse.status).toBe(200)
+      expect(jsResponse.headers.get('content-type')).toContain('text/javascript')
+      await expect(jsResponse.text()).resolves.toContain('current')
+      expect(cssResponse.status).toBe(200)
+      expect(cssResponse.headers.get('content-type')).toContain('text/css')
+      expect(missingResponse.status).toBe(404)
+    } finally {
+      await new Promise(resolve => assetServer.close(resolve))
+      await rm(distDir, { recursive: true, force: true })
+    }
   })
 })

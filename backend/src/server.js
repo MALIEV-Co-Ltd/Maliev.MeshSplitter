@@ -1,5 +1,5 @@
 import { createServer as createHttpServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomBytes } from 'node:crypto'
@@ -278,24 +278,72 @@ function inferPublicAppUrl(request) {
 }
 
 async function serveFrontend(response, frontendDistDir, requestPath) {
+  if (requestPath === '/favicon.ico') {
+    response.writeHead(204, { 'Cache-Control': 'public, max-age=3600' })
+    response.end()
+    return
+  }
+
   const normalizedPath = requestPath === '/' ? '/index.html' : requestPath
   const candidate = path.normalize(path.join(frontendDistDir, normalizedPath))
   const distRoot = path.normalize(frontendDistDir)
   const filePath = candidate.startsWith(distRoot) ? candidate : path.join(distRoot, 'index.html')
+  const assetRequest = normalizedPath.startsWith('/assets/')
 
   try {
     const file = await readFile(filePath)
-    response.writeHead(200, { 'Content-Type': contentType(filePath) })
+    response.writeHead(200, {
+      'Content-Type': contentType(filePath),
+      'Cache-Control': cacheControl(filePath),
+    })
     response.end(file)
   } catch {
+    if (assetRequest) {
+      const fallbackAsset = await resolveFallbackAsset(distRoot, normalizedPath)
+      if (fallbackAsset) {
+        const file = await readFile(fallbackAsset)
+        response.writeHead(200, {
+          'Content-Type': contentType(fallbackAsset),
+          'Cache-Control': cacheControl(fallbackAsset),
+        })
+        response.end(file)
+        return
+      }
+      response.writeHead(404, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      })
+      response.end('Asset not found')
+      return
+    }
+
     try {
       const fallback = await readFile(path.join(distRoot, 'index.html'))
-      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      response.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      })
       response.end(fallback)
     } catch {
       sendHtml(response, 200, appShellHtml())
     }
   }
+}
+
+async function resolveFallbackAsset(distRoot, normalizedPath) {
+  const filename = path.basename(normalizedPath)
+  const extension = path.extname(filename)
+  if (!['.css', '.js'].includes(extension) || !filename.startsWith('index-')) {
+    return null
+  }
+
+  const assetsDir = path.join(distRoot, 'assets')
+  const files = await readdir(assetsDir).catch(() => [])
+  const currentEntry = files
+    .filter(file => file.startsWith('index-') && file.endsWith(extension))
+    .sort()
+    .at(-1)
+  return currentEntry ? path.join(assetsDir, currentEntry) : null
 }
 
 function sendError(response, error) {
@@ -357,6 +405,14 @@ function contentType(filePath) {
   if (filePath.endsWith('.css')) return 'text/css; charset=utf-8'
   if (filePath.endsWith('.html')) return 'text/html; charset=utf-8'
   if (filePath.endsWith('.svg')) return 'image/svg+xml'
+  if (filePath.endsWith('.ico')) return 'image/x-icon'
   if (filePath.endsWith('.json')) return 'application/json'
+  if (filePath.endsWith('.wasm')) return 'application/wasm'
   return 'application/octet-stream'
+}
+
+function cacheControl(filePath) {
+  if (filePath.endsWith('.html')) return 'no-store'
+  if (filePath.includes(`${path.sep}assets${path.sep}`)) return 'public, max-age=31536000, immutable'
+  return 'public, max-age=3600'
 }
