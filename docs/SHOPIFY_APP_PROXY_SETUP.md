@@ -90,6 +90,6 @@ Required backend environment:
 
 Required frontend build environment:
 
-- `VITE_MESH_API_BASE_URL=/api`
+- `VITE_MESH_API_BASE_URL=/tools/mesh-splitter/api`
 - `VITE_CREDITS_ENFORCEMENT=required`
 - `VITE_SHOPIFY_STORE_DOMAIN=<your-store>.myshopify.com`
