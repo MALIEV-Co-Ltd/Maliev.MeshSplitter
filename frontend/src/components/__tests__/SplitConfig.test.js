@@ -20,21 +20,21 @@ describe('SplitConfig', () => {
     expect(wrapper.text()).toContain('Z')
   })
 
-  it('also renders the connector picker inline', () => {
+  it('also renders the connector picker inline', async () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: false, err: '' }
     })
-    expect(wrapper.text()).toContain('Dowel')
+    expect(wrapper.text()).toContain('None')
     expect(wrapper.text()).toContain('Connectors')
+    await wrapper.get('.conn-select-trigger').trigger('click')
+    expect(wrapper.text()).toContain('Dowel')
   })
 
   it('split button is disabled when ok is false', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: false, err: '' }
     })
-    // The connector pills are real <button role="radio"> elements that
-    // precede the submit button in the DOM, so target the last one.
-    const btn = wrapper.findAll('button').at(-1)
+    const btn = wrapper.get('button.w-full')
     expect(btn.attributes('disabled')).toBeDefined()
   })
 
@@ -42,7 +42,7 @@ describe('SplitConfig', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: true, err: '' }
     })
-    const btn = wrapper.findAll('button').at(-1)
+    const btn = wrapper.get('button.w-full')
     expect(btn.attributes('disabled')).toBeUndefined()
   })
 
@@ -57,8 +57,11 @@ describe('SplitConfig', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: true, err: '', divisions: [2, 2, 1] }
     })
-    await wrapper.get('[for="conn-Dowel"]').trigger('click')
-    await wrapper.findAll('button').at(-1).trigger('click')
+    await wrapper.get('.conn-select-trigger').trigger('click')
+    const dowelOption = wrapper.findAll('[role="option"]').find((candidate) => candidate.text().includes('Dowel'))
+    expect(dowelOption).toBeTruthy()
+    await dowelOption.trigger('click')
+    await wrapper.get('button.w-full').trigger('click')
 
     const [volume, divisions, connectorConfig] = wrapper.emitted('split')[0]
     expect(volume).toEqual([250, 250, 250])

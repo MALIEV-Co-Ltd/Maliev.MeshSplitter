@@ -173,6 +173,7 @@ function buildLoginUrl(customerLoginUrl, pathname, query) {
   const loginUrl = new URL(customerLoginUrl)
   const returnPath = resolveLoginReturnPath(pathname, query?.path_prefix)
   loginUrl.searchParams.set('return_url', returnPath)
+  loginUrl.searchParams.set('return_to', returnPath)
   return loginUrl.toString()
 }
 

@@ -98,7 +98,7 @@ describe('HTTP API', () => {
     })
 
     expect(response.status).toBe(302)
-    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp')
+    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp&return_to=%2Ftools%2Fmesh-splitter%2Fapp')
   })
 
   it('retains redirect return path for prefixed mesh splitter app route', async () => {
@@ -113,7 +113,7 @@ describe('HTTP API', () => {
     })
 
     expect(response.status).toBe(302)
-    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp')
+    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp&return_to=%2Ftools%2Fmesh-splitter%2Fapp')
   })
 
   it('starts Shopify OAuth installation', async () => {

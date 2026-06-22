@@ -9,7 +9,35 @@ const DEFAULT_ACCOUNT = {
 
 const DEFAULT_PRICING = {
   freeGenerationsPerMonth: 3,
-  creditPacks: [],
+  creditPacks: [
+    {
+      sku: 'MS-CREDITS-10',
+      handle: 'mesh-splitter-starter-credit-pack',
+      name: 'Starter Credit Pack',
+      credits: 10,
+      priceCents: 32900,
+      currency: 'THB',
+      bestFor: 'Trying real customer parts after the monthly free allowance.',
+    },
+    {
+      sku: 'MS-CREDITS-30',
+      handle: 'mesh-splitter-maker-credit-pack',
+      name: 'Maker Credit Pack',
+      credits: 30,
+      priceCents: 87900,
+      currency: 'THB',
+      bestFor: 'Regular makers splitting several large models per month.',
+    },
+    {
+      sku: 'MS-CREDITS-100',
+      handle: 'mesh-splitter-studio-credit-pack',
+      name: 'Studio Credit Pack',
+      credits: 100,
+      priceCents: 249000,
+      currency: 'THB',
+      bestFor: 'Print farms, studios, and service bureaus.',
+    },
+  ],
 }
 
 export function useCredits(options = {}) {
@@ -17,8 +45,9 @@ export function useCredits(options = {}) {
   const enforcement = options.enforcement ?? import.meta.env.VITE_CREDITS_ENFORCEMENT ?? 'demo'
   const account = ref({ ...DEFAULT_ACCOUNT })
   const pricing = ref({ ...DEFAULT_PRICING })
-  const loading = ref(false)
+  const loading = ref(Boolean(apiBaseUrl))
   const error = ref(null)
+  const hasAccountData = ref(false)
 
   async function refresh() {
     if (!apiBaseUrl) return
@@ -31,6 +60,7 @@ export function useCredits(options = {}) {
       ])
       account.value = accountResponse.account
       pricing.value = pricingResponse
+      hasAccountData.value = true
     } catch (e) {
       error.value = e.message
       if (enforcement === 'required') throw e
@@ -45,6 +75,27 @@ export function useCredits(options = {}) {
     error.value = null
     try {
       pricing.value = await request(`${apiBaseUrl}/pricing`)
+    } catch (e) {
+      error.value = e.message
+      if (enforcement === 'required') throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function refreshPublic() {
+    if (!apiBaseUrl) return
+    loading.value = true
+    error.value = null
+    try {
+      pricing.value = await request(`${apiBaseUrl}/pricing`)
+      try {
+        const accountResponse = await request(`${apiBaseUrl}/account`)
+        account.value = accountResponse.account
+        hasAccountData.value = true
+      } catch {
+        hasAccountData.value = false
+      }
     } catch (e) {
       error.value = e.message
       if (enforcement === 'required') throw e
@@ -70,6 +121,7 @@ export function useCredits(options = {}) {
         body: JSON.stringify({ idempotencyKey, metadata }),
       })
       account.value = response.account
+      hasAccountData.value = true
       return response.transaction
     } catch (e) {
       error.value = e.message || 'Credit authorization is unavailable'
@@ -88,8 +140,10 @@ export function useCredits(options = {}) {
     pricing: readonly(pricing),
     loading: readonly(loading),
     error: readonly(error),
+    hasAccountData: readonly(hasAccountData),
     refresh,
     refreshPricing,
+    refreshPublic,
     consumeExport,
     consumeGeneration,
   }

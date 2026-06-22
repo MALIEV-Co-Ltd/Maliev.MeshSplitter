@@ -18,9 +18,11 @@ describe('useCredits', () => {
       }))
 
     const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+    expect(credits.hasAccountData.value).toBe(false)
     await credits.refresh()
 
     expect(credits.account.value.availableGenerations).toBe(3)
+    expect(credits.hasAccountData.value).toBe(true)
     expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-10')
   })
 
@@ -36,6 +38,42 @@ describe('useCredits', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(fetch).toHaveBeenCalledWith('/api/pricing', undefined)
     expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-30')
+  })
+
+  it('loads public pricing and signed-in account data when available', async () => {
+    fetch
+      .mockResolvedValueOnce(jsonResponse({
+        freeGenerationsPerMonth: 3,
+        creditPacks: [{ sku: 'MS-CREDITS-30', credits: 30, priceCents: 87900 }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        account: { freeRemaining: 2, paidCredits: 5, availableGenerations: 7 },
+      }))
+
+    const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+    await credits.refreshPublic()
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/pricing', undefined)
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/account', undefined)
+    expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-30')
+    expect(credits.account.value.availableGenerations).toBe(7)
+    expect(credits.hasAccountData.value).toBe(true)
+  })
+
+  it('keeps public pricing when anonymous account lookup is unavailable', async () => {
+    fetch
+      .mockResolvedValueOnce(jsonResponse({
+        freeGenerationsPerMonth: 3,
+        creditPacks: [{ sku: 'MS-CREDITS-10', credits: 10, priceCents: 32900 }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'Shopify customer login is required' }, 400))
+
+    const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+    await credits.refreshPublic()
+
+    expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-10')
+    expect(credits.hasAccountData.value).toBe(false)
+    expect(credits.error.value).toBeNull()
   })
 
   it('posts export consumption with a stable idempotency key', async () => {
@@ -92,6 +130,7 @@ describe('useCredits', () => {
     await expect(credits.consumeExport({
       idempotencyKey: 'mesh:test.stl:1x1x1',
     })).resolves.toMatchObject({ source: 'local_demo' })
+    expect(credits.hasAccountData.value).toBe(false)
   })
 })
 

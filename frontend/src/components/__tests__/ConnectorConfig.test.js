@@ -3,8 +3,9 @@ import { mount } from '@vue/test-utils'
 import ConnectorConfig from '../ConnectorConfig.vue'
 
 describe('ConnectorConfig', () => {
-  it('renders connector options with reference links', () => {
+  it('renders connector options with reference links', async () => {
     const wrapper = mount(ConnectorConfig)
+    await wrapper.get('.conn-select-trigger').trigger('click')
     expect(wrapper.text()).toContain('Dowel')
     expect(wrapper.text()).toContain('Mortise & Tenon')
     expect(wrapper.text()).toContain('Key')
@@ -18,7 +19,7 @@ describe('ConnectorConfig', () => {
 
   it('emits dowel payload with diameter/depth when selected', async () => {
     const wrapper = mount(ConnectorConfig)
-    await wrapper.get('[for="conn-Dowel"]').trigger('click')
+    await selectConnector(wrapper, 'Dowel')
 
     const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
@@ -32,7 +33,7 @@ describe('ConnectorConfig', () => {
 
   it('emits mortise payload with tenon dimensions when selected', async () => {
     const wrapper = mount(ConnectorConfig)
-    await wrapper.get('[for="conn-Mortise & Tenon"]').trigger('click')
+    await selectConnector(wrapper, 'Mortise & Tenon')
 
     const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
@@ -47,7 +48,7 @@ describe('ConnectorConfig', () => {
 
   it('emits key payload with key dimensions when selected', async () => {
     const wrapper = mount(ConnectorConfig)
-    await wrapper.get('[for="conn-Key"]').trigger('click')
+    await selectConnector(wrapper, 'Key')
 
     const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
@@ -59,4 +60,20 @@ describe('ConnectorConfig', () => {
       keyHeight: 3.5,
     })
   })
+
+  it('keeps options hidden until the select is opened', async () => {
+    const wrapper = mount(ConnectorConfig)
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+
+    await wrapper.get('.conn-select-trigger').trigger('click')
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(4)
+  })
 })
+
+async function selectConnector(wrapper, label) {
+  await wrapper.get('.conn-select-trigger').trigger('click')
+  const option = wrapper.findAll('[role="option"]').find((candidate) => candidate.text().includes(label))
+  expect(option).toBeTruthy()
+  await option.trigger('click')
+}

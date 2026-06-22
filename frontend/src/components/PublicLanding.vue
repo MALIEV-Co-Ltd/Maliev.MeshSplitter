@@ -1,7 +1,9 @@
 <template>
   <main class="landing-shell">
     <header class="lnd-header">
-      <img :src="logoUrl" alt="MALIEV" />
+      <a class="lnd-logo" :href="homeUrl" aria-label="Go to MALIEV shop">
+        <img :src="logoUrl" alt="MALIEV" />
+      </a>
       <nav class="lnd-nav">
         <a href="#">Home</a>
         <a href="#capabilities">Capabilities</a>
@@ -9,7 +11,11 @@
         <a href="#pricing">Pricing</a>
       </nav>
       <div class="lnd-header-right">
-        <a class="lnd-btn lnd-btn-outline" href="/account/login">Sign in</a>
+        <span v-if="hasAccountData" class="lnd-credit-chip">
+          {{ account.freeRemaining }} free · {{ account.paidCredits }} credits
+        </span>
+        <span v-else-if="creditsLoading" class="lnd-credit-chip lnd-credit-chip--loading">Credits loading</span>
+        <a v-else class="lnd-btn lnd-btn-outline" :href="signInUrl">Sign in</a>
         <a class="lnd-btn lnd-btn-ink" :href="launchUrl">Launch MeshSplitter</a>
       </div>
     </header>
@@ -43,19 +49,75 @@
       </div>
 
       <div class="mesh-stage" aria-label="Mesh splitting workflow preview">
-        <div class="build-volume">
-          <span class="volume-label">250 x 250 x 250 mm</span>
-          <span class="split-plane split-plane-x"></span>
-          <span class="split-plane split-plane-y"></span>
-          <div class="part-stack">
-            <span v-for="part in parts" :key="part" class="mesh-part">{{ part }}</span>
-          </div>
+        <div class="splitter-visual">
+          <img
+            :src="heroImageUrl"
+            alt="Low-poly rabbit STL split into labeled printable parts inside a 250 by 250 by 250 millimeter build volume with connector tabs"
+          />
         </div>
-        <div class="assembly-strip">
-          <span>Upload STL</span>
-          <span>Scale</span>
-          <span>Split</span>
-          <span>Export</span>
+      </div>
+    </section>
+
+    <section id="pricing" class="pricing-section" aria-label="Pricing">
+      <div class="pricing-shell">
+        <div class="pricing-heading">
+          <p>Pricing</p>
+          <h2>Start free, then buy export credits only when needed.</h2>
+          <span>Test the workflow with monthly free exports. Pay only when you download more STL + PDF ZIP packages.</span>
+        </div>
+        <div class="pricing-grid">
+          <article class="pricing-card free-plan">
+            <div class="pricing-card-top">
+              <p class="plan-eyebrow">Free monthly plan</p>
+              <h3>3 exports</h3>
+              <p class="plan-price">
+                <span>Free</span>
+                <small>per month</small>
+              </p>
+              <p class="plan-summary">Included for every signed-in customer to test real models first.</p>
+              <a class="plan-cta" :href="signInUrl">Sign in to start</a>
+            </div>
+            <div class="plan-features">
+              <p>Includes</p>
+              <ul>
+                <li>Upload and inspect STL files locally</li>
+                <li>Scale and define printer build volume</li>
+                <li>Split, label, review, and export packages</li>
+                <li>Resets every calendar month</li>
+              </ul>
+            </div>
+          </article>
+
+          <a
+            v-for="pack in pricing.creditPacks"
+            :key="pack.sku"
+            class="pricing-card price-plan"
+            :class="{ featured: isFeaturedPack(pack) }"
+            :href="productUrl(pack)"
+          >
+            <div class="pricing-card-top">
+              <div class="plan-title-row">
+                <p class="plan-eyebrow">{{ pack.name }}</p>
+                <span v-if="isFeaturedPack(pack)" class="popular-badge">Best value</span>
+              </div>
+              <h3>{{ pack.credits }} credits</h3>
+              <p class="plan-price">
+                <span>{{ formatPrice(pack.priceCents, pack.currency) }}</span>
+                <small>{{ pricePerCredit(pack) }} / export</small>
+              </p>
+              <p class="plan-summary">{{ pack.bestFor }}</p>
+              <span class="plan-cta">Buy credits</span>
+            </div>
+            <div class="plan-features">
+              <p>Includes</p>
+              <ul>
+                <li>{{ pack.credits }} paid exports after free allowance</li>
+                <li>Credits stay in your customer account</li>
+                <li>One ZIP with labeled STLs and PDF guide</li>
+                <li>Browser-local mesh processing</li>
+              </ul>
+            </div>
+          </a>
         </div>
       </div>
     </section>
@@ -92,26 +154,6 @@
       </div>
     </section>
 
-    <section id="pricing" class="landing-band pricing-band" aria-label="Pricing">
-      <div class="section-heading">
-        <p>Pricing</p>
-        <h2>Start free, then buy export credits only when needed.</h2>
-      </div>
-      <div class="pricing-grid">
-        <article class="free-plan">
-          <p class="plan-eyebrow">Included</p>
-          <h3>3 free exports</h3>
-          <p>Every logged-in customer gets three free exports each month.</p>
-        </article>
-        <a v-for="pack in pricing.creditPacks" :key="pack.sku" class="price-plan" :href="productUrl(pack)">
-          <p class="plan-eyebrow">{{ pack.name }}</p>
-          <h3>{{ pack.credits }} credits</h3>
-          <p>{{ formatPrice(pack.priceCents, pack.currency) }}</p>
-          <span>{{ pack.bestFor }}</span>
-        </a>
-      </div>
-    </section>
-
     <section class="landing-cta">
       <div>
         <p class="landing-kicker">Ready to test a real model?</p>
@@ -124,14 +166,18 @@
 
 <script setup>
 import logoUrl from '../assets/logos/maliev-wordmark-black.svg'
+import heroImageUrl from '../assets/mesh-splitter-hero.webp'
 
 const props = defineProps({
   pricing: { type: Object, required: true },
+  account: { type: Object, required: true },
+  hasAccountData: { type: Boolean, default: false },
+  creditsLoading: { type: Boolean, default: false },
   storeDomain: { type: String, default: '' },
+  homeUrl: { type: String, default: 'https://shop.maliev.com/' },
   launchUrl: { type: String, required: true },
+  signInUrl: { type: String, default: '/account/login' },
 })
-
-const parts = ['P01', 'P02', 'P03', 'P04']
 
 const workflow = [
   {
@@ -170,9 +216,21 @@ function productUrl(pack) {
 }
 
 function formatPrice(priceCents, currency) {
+  const hasFraction = priceCents % 100 !== 0
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: currency || 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: hasFraction ? 2 : 0,
   }).format(priceCents / 100)
+}
+
+function pricePerCredit(pack) {
+  if (!pack?.credits || !pack?.priceCents) return 'Priced per export'
+  return formatPrice(Math.round(pack.priceCents / pack.credits), pack.currency)
+}
+
+function isFeaturedPack(pack) {
+  return pack?.sku === 'MS-CREDITS-30'
 }
 </script>

@@ -1,20 +1,42 @@
 <template>
   <div>
-    <RadioGroup v-model="connectorType" class="conn-pills">
-      <div v-for="type in connectorTypes" :key="type.value">
-        <RadioGroupItem :value="type.value" :id="`conn-${type.value}`" class="peer sr-only" />
-        <Label :for="`conn-${type.value}`"
-          class="flex cursor-pointer flex-col gap-1 rounded-sm border border-input bg-background p-2 hover:bg-accent peer-data-[state=checked]:border-signal peer-data-[state=checked]:bg-signal/10 [&:has([data-state=checked])]:border-signal [&:has([data-state=checked])]:bg-signal/10">
-          <span class="conn-pill-name">{{ type.title }}</span>
-          <div class="connector-preview-wrapper">
-            <component :is="type.visual" />
-          </div>
-          <a :href="type.referenceUrl" target="_blank" rel="noreferrer" class="text-[10px] text-muted-foreground underline">
+    <div class="conn-select">
+      <button
+        type="button"
+        class="conn-select-trigger"
+        aria-haspopup="listbox"
+        :aria-expanded="isOpen"
+        @click="isOpen = !isOpen"
+      >
+        <span class="conn-selected">
+          <span class="conn-pill-name">{{ selectedType.title }}</span>
+          <span class="connector-preview-wrapper connector-preview-wrapper--selected">
+            <component :is="selectedType.visual" />
+          </span>
+        </span>
+        <ChevronDownIcon :size="14" :stroke-width="1.75" :class="{ 'rotate-180': isOpen }" />
+      </button>
+
+      <div v-if="isOpen" class="conn-select-menu" role="listbox">
+        <div v-for="type in connectorTypes" :key="type.value" class="conn-option-card">
+          <button
+            type="button"
+            class="conn-option-button"
+            role="option"
+            :aria-selected="connectorType === type.value"
+            @click="selectType(type.value)"
+          >
+            <span class="conn-pill-name">{{ type.title }}</span>
+            <span class="connector-preview-wrapper">
+              <component :is="type.visual" />
+            </span>
+          </button>
+          <a :href="type.referenceUrl" target="_blank" rel="noreferrer" class="conn-option-link">
             Reference
           </a>
-        </Label>
+        </div>
       </div>
-    </RadioGroup>
+    </div>
 
     <div v-if="connectorType !== 'None'" class="mt-3 space-y-2">
       <div v-if="isDowelConnector" class="conn-params">
@@ -76,8 +98,7 @@
 
 <script setup>
 import { computed, defineComponent, h, ref, watch } from 'vue'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Label } from '@/components/ui/label'
+import { ChevronDown as ChevronDownIcon } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 
 const props = defineProps({
@@ -169,6 +190,8 @@ const connectorTypes = [
 ]
 
 const connectorType = ref(props.modelValue?.type || 'None')
+const isOpen = ref(false)
+const selectedType = computed(() => connectorTypes.find((type) => type.value === connectorType.value) || connectorTypes.at(-1))
 const isDowelConnector = computed(() => connectorType.value === 'Dowel')
 const isMortiseConnector = computed(() => connectorType.value === 'Mortise & Tenon')
 const isKeyConnector = computed(() => connectorType.value === 'Key')
@@ -194,4 +217,9 @@ const config = computed(() => {
 })
 
 watch(config, (value) => emit('update:modelValue', value), { immediate: true, deep: true })
+
+function selectType(value) {
+  connectorType.value = value
+  isOpen.value = false
+}
 </script>
