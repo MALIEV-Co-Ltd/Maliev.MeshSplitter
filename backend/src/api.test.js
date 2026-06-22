@@ -183,6 +183,93 @@ describe('HTTP API', () => {
     expect(body.account.freeRemaining).toBe(2)
   })
 
+  it('is idempotent when reusing the same export idempotency key', async () => {
+    const first = await fetch(`${baseUrl}/api/exports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'local-customer',
+      },
+      body: JSON.stringify({ idempotencyKey: 'export-repeat', metadata: { filename: 'part.stl' } }),
+    })
+    const firstBody = await first.json()
+
+    const second = await fetch(`${baseUrl}/api/exports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'local-customer',
+      },
+      body: JSON.stringify({ idempotencyKey: 'export-repeat', metadata: { filename: 'part.stl' } }),
+    })
+    const secondBody = await second.json()
+
+    expect(first.status).toBe(201)
+    expect(second.status).toBe(201)
+    expect(secondBody).toMatchObject({ transaction: firstBody.transaction, account: firstBody.account })
+  })
+
+  it('returns insufficient credits when monthly free exports and paid credits are exhausted', async () => {
+    await Promise.all([
+      fetch(`${baseUrl}/api/exports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-mesh-customer-id': 'local-customer',
+        },
+        body: JSON.stringify({ idempotencyKey: 'export-1' }),
+      }),
+      fetch(`${baseUrl}/api/exports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-mesh-customer-id': 'local-customer',
+        },
+        body: JSON.stringify({ idempotencyKey: 'export-2' }),
+      }),
+      fetch(`${baseUrl}/api/exports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-mesh-customer-id': 'local-customer',
+        },
+        body: JSON.stringify({ idempotencyKey: 'export-3' }),
+      }),
+    ])
+
+    const exhausted = await fetch(`${baseUrl}/api/exports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'local-customer',
+      },
+      body: JSON.stringify({ idempotencyKey: 'export-4' }),
+    })
+    const body = await exhausted.json()
+
+    expect(exhausted.status).toBe(402)
+    expect(body.error).toBe('No free exports or paid credits remain')
+    expect(body.account.freeRemaining).toBe(0)
+    expect(body.account.paidCredits).toBe(0)
+  })
+
+  it('supports legacy /api/generations path for compatibility', async () => {
+    const response = await fetch(`${baseUrl}/api/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'local-customer',
+      },
+      body: JSON.stringify({ idempotencyKey: 'generation-compat' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(201)
+    expect(body.transaction.type).toBe('export')
+    expect(body.transaction.metadata.requestType).toBe('generation')
+    expect(body.account.freeRemaining).toBe(2)
+  })
+
   it('credits paid Shopify order webhooks', async () => {
     const rawBody = JSON.stringify({
       id: 8001,

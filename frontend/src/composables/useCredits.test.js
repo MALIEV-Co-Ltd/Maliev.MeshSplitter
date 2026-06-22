@@ -72,6 +72,20 @@ describe('useCredits', () => {
     })).rejects.toThrow('Credit authorization is unavailable')
   })
 
+  it('fails with the API error when credits are exhausted', async () => {
+    fetch.mockResolvedValueOnce(jsonResponse({
+      error: 'No free exports or paid credits remain',
+      account: { freeRemaining: 0, paidCredits: 0, availableGenerations: 0 },
+    }, 402))
+
+    const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+
+    await expect(credits.consumeExport({
+      idempotencyKey: 'mesh:test.stl:1x1x1',
+    })).rejects.toThrow('No free exports or paid credits remain')
+    expect(credits.error.value).toBe('No free exports or paid credits remain')
+  })
+
   it('allows demo mode without an API for local testing', async () => {
     const credits = useCredits({ apiBaseUrl: '', enforcement: 'demo' })
 
