@@ -68,7 +68,7 @@ describe('HTTP API', () => {
     expect(body.account).toMatchObject({ customerId: 'shopify:12345', freeRemaining: 3 })
   })
 
-  it('redirects anonymous app-proxy visitors to Shopify login', async () => {
+  it('serves public landing for anonymous app-proxy visitors', async () => {
     const query = {
       shop: 'example.myshopify.com',
       path_prefix: '/tools/mesh-splitter',
@@ -76,6 +76,21 @@ describe('HTTP API', () => {
     }
     const signature = signAppProxyQuery(query, 'proxy-secret')
     const response = await fetch(`${baseUrl}/?shop=${query.shop}&path_prefix=${encodeURIComponent(query.path_prefix)}&timestamp=${query.timestamp}&signature=${signature}`, {
+      redirect: 'manual',
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('location')).toBeNull()
+  })
+
+  it('redirects anonymous app launches to Shopify login', async () => {
+    const query = {
+      shop: 'example.myshopify.com',
+      path_prefix: '/tools/mesh-splitter',
+      timestamp: '1782050000',
+    }
+    const signature = signAppProxyQuery(query, 'proxy-secret')
+    const response = await fetch(`${baseUrl}/app?shop=${query.shop}&path_prefix=${encodeURIComponent(query.path_prefix)}&timestamp=${query.timestamp}&signature=${signature}`, {
       redirect: 'manual',
     })
 

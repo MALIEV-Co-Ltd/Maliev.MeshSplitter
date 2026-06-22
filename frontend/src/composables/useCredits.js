@@ -39,6 +39,20 @@ export function useCredits(options = {}) {
     }
   }
 
+  async function refreshPricing() {
+    if (!apiBaseUrl) return
+    loading.value = true
+    error.value = null
+    try {
+      pricing.value = await request(`${apiBaseUrl}/pricing`)
+    } catch (e) {
+      error.value = e.message
+      if (enforcement === 'required') throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function consumeGeneration({ idempotencyKey, metadata = {} }) {
     if (!apiBaseUrl) {
       if (enforcement === 'required') {
@@ -71,6 +85,7 @@ export function useCredits(options = {}) {
     loading: readonly(loading),
     error: readonly(error),
     refresh,
+    refreshPricing,
     consumeGeneration,
   }
 }

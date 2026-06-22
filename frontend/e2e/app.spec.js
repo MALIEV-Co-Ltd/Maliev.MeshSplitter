@@ -179,6 +179,17 @@ test.describe('Mesh Split Application', () => {
 
 })
 
+test.describe('public presentation', () => {
+  test('explains the product before login and links to the protected app', async ({ page }) => {
+    await page.goto('/tools/mesh-splitter')
+
+    await expect(page.getByText('Split oversized STL files into print-ready, labeled parts.')).toBeVisible()
+    await expect(page.getByText('free generations monthly')).toBeVisible()
+    await expect(page.getByText('Upload STL')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Launch MeshSplitter' }).first()).toHaveAttribute('href', '/tools/mesh-splitter/app')
+  })
+})
+
 test.describe('responsive design', () => {
   const viewports = [
     { name: 'mobile', width: 390, height: 844 },

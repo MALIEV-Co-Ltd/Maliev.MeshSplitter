@@ -24,6 +24,20 @@ describe('useCredits', () => {
     expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-10')
   })
 
+  it('loads public pricing without requesting the protected account endpoint', async () => {
+    fetch.mockResolvedValueOnce(jsonResponse({
+      freeGenerationsPerMonth: 3,
+      creditPacks: [{ sku: 'MS-CREDITS-30', credits: 30, priceCents: 87900 }],
+    }))
+
+    const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+    await credits.refreshPricing()
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledWith('/api/pricing', undefined)
+    expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-30')
+  })
+
   it('posts generation consumption with a stable idempotency key', async () => {
     fetch.mockResolvedValueOnce(jsonResponse({
       transaction: { source: 'free_monthly' },

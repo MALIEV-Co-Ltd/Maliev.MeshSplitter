@@ -1,5 +1,11 @@
 <template>
-  <main class="app-shell min-h-screen">
+  <PublicLanding
+    v-if="showPublicLanding"
+    :pricing="creditPricing"
+    :store-domain="shopifyStoreDomain"
+    :launch-url="launchUrl"
+  />
+  <main v-else class="app-shell min-h-screen">
     <div class="mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-4 py-4 sm:px-6 lg:px-8">
       <header class="app-header">
         <div>
@@ -57,6 +63,7 @@ import ConnectorConfig from './components/ConnectorConfig.vue'
 import ThreePreview from './components/ThreePreview.vue'
 import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
+import PublicLanding from './components/PublicLanding.vue'
 
 const {
   meshInfo, meshGeometry, chunks, loading, error, scaleFactor, buildVolume,
@@ -68,6 +75,10 @@ const creditAccount = credits.account
 const creditPricing = credits.pricing
 const creditError = credits.error
 const shopifyStoreDomain = import.meta.env.VITE_SHOPIFY_STORE_DOMAIN || ''
+const storefrontBasePath = '/tools/mesh-splitter'
+const currentPath = window.location.pathname.replace(/\/+$/, '')
+const showPublicLanding = currentPath === storefrontBasePath
+const launchUrl = `${storefrontBasePath}/app`
 const connectorSuccess = ref('')
 const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
@@ -76,7 +87,8 @@ const scaleInput = ref(1)
 const visibleError = computed(() => error.value || creditError.value || '')
 
 onMounted(() => {
-  credits.refresh().catch(() => {
+  const refreshCredits = showPublicLanding ? credits.refreshPricing : credits.refresh
+  refreshCredits().catch(() => {
     // The credit panel shows the authorization error.
   })
 })

@@ -117,19 +117,25 @@ async function route(context) {
     }
     if (query.signature) {
       verifyAppProxySignature(query, context.shopifyAppProxySecret)
-      if (!query.logged_in_customer_id) {
+      if (!query.logged_in_customer_id && isProtectedAppPath(url.pathname)) {
         response.writeHead(302, { Location: context.customerLoginUrl })
         response.end()
         return
       }
-      const identity = verifyAppProxyIdentity(query, context.shopifyAppProxySecret)
-      const session = createSignedSession(identity, context.sessionSecret)
-      response.setHeader('Set-Cookie', serializeSessionCookie(session))
+      if (query.logged_in_customer_id) {
+        const identity = verifyAppProxyIdentity(query, context.shopifyAppProxySecret)
+        const session = createSignedSession(identity, context.sessionSecret)
+        response.setHeader('Set-Cookie', serializeSessionCookie(session))
+      }
     }
     return serveFrontend(response, context.frontendDistDir, url.pathname)
   }
 
   return sendJson(response, 404, { error: 'Not found' })
+}
+
+function isProtectedAppPath(pathname) {
+  return pathname === '/app' || pathname.startsWith('/app/')
 }
 
 function startShopifyOAuth({ request, response, shopifyApiKey, shopifyApiSecret, shopifyScopes, appUrl, sessionSecret }, url) {

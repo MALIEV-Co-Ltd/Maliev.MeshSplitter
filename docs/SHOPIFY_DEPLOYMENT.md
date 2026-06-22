@@ -151,6 +151,16 @@ The app proxy must resolve:
 https://shop.maliev.com/tools/mesh-splitter
 ```
 
+That path serves the public product presentation. The protected customer tool
+launches from:
+
+```text
+https://shop.maliev.com/tools/mesh-splitter/app
+```
+
+The Shopify main menu should include a top-level `MeshSplitter` link to
+`/tools/mesh-splitter` so customers can discover the tool from the storefront.
+
 ## License recommendation
 
 Keep the repository private and proprietary while commercializing. Do not use
