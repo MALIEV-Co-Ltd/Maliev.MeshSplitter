@@ -11,13 +11,16 @@ describe('ConnectorConfig', () => {
     expect(wrapper.findAll('a').map((a) => a.attributes('href')).some((href) => href.includes('wikipedia.org'))).toBe(true)
   })
 
-  it('emits dowel payload with diameter/depth when applying', async () => {
+  it('emits a None config by default', () => {
+    const wrapper = mount(ConnectorConfig)
+    expect(wrapper.emitted('update:modelValue').at(-1)[0]).toEqual({ type: 'None' })
+  })
+
+  it('emits dowel payload with diameter/depth when selected', async () => {
     const wrapper = mount(ConnectorConfig)
     await wrapper.get('[for="conn-Dowel"]').trigger('click')
-    expect(typeof wrapper.vm.onApply).toBe('function')
-    await wrapper.vm.onApply()
 
-    const payload = wrapper.emitted('apply')[0][0]
+    const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
       type: 'Dowel',
       depth: 10,
@@ -27,13 +30,11 @@ describe('ConnectorConfig', () => {
     })
   })
 
-  it('emits mortise payload with tenon dimensions', async () => {
+  it('emits mortise payload with tenon dimensions when selected', async () => {
     const wrapper = mount(ConnectorConfig)
     await wrapper.get('[for="conn-Mortise & Tenon"]').trigger('click')
-    expect(typeof wrapper.vm.onApply).toBe('function')
-    await wrapper.vm.onApply()
 
-    const payload = wrapper.emitted('apply')[0][0]
+    const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
       type: 'Mortise & Tenon',
       depth: 10,
@@ -44,13 +45,11 @@ describe('ConnectorConfig', () => {
     })
   })
 
-  it('emits key payload with key dimensions', async () => {
+  it('emits key payload with key dimensions when selected', async () => {
     const wrapper = mount(ConnectorConfig)
     await wrapper.get('[for="conn-Key"]').trigger('click')
-    expect(typeof wrapper.vm.onApply).toBe('function')
-    await wrapper.vm.onApply()
 
-    const payload = wrapper.emitted('apply')[0][0]
+    const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
       type: 'Key',
       depth: 10,

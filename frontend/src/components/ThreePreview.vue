@@ -89,7 +89,7 @@ function buildMeshes(chunks) {
     const color = chunk.color || COLORS[i % COLORS.length]
     const mat = new THREE.MeshPhongMaterial({
       color,
-      transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+      side: THREE.DoubleSide,
     })
     const mesh = new THREE.Mesh(geom, mat)
     mesh.userData.chunkIndex = chunk.index
@@ -105,13 +105,18 @@ function buildMeshes(chunks) {
 
 function applyChunkVisibility(selectedChunkIndex) {
   if (!meshGroup) return
+  const hasSelection = selectedChunkIndex !== null
   meshGroup.children.forEach((child) => {
     if (!child.isMesh) return
-    const isSelected = selectedChunkIndex === null || selectedChunkIndex === child.userData.chunkIndex
-    child.material.opacity = isSelected ? 0.9 : selectedOpacity
-    child.material.transparent = true
+    const isSelected = !hasSelection || selectedChunkIndex === child.userData.chunkIndex
+    // Selected (or "no selection" = everything) renders as a normal opaque
+    // solid; only the non-selected parts fade out, so the active part is
+    // never blended/occluded by overlapping transparent geometry.
+    child.material.transparent = hasSelection && !isSelected
+    child.material.opacity = isSelected ? 1 : selectedOpacity
+    child.material.depthWrite = isSelected
     child.material.needsUpdate = true
-    child.renderOrder = isSelected ? 1 : 0
+    child.renderOrder = isSelected ? 0 : 1
   })
 }
 

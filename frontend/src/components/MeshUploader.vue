@@ -45,14 +45,6 @@
       <p v-if="meshInfo && !meshInfo.is_watertight" class="mt-2 text-xs font-medium text-destructive">
         Mesh is not watertight — splitting may produce unexpected results.
       </p>
-
-      <div v-if="meshInfo && chunks.length > 0" class="mt-3 space-y-1 text-sm">
-        <p class="font-medium">Chunks ({{ chunks.length }}):</p>
-        <div v-for="chunk in chunks" :key="chunk.index" class="ml-2">
-          <span class="text-foreground">{{ chunk.label }}</span>
-          <span class="text-muted-foreground ml-1">— {{ (chunk.volume / 1000).toFixed(1) }} cm³</span>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -64,7 +56,6 @@ import { Badge } from '@/components/ui/badge'
 
 const props = defineProps({
   meshInfo: { type: Object, default: null },
-  chunks: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
 })

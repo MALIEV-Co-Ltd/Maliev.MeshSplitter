@@ -7,24 +7,26 @@
       </div>
       <span class="pnl-meta">{{ percent }}%</span>
     </div>
-    <div class="pnl-body">
-      <div class="scale-row">
-        <Input
-          id="scale-factor"
-          type="number"
-          min="0.01"
-          max="25.4"
-          step="0.01"
-          class="font-mono"
-          :model-value="draft"
-          :disabled="!enabled || loading"
-          @update:model-value="draft = $event"
-        />
-        <Button size="sm" variant="outline" :disabled="!enabled || loading || !isValid" @click="apply">
-          Apply
-        </Button>
+    <div class="pnl-body space-y-2">
+      <div class="grid grid-cols-3 gap-1.5">
+        <div v-for="axis in ['x', 'y', 'z']" :key="axis" class="bv-field">
+          <label :for="`scale-size-${axis}`">{{ axis.toUpperCase() }} (mm)</label>
+          <Input
+            :id="`scale-size-${axis}`"
+            type="number"
+            min="0.01"
+            step="0.1"
+            class="h-8 font-mono text-xs"
+            :model-value="roundedSize[axis]"
+            :disabled="!enabled || loading || !baseSize"
+            @update:model-value="onSizeInput(axis, $event)"
+          />
+        </div>
       </div>
-      <div class="mt-2 flex flex-wrap gap-2" aria-label="Scale presets">
+      <Button size="sm" variant="outline" class="w-full justify-center" :disabled="!enabled || loading || !isValid" @click="apply">
+        Apply
+      </Button>
+      <div class="flex flex-wrap gap-2" aria-label="Scale presets">
         <Button
           v-for="preset in presets"
           :key="preset.label"
@@ -51,11 +53,12 @@ const props = defineProps({
   modelValue: { type: Number, default: 1 },
   enabled: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
+  meshInfo: { type: Object, default: null },
 })
 
 const emit = defineEmits(['update:modelValue', 'apply'])
 
-const draft = ref(props.modelValue)
+const draftScale = ref(props.modelValue)
 const presets = [
   { label: '50%', value: 0.5 },
   { label: '100%', value: 1 },
@@ -63,16 +66,56 @@ const presets = [
   { label: '2540%', value: 25.4 },
 ]
 
-const numericDraft = computed(() => Number(draft.value))
+// meshInfo.bounds reflects the mesh at the CURRENT scale, so dividing by the
+// current scale recovers the original (scale=1) size — the fixed reference
+// every axis field scales from, keeping X/Y/Z always in proportion.
+const baseSize = computed(() => {
+  const bounds = props.meshInfo?.bounds
+  const currentScale = props.modelValue || 1
+  if (!bounds?.min || !bounds?.max) return null
+  return {
+    x: (bounds.max.x - bounds.min.x) / currentScale,
+    y: (bounds.max.y - bounds.min.y) / currentScale,
+    z: (bounds.max.z - bounds.min.z) / currentScale,
+  }
+})
+
+const draftSize = computed(() => {
+  if (!baseSize.value) return { x: 0, y: 0, z: 0 }
+  return {
+    x: baseSize.value.x * draftScale.value,
+    y: baseSize.value.y * draftScale.value,
+    z: baseSize.value.z * draftScale.value,
+  }
+})
+
+const roundedSize = computed(() => ({
+  x: round(draftSize.value.x),
+  y: round(draftSize.value.y),
+  z: round(draftSize.value.z),
+}))
+
+const numericDraft = computed(() => Number(draftScale.value))
 const isValid = computed(() => Number.isFinite(numericDraft.value) && numericDraft.value > 0 && numericDraft.value <= 25.4)
 const percent = computed(() => Math.round(props.modelValue * 100))
 
 watch(() => props.modelValue, (value) => {
-  draft.value = value
+  draftScale.value = value
 })
 
+function round(value) {
+  return Math.round(value * 100) / 100
+}
+
+function onSizeInput(axis, value) {
+  if (!baseSize.value || !baseSize.value[axis]) return
+  const target = Number(value)
+  if (!Number.isFinite(target) || target <= 0) return
+  draftScale.value = target / baseSize.value[axis]
+}
+
 function applyPreset(value) {
-  draft.value = value
+  draftScale.value = value
   apply()
 }
 

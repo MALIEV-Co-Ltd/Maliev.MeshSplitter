@@ -16,7 +16,10 @@
           <span class="dot"></span>{{ meshInfo?.is_watertight ? 'Watertight' : 'Awaiting mesh' }}
         </span>
         <span class="status-chip">{{ chunks.length || 0 }} parts</span>
-        <span class="status-chip">{{ creditAccount.freeRemaining }} free &middot; {{ creditAccount.availableGenerations }} credits</span>
+        <span class="status-chip">
+          <CoinsIcon :size="12" :stroke-width="1.75" class="coin-icon" />
+          {{ creditAccount.freeRemaining }} free &middot; {{ creditAccount.availableGenerations }} credits
+        </span>
       </div>
       <div class="header-right">
         <Button variant="outline" size="sm" @click="showCreditDialog">
@@ -26,8 +29,8 @@
     </header>
     <div class="workspace-grid">
       <section class="col-left">
-        <MeshUploader :mesh-info="meshInfo" :chunks="chunks" :loading="loading" :error="error" @upload="onUpload" />
-        <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" @apply="onScaleApply" />
+        <MeshUploader :mesh-info="meshInfo" :loading="loading" :error="error" @upload="onUpload" />
+        <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" @apply="onScaleApply" />
         <BuildVolumeConfig v-model="buildVolume" />
         <PartList
           :chunks="chunks"
@@ -55,8 +58,7 @@
       </section>
 
       <section class="col-right">
-        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
-        <ConnectorConfig :error="error" :success="connectorSuccess" @apply="onApply" />
+        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :success="connectorSuccess" :loading="splitAuthorizing || loading" :divisions="divisions" @update:divisions="divisions = $event" @split="onSplit" />
         <ExportPanel
           :has-chunks="chunks.length > 0"
           :loading="loading"
@@ -66,27 +68,38 @@
     </div>
     <dialog ref="creditDialog" class="credit-modal" @click.self="closeCreditDialog">
       <div class="credit-modal__panel">
-        <header class="flex items-start justify-between gap-3">
+        <header class="credit-modal__head">
           <div>
-            <h2 class="text-lg font-semibold">Get extra credits</h2>
-            <p class="text-sm text-muted-foreground">Purchase a pack to generate and export more parts.</p>
+            <p class="credit-modal__eyebrow">
+              <CoinsIcon :size="13" :stroke-width="1.75" class="coin-icon" />
+              Credits
+            </p>
+            <h2>Get extra credits</h2>
+            <p class="credit-modal__sub">Purchase a pack to split and export more parts.</p>
           </div>
-          <Button size="sm" variant="outline" @click="closeCreditDialog">Close</Button>
+          <button class="credit-modal__close" type="button" aria-label="Close" @click="closeCreditDialog">
+            <XIcon :size="16" :stroke-width="1.75" />
+          </button>
         </header>
+
+        <div class="credit-modal__free">
+          <span>Free this month</span>
+          <span class="credit-modal__free-val">{{ creditAccount.freeRemaining }} / {{ creditAccount.freeLimit }}</span>
+        </div>
+
         <p v-if="creditError" class="text-sm text-destructive">{{ creditError }}</p>
-        <div v-if="creditPricing.creditPacks.length" class="space-y-2 pt-2">
-          <a
-            v-for="pack in creditPricing.creditPacks"
-            :key="pack.sku"
-            :href="productUrl(pack)"
-            class="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-accent"
-          >
-            <span>
-              <span class="font-medium">{{ pack.name }}</span>
-              <span class="block text-muted-foreground">{{ pack.credits }} credits</span>
+
+        <div v-if="creditPricing.creditPacks.length" class="credit-pack-list">
+          <a v-for="pack in creditPricing.creditPacks" :key="pack.sku" :href="productUrl(pack)" class="credit-pack">
+            <span class="credit-pack__info">
+              <span class="credit-pack__name">{{ pack.name }}</span>
+              <span class="credit-pack__credits">{{ pack.credits }} credits</span>
             </span>
-            <span class="font-semibold">{{ formatPrice(pack.priceCents, pack.currency) }}</span>
+            <span class="credit-pack__price">{{ formatPrice(pack.priceCents, pack.currency) }}</span>
           </a>
+          <p class="credit-modal__currency-note">
+            Prices in {{ creditPricing.creditPacks[0].currency }} via the MALIEV Shopify store.
+          </p>
         </div>
         <p v-else class="text-sm text-muted-foreground">
           Credit packs load from the backend when connected to Shopify.
@@ -98,6 +111,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { Coins as CoinsIcon, X as XIcon } from '@lucide/vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
@@ -108,7 +122,6 @@ import MeshUploader from './components/MeshUploader.vue'
 import ScaleConfig from './components/ScaleConfig.vue'
 import BuildVolumeConfig from './components/BuildVolumeConfig.vue'
 import SplitConfig from './components/SplitConfig.vue'
-import ConnectorConfig from './components/ConnectorConfig.vue'
 import ThreePreview from './components/ThreePreview.vue'
 import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
@@ -189,12 +202,16 @@ function onScaleApply(value) {
   setScaleFactor(value)
 }
 
-async function onSplit(volume, gridDivisions) {
+async function onSplit(volume, gridDivisions, connectorConfig) {
   connectorSuccess.value = ''
   splitAuthorizing.value = true
   try {
     await split(volume, gridDivisions)
     selectedChunkIndex.value = null
+    if (connectorConfig?.type && connectorConfig.type !== 'None') {
+      await applyConnectors(connectorConfig)
+      connectorSuccess.value = 'Connectors applied'
+    }
     exportSessionId.value = createExportSessionId({
       filename: meshInfo.value?.filename,
       divisions: gridDivisions,
@@ -206,14 +223,6 @@ async function onSplit(volume, gridDivisions) {
   } finally {
     splitAuthorizing.value = false
   }
-}
-
-async function onApply(config) {
-  connectorSuccess.value = ''
-  try {
-    await applyConnectors(config)
-    connectorSuccess.value = 'Connectors applied'
-  } catch { /* error set by composable */ }
 }
 
 function onSelectChunk(index) {

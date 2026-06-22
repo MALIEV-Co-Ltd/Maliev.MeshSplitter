@@ -86,6 +86,7 @@
     --signal-500: oklch(0.545 0.135 252);
     --signal-600: oklch(0.485 0.130 252);
     --signal-700: oklch(0.420 0.115 252);
+    --coin: oklch(0.760 0.155 80);
 
     --shadow-xs: 0 1px 2px oklch(0.232 0.008 256 / 0.06);
     --shadow-sm: 0 1px 2px oklch(0.232 0.008 256 / 0.08), 0 1px 1px oklch(0.232 0.008 256 / 0.04);
@@ -518,13 +519,45 @@
 
   .connector-preview-wrapper {
     color: var(--steel-300);
-    margin: 4px 0;
+    height: 30px;
+    margin: 2px 0;
+  }
+
+  .conn-subhead {
+    align-items: center;
+    color: var(--steel-500);
+    display: flex;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    gap: 6px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
   }
 
   .conn-params {
     display: grid;
-    gap: 6px;
+    gap: 8px 10px;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .conn-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .conn-field label {
+    color: var(--steel-500);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .coin-icon {
+    color: var(--coin);
+    flex: none;
   }
 
   /* ---- Export — sticky bottom bar ---- */
@@ -577,9 +610,9 @@
     border: none;
     border-radius: var(--radius-lg);
     margin: auto;
-    max-width: min(720px, 92vw);
+    max-width: min(440px, 92vw);
     padding: 0;
-    width: min(720px, 92vw);
+    width: min(440px, 92vw);
   }
 
   .credit-modal::backdrop {
@@ -592,10 +625,132 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     color: oklch(var(--foreground));
-    max-height: min(74vh, 560px);
+    max-height: min(82vh, 620px);
     overflow-y: auto;
-    padding: 1.1rem;
+    padding: 20px;
     width: 100%;
+  }
+
+  .credit-modal__head {
+    align-items: flex-start;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+  }
+
+  .credit-modal__eyebrow {
+    align-items: center;
+    color: var(--signal-600);
+    display: flex;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    gap: 6px;
+    letter-spacing: 0.1em;
+    margin: 0 0 4px;
+    text-transform: uppercase;
+  }
+
+  .credit-modal__panel h2 {
+    color: oklch(var(--primary));
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  .credit-modal__sub {
+    color: var(--steel-500);
+    font-size: 13px;
+    margin: 4px 0 0;
+  }
+
+  .credit-modal__close {
+    align-items: center;
+    background: var(--steel-100);
+    border: 1px solid var(--steel-200);
+    border-radius: var(--radius-sm);
+    color: var(--steel-600);
+    cursor: pointer;
+    display: flex;
+    flex: none;
+    height: 28px;
+    justify-content: center;
+    width: 28px;
+  }
+
+  .credit-modal__close:hover {
+    background: var(--steel-200);
+  }
+
+  .credit-modal__free {
+    align-items: center;
+    background: var(--steel-50);
+    border: 1px solid var(--steel-200);
+    border-radius: var(--radius-sm);
+    display: flex;
+    font-size: 13px;
+    justify-content: space-between;
+    margin: 16px 0;
+    padding: 10px 12px;
+  }
+
+  .credit-modal__free-val {
+    color: oklch(var(--primary));
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+
+  .credit-pack-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .credit-pack {
+    align-items: center;
+    border: 1px solid var(--steel-200);
+    border-radius: var(--radius-md);
+    display: flex;
+    justify-content: space-between;
+    padding: 12px;
+    text-decoration: none;
+    transition: border-color 120ms var(--ease-standard), background 120ms var(--ease-standard);
+  }
+
+  .credit-pack:hover {
+    background: var(--signal-50);
+    border-color: var(--signal-300);
+  }
+
+  .credit-pack__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .credit-pack__name {
+    color: oklch(var(--primary));
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .credit-pack__credits {
+    color: var(--steel-500);
+    font-size: 12px;
+  }
+
+  .credit-pack__price {
+    color: var(--signal-600);
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .credit-modal__currency-note {
+    color: var(--steel-400);
+    font-size: 11px;
+    margin: 4px 0 0;
   }
 
   /* ============================================================
