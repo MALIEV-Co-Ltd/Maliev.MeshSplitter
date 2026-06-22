@@ -32,7 +32,7 @@ export function createServer(options = {}) {
   const shopifyScopes = options.shopifyScopes || process.env.SHOPIFY_SCOPES || 'read_orders'
   const appUrl = options.appUrl || process.env.SHOPIFY_APP_URL || process.env.APPLICATION_URL
   const storefrontUrl = options.storefrontUrl || process.env.STOREFRONT_URL || 'https://shop.maliev.com/tools/mesh-splitter'
-  const customerLoginUrl = options.customerLoginUrl || process.env.CUSTOMER_LOGIN_URL || 'https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter'
+  const customerLoginUrl = options.customerLoginUrl || process.env.CUSTOMER_LOGIN_URL || 'https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp'
   const exchangeShopifyCode = options.exchangeShopifyCode || exchangeShopifyAccessToken
   const sessionSecret = options.sessionSecret || process.env.SESSION_SECRET || shopifyAppProxySecret
   const frontendDistDir = options.frontendDistDir || process.env.FRONTEND_DIST_DIR || defaultFrontendDistDir()
@@ -124,8 +124,10 @@ async function route(context) {
     }
     if (query.signature) {
       verifyAppProxySignature(query, context.shopifyAppProxySecret)
-      if (!query.logged_in_customer_id && isProtectedAppPath(url.pathname)) {
-        response.writeHead(302, { Location: context.customerLoginUrl })
+      if (!query.logged_in_customer_id && isProtectedAppPath(url.pathname, query.path_prefix)) {
+        response.writeHead(302, {
+          Location: buildLoginUrl(context.customerLoginUrl, url.pathname, query),
+        })
         response.end()
         return
       }
@@ -141,8 +143,49 @@ async function route(context) {
   return sendJson(response, 404, { error: 'Not found' })
 }
 
-function isProtectedAppPath(pathname) {
-  return pathname === '/app' || pathname.startsWith('/app/')
+function isProtectedAppPath(pathname, pathPrefix) {
+  if (!pathname || pathname === '/') return false
+  const normalizedPath = normalizePath(pathname)
+  if (normalizedPath === '/app' || normalizedPath.startsWith('/app/')) return true
+
+  const normalizedPrefix = normalizePathPrefix(pathPrefix)
+  if (!normalizedPrefix) return false
+  return (
+    normalizedPath === `${normalizedPrefix}/app`
+    || normalizedPath.startsWith(`${normalizedPrefix}/app/`)
+  )
+}
+
+function buildLoginUrl(customerLoginUrl, pathname, query) {
+  const loginUrl = new URL(customerLoginUrl)
+  const returnPath = resolveLoginReturnPath(pathname, query?.path_prefix)
+  loginUrl.searchParams.set('return_url', returnPath)
+  return loginUrl.toString()
+}
+
+function resolveLoginReturnPath(pathname, pathPrefix) {
+  const normalizedPath = normalizePath(pathname)
+  const normalizedPrefix = normalizePathPrefix(pathPrefix)
+  if (normalizedPath.startsWith('/app') && !normalizedPrefix) return normalizedPath
+  if (normalizedPath.startsWith('/app') && normalizedPrefix) return `${normalizedPrefix}${normalizedPath}`
+  if (normalizedPrefix && (normalizedPath === `${normalizedPrefix}/app` || normalizedPath.startsWith(`${normalizedPrefix}/app/`))) {
+    return normalizedPath
+  }
+  return normalizedPrefix ? `${normalizedPrefix}/app` : '/app'
+}
+
+function normalizePathPrefix(pathPrefix) {
+  if (!pathPrefix || typeof pathPrefix !== 'string') return ''
+  const trimmed = pathPrefix.trim()
+  if (!trimmed || trimmed === '/') return ''
+  return normalizePath(trimmed)
+}
+
+function normalizePath(value) {
+  if (!value || typeof value !== 'string') return '/'
+  const trimmed = value.trim()
+  if (!trimmed) return '/'
+  return trimmed.startsWith('/') ? trimmed.replace(/\/+$/, '') : `/${trimmed.replace(/\/+$/, '')}`
 }
 
 function startShopifyOAuth({ request, response, shopifyApiKey, shopifyApiSecret, shopifyScopes, appUrl, sessionSecret }, url) {

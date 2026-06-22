@@ -98,7 +98,22 @@ describe('HTTP API', () => {
     })
 
     expect(response.status).toBe(302)
-    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter')
+    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp')
+  })
+
+  it('retains redirect return path for prefixed mesh splitter app route', async () => {
+    const query = {
+      shop: 'example.myshopify.com',
+      path_prefix: '/tools/mesh-splitter',
+      timestamp: '1782050000',
+    }
+    const signature = signAppProxyQuery(query, 'proxy-secret')
+    const response = await fetch(`${baseUrl}/tools/mesh-splitter/app?shop=${query.shop}&path_prefix=${encodeURIComponent(query.path_prefix)}&timestamp=${query.timestamp}&signature=${signature}`, {
+      redirect: 'manual',
+    })
+
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe('https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp')
   })
 
   it('starts Shopify OAuth installation', async () => {

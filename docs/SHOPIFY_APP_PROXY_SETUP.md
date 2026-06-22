@@ -84,7 +84,7 @@ Required backend environment:
 - `SHOPIFY_APP_URL`
 - `SHOPIFY_SCOPES=read_orders`
 - `STOREFRONT_URL=https://shop.maliev.com/tools/mesh-splitter`
-- `CUSTOMER_LOGIN_URL=https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter`
+- `CUSTOMER_LOGIN_URL=https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp`
 - `SESSION_SECRET`
 - `FRONTEND_DIST_DIR`
 
