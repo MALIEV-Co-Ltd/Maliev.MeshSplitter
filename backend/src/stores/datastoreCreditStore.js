@@ -81,6 +81,37 @@ export class DatastoreCreditStore {
     })
   }
 
+  async resetAccount(customerId) {
+    const targetCustomerId = typeof customerId === 'string'
+      ? customerId
+      : customerId?.customerId
+    const account = await this.getAccount(String(targetCustomerId), this.#periodFromNow())
+    account.freeUsed = 0
+    account.paidCredits = 0
+    account.updatedAt = new Date().toISOString()
+    await this.saveAccount(account)
+    return account
+  }
+
+  async resetAllAccounts() {
+    const [accountEntities] = await this.datastore.runQuery(this.datastore.createQuery('CreditAccount'))
+    if (accountEntities.length > 0) {
+      const accountKeys = accountEntities.map(entity => entity[Datastore.KEY])
+      await this.datastore.delete(accountKeys)
+    }
+    const [transactionEntities] = await this.datastore.runQuery(this.datastore.createQuery('CreditTransaction'))
+    if (transactionEntities.length > 0) {
+      const transactionKeys = transactionEntities.map(entity => entity[Datastore.KEY])
+      await this.datastore.delete(transactionKeys)
+    }
+    const [orderEntities] = await this.datastore.runQuery(this.datastore.createQuery('ProcessedShopifyOrder'))
+    if (orderEntities.length > 0) {
+      const orderKeys = orderEntities.map(entity => entity[Datastore.KEY])
+      await this.datastore.delete(orderKeys)
+    }
+    return { allReset: true }
+  }
+
   #accountKey(customerId) {
     return this.datastore.key(['CreditAccount', customerId])
   }
@@ -91,6 +122,11 @@ export class DatastoreCreditStore {
 
   #processedOrderKey(orderId) {
     return this.datastore.key(['ProcessedShopifyOrder', orderId])
+  }
+
+  #periodFromNow() {
+    const date = new Date()
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
   }
 }
 

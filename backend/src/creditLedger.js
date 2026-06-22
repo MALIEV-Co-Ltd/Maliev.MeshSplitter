@@ -89,6 +89,34 @@ export class CreditLedger {
     return transaction
   }
 
+  async resetCustomerAccount(customerId) {
+    const normalizedCustomerId = normalizeCustomerId(customerId)
+    const account = await this.store.getAccount(normalizedCustomerId, this.#period())
+    const resetAccount = {
+      ...account,
+      freeUsed: 0,
+      paidCredits: 0,
+      updatedAt: this.now().toISOString(),
+    }
+
+    if (typeof this.store.resetAccount === 'function') {
+      await this.store.resetAccount(resetAccount)
+      return this.#publicAccount(await this.store.getAccount(normalizedCustomerId, this.#period()))
+    }
+
+    await this.store.saveAccount(resetAccount)
+    return this.#publicAccount(resetAccount)
+  }
+
+  async resetAllAccounts() {
+    if (typeof this.store.resetAllAccounts !== 'function') {
+      throw new Error('Reset all accounts is not supported by this store')
+    }
+    const period = this.#period()
+    await this.store.resetAllAccounts(period)
+    return { ok: true, period }
+  }
+
   #period() {
     const date = this.now()
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`

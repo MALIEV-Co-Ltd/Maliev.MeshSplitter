@@ -88,6 +88,49 @@ export class PostgresCreditStore {
     )
   }
 
+  async resetAccount(account) {
+    const resolvedCustomerId = typeof account === 'string' ? account : account?.customerId
+    const resolvedPeriod = typeof account === 'string' ? this.#periodFromNow() : account?.period
+    await this.ready
+    await this.pool.query(
+      `update credit_accounts
+       set period = $2, free_used = 0, paid_credits = 0, updated_at = now()
+       where customer_id = $1`,
+      [resolvedCustomerId, resolvedPeriod]
+    )
+    return mapAccount({
+      customerId: resolvedCustomerId,
+      period: resolvedPeriod,
+      free_used: 0,
+      paid_credits: 0,
+      updated_at: new Date(),
+    })
+  }
+
+  async resetAllAccounts(period) {
+    await this.ready
+    await this.pool.query('delete from credit_transactions')
+    await this.pool.query('delete from processed_shopify_orders')
+    if (period) {
+      await this.pool.query(
+        `update credit_accounts
+         set period = $1, free_used = 0, paid_credits = 0, updated_at = now()`,
+        [period]
+      )
+      return { period, allReset: true }
+    }
+    await this.pool.query(
+      `update credit_accounts
+       set free_used = 0, paid_credits = 0, updated_at = now()`
+    )
+    return { allReset: true }
+  }
+
+  #periodFromNow() {
+    const date = new Date()
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+  }
+
   async #init() {
     await this.pool.query(`
       create table if not exists credit_accounts (

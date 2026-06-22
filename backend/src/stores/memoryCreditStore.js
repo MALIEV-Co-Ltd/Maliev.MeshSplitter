@@ -32,6 +32,34 @@ export class MemoryCreditStore {
     this.orders.add(orderId)
   }
 
+  async resetAccount(customerId) {
+    const resolvedCustomerId = typeof customerId === 'string'
+      ? customerId
+      : customerId?.customerId
+    if (!resolvedCustomerId) return null
+    const account = this.accounts.get(String(resolvedCustomerId))
+    if (!account) return null
+    const resetPayload = {
+      ...account,
+      freeUsed: 0,
+      paidCredits: 0,
+      updatedAt: new Date().toISOString(),
+    }
+    this.accounts.set(String(resolvedCustomerId), resetPayload)
+    return { ...resetPayload }
+  }
+
+  async resetAllAccounts() {
+    for (const account of this.accounts.values()) {
+      account.freeUsed = 0
+      account.paidCredits = 0
+      account.updatedAt = new Date().toISOString()
+    }
+    this.transactions.clear()
+    this.orders.clear()
+    return { ok: true }
+  }
+
   #ensureAccount(customerId, period) {
     const existing = this.accounts.get(customerId)
     if (existing) {

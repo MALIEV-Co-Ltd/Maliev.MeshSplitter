@@ -48,4 +48,30 @@ describe('CreditLedger', () => {
       freeRemaining: 2,
     })
   })
+
+  it('resets a customer account credits back to defaults', async () => {
+    await ledger.consumeExport('customer-1', { idempotencyKey: 'consume-1' })
+    await ledger.addCredits('customer-1', 5, { source: 'manual-test', idempotencyKey: 'add-1' })
+
+    const reset = await ledger.resetCustomerAccount('customer-1')
+    expect(reset).toMatchObject({
+      customerId: 'customer-1',
+      freeUsed: 0,
+      freeRemaining: 3,
+      paidCredits: 0,
+    })
+  })
+
+  it('throws when resetting all accounts is unsupported by a legacy store', async () => {
+    const unsupportedLedger = new CreditLedger({
+      store: {
+        getTransaction: async () => null,
+        getAccount: async () => ({ customerId: 'legacy', period: '2026-06', freeUsed: 1, paidCredits: 2 }),
+        saveAccount: async () => {},
+      },
+      now: () => new Date('2026-06-21T12:00:00.000Z'),
+    })
+
+    await expect(unsupportedLedger.resetAllAccounts()).rejects.toThrow('Reset all accounts is not supported by this store')
+  })
 })

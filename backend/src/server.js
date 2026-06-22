@@ -33,6 +33,7 @@ export function createServer(options = {}) {
   const appUrl = options.appUrl || process.env.SHOPIFY_APP_URL || process.env.APPLICATION_URL
   const storefrontUrl = options.storefrontUrl || process.env.STOREFRONT_URL || 'https://shop.maliev.com/tools/mesh-splitter'
   const customerLoginUrl = options.customerLoginUrl || process.env.CUSTOMER_LOGIN_URL || 'https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp'
+  const adminSecret = options.adminSecret || process.env.CREDIT_ADMIN_TOKEN
   const exchangeShopifyCode = options.exchangeShopifyCode || exchangeShopifyAccessToken
   const sessionSecret = options.sessionSecret || process.env.SESSION_SECRET || shopifyAppProxySecret
   const frontendDistDir = options.frontendDistDir || process.env.FRONTEND_DIST_DIR || defaultFrontendDistDir()
@@ -43,6 +44,7 @@ export function createServer(options = {}) {
         request,
         response,
         ledger,
+        adminSecret,
         devCustomerBypass,
         shopifyAppProxySecret,
         shopifyWebhookSecret,
@@ -63,7 +65,7 @@ export function createServer(options = {}) {
 }
 
 async function route(context) {
-  const { request, response, ledger, shopifyWebhookSecret } = context
+  const { request, response, ledger, shopifyWebhookSecret, adminSecret } = context
   const url = new URL(request.url, 'http://localhost')
 
   if (request.method === 'GET' && url.pathname === '/auth') {
@@ -80,6 +82,17 @@ async function route(context) {
 
   if (request.method === 'GET' && url.pathname === '/api/pricing') {
     return sendJson(response, 200, serializePricing())
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/admin/reset-credits') {
+    const adminBody = await readJson(request)
+    return resetCredits({
+      request,
+      response,
+      ledger,
+      adminSecret,
+      adminBody,
+    })
   }
 
   if (request.method === 'GET' && url.pathname === '/api/account') {
@@ -289,6 +302,33 @@ function createDefaultStore() {
     return new PostgresCreditStore({ connectionString: process.env.DATABASE_URL })
   }
   return new MemoryCreditStore()
+}
+
+async function resetCredits({ request, response, ledger, adminSecret, adminBody }) {
+  if (!adminSecret) {
+    return sendJson(response, 403, { error: 'Credit reset is disabled' })
+  }
+
+  const authHeader = request.headers.authorization || ''
+  const token = request.headers['x-mesh-reset-token']
+    || (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '')
+
+  if (token !== adminSecret) {
+    return sendJson(response, 401, { error: 'Unauthorized' })
+  }
+
+  if (adminBody?.all === true) {
+    const result = await ledger.resetAllAccounts()
+    return sendJson(response, 200, result)
+  }
+
+  const targetCustomerId = adminBody?.customerId
+  if (!targetCustomerId) {
+    return sendJson(response, 400, { error: 'customerId is required' })
+  }
+
+  const account = await ledger.resetCustomerAccount(targetCustomerId)
+  return sendJson(response, 200, { account })
 }
 
 async function readJson(request) {
