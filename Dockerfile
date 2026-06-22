@@ -5,6 +5,7 @@ RUN npm ci
 COPY frontend ./
 ENV VITE_MESH_API_BASE_URL=/api
 ENV VITE_CREDITS_ENFORCEMENT=required
+ENV VITE_SHOPIFY_STORE_DOMAIN=shop.maliev.com
 RUN npm run build
 
 FROM node:22-bookworm-slim AS backend

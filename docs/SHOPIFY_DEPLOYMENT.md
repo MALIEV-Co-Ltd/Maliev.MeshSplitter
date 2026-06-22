@@ -11,6 +11,25 @@ npm run build
 
 The generated files land in `frontend/dist`.
 
+The production package is Docker-ready. The repository includes:
+
+- `Dockerfile` for a single web service that serves the built frontend and the
+  credit/session/webhook backend.
+- `render.yaml` for a Render Blueprint with one Docker web service and one
+  Postgres database.
+- `shopify.app.example.toml` for the Shopify app proxy and paid-order webhook
+  configuration once the public backend URL is known.
+- `.env.production.example` documenting required runtime secrets.
+
+The expected Render service URL is:
+
+```text
+https://maliev-mesh-splitter.onrender.com
+```
+
+If Render assigns a different URL, replace that URL in the Shopify app config
+before validation/deploy.
+
 ## Recommended commercial architecture
 
 Use the backend as the Shopify app-proxy target. It serves the built frontend,
@@ -34,6 +53,56 @@ The implemented launch path uses:
 - Postgres-backed credit ledger.
 - `orders/paid` webhook handling for credit purchases.
 - Credit products defined in `shopify/credit-products.csv`.
+
+## Render deployment
+
+Create the Render Blueprint from `render.yaml` and connect it to:
+
+```text
+https://github.com/MALIEV-Co-Ltd/Maliev.MeshSplitter
+```
+
+Set the unsynced secret values in Render before the first production deploy:
+
+- `SHOPIFY_APP_PROXY_SECRET`
+- `SHOPIFY_WEBHOOK_SECRET`
+
+Render supplies `DATABASE_URL` from `maliev-mesh-splitter-db` and generates
+`SESSION_SECRET` automatically.
+
+After deployment, verify:
+
+```powershell
+curl.exe -L https://maliev-mesh-splitter.onrender.com/health
+```
+
+Expected response:
+
+```json
+{"ok":true}
+```
+
+## Shopify app configuration
+
+Copy `shopify.app.example.toml` to `shopify.app.toml` only after the Shopify
+Partner app is linked or created. Replace `client_id` and the backend URL if
+Render assigned a different service hostname, then validate:
+
+```powershell
+shopify app config validate --json
+```
+
+Deploy the app configuration:
+
+```powershell
+shopify app deploy
+```
+
+The app proxy must resolve:
+
+```text
+https://shop.maliev.com/tools/mesh-splitter
+```
 
 ## License recommendation
 

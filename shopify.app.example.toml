@@ -1,0 +1,31 @@
+# Copy to shopify.app.toml after linking or creating the Shopify Partner app.
+# Replace the placeholders, then run:
+# shopify app config validate --json
+# shopify app deploy
+
+client_id = "<shopify-app-client-id>"
+name = "MALIEV MeshSplitter"
+application_url = "https://maliev-mesh-splitter.onrender.com"
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-04"
+
+[[webhooks.subscriptions]]
+topics = ["orders/paid"]
+uri = "https://maliev-mesh-splitter.onrender.com/webhooks/shopify/orders-paid"
+
+[auth]
+redirect_urls = [
+  "https://maliev-mesh-splitter.onrender.com/auth/callback",
+  "https://maliev-mesh-splitter.onrender.com/auth/shopify/callback",
+  "https://maliev-mesh-splitter.onrender.com/api/auth/callback"
+]
+
+[app_proxy]
+url = "https://maliev-mesh-splitter.onrender.com/"
+prefix = "tools"
+subpath = "mesh-splitter"
