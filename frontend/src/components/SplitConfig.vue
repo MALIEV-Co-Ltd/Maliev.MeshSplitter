@@ -79,7 +79,14 @@ const props = defineProps({
 
 const emit = defineEmits(['split'])
 
-const connectorConfig = ref({ type: 'None' })
+const connectorConfig = ref({
+  type: 'Mortise & Tenon',
+  depth: 5,
+  clearance: 0.3,
+  perFace: 1,
+  tenonWidth: 6,
+  tenonThickness: 4,
+})
 const showConnectorWarning = ref(false)
 const totalParts = computed(() => props.divisions.reduce((a, b) => a * b, 1))
 

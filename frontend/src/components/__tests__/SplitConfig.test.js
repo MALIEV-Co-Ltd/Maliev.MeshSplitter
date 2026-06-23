@@ -24,7 +24,7 @@ describe('SplitConfig', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: false, err: '' }
     })
-    expect(wrapper.text()).toContain('None')
+    expect(wrapper.text()).toContain('Mortise & Tenon')
     expect(wrapper.text()).toContain('Connectors')
     await wrapper.get('.conn-select-trigger').trigger('click')
     expect(wrapper.text()).toContain('Dowel')
@@ -53,10 +53,32 @@ describe('SplitConfig', () => {
     expect(wrapper.text()).toContain('parts')
   })
 
-  it('shows a connector warning instead of splitting silently when connector type is none', async () => {
+  it('emits the default mortise connector without warning', async () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: true, err: '', divisions: [2, 2, 1] }
     })
+
+    await wrapper.get('button.w-full').trigger('click')
+
+    const [volume, divisions, connectorConfig] = wrapper.emitted('split')[0]
+    expect(volume).toEqual([250, 250, 250])
+    expect(divisions).toEqual([2, 2, 1])
+    expect(connectorConfig).toEqual({
+      type: 'Mortise & Tenon',
+      depth: 5,
+      clearance: 0.3,
+      perFace: 1,
+      tenonWidth: 6,
+      tenonThickness: 4,
+    })
+    expect(wrapper.text()).not.toContain('No connector selected')
+  })
+
+  it('shows a connector warning instead of splitting silently when connector type is explicitly none', async () => {
+    const wrapper = mount(SplitConfig, {
+      props: { v: [250, 250, 250], ok: true, err: '', divisions: [2, 2, 1] }
+    })
+    await selectConnector(wrapper, 'None')
 
     await wrapper.get('button.w-full').trigger('click')
 
@@ -69,6 +91,7 @@ describe('SplitConfig', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: true, err: '', divisions: [2, 2, 1] }
     })
+    await selectConnector(wrapper, 'None')
 
     await wrapper.get('button.w-full').trigger('click')
     await wrapper.get('[data-testid="confirm-split-without-connectors"]').trigger('click')
@@ -94,10 +117,17 @@ describe('SplitConfig', () => {
     expect(divisions).toEqual([2, 2, 1])
     expect(connectorConfig).toEqual({
       type: 'Dowel',
-      depth: 10,
-      clearance: 0.1,
+      depth: 5,
+      clearance: 0.3,
       perFace: 1,
       diameter: 6,
     })
   })
 })
+
+async function selectConnector(wrapper, label) {
+  await wrapper.get('.conn-select-trigger').trigger('click')
+  const option = wrapper.findAll('[role="option"]').find((candidate) => candidate.text().includes(label))
+  expect(option).toBeTruthy()
+  await option.trigger('click')
+}

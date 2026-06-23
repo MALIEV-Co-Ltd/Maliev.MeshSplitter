@@ -363,8 +363,9 @@ function manifoldMeshToGeometry(mesh) {
   return geometry
 }
 
-function chunkLabel(partNumber, ix, iy, iz) {
-  return `P${String(partNumber).padStart(2, '0')}-X${ix}Y${iy}Z${iz}`
+function chunkLabel(partNumber, ix, iy, iz, bodyIndex = 0, bodyCount = 1) {
+  const base = `P${String(partNumber).padStart(2, '0')}-X${ix}Y${iy}Z${iz}`
+  return bodyCount > 1 ? `${base}-B${bodyIndex + 1}` : base
 }
 
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
@@ -422,17 +423,22 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
 
             const resultMesh = part.getMesh()
             const geometry = manifoldMeshToGeometry(resultMesh)
-            const label = chunkLabel(partNumber, ix, iy, iz)
-            chunks.push({
-              index: partNumber - 1,
-              assemblyOrder: partNumber,
-              geometry,
-              label,
-              volume: Math.abs(part.volume()),
-              centroid: computeCentroid(geometry),
-              manifoldStatus,
+            const components = splitDisconnectedComponents(geometry)
+            components.forEach((componentGeometry, bodyIndex) => {
+              const label = chunkLabel(partNumber, ix, iy, iz, bodyIndex, components.length)
+              chunks.push({
+                index: partNumber - 1,
+                assemblyOrder: partNumber,
+                geometry: componentGeometry,
+                label,
+                bodyIndex,
+                bodyCount: components.length,
+                volume: computeVolume(componentGeometry),
+                centroid: computeCentroid(componentGeometry),
+                manifoldStatus,
+              })
+              partNumber += 1
             })
-            partNumber += 1
           } finally {
             part.delete?.()
           }
@@ -444,6 +450,83 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   }
 
   return chunks
+}
+
+function splitDisconnectedComponents(geometry) {
+  const position = geometry.attributes.position
+  if (!position) return []
+
+  const indices = geometry.index
+    ? Array.from(geometry.index.array)
+    : Array.from({ length: position.count }, (_, i) => i)
+  const faceCount = Math.floor(indices.length / 3)
+  if (faceCount <= 1) return [geometry]
+
+  const vertexFaces = new Map()
+  for (let face = 0; face < faceCount; face += 1) {
+    for (let corner = 0; corner < 3; corner += 1) {
+      const vertex = indices[face * 3 + corner]
+      if (!vertexFaces.has(vertex)) vertexFaces.set(vertex, [])
+      vertexFaces.get(vertex).push(face)
+    }
+  }
+
+  const visited = new Uint8Array(faceCount)
+  const components = []
+  for (let startFace = 0; startFace < faceCount; startFace += 1) {
+    if (visited[startFace]) continue
+    const stack = [startFace]
+    const faces = []
+    visited[startFace] = 1
+
+    while (stack.length > 0) {
+      const face = stack.pop()
+      faces.push(face)
+      for (let corner = 0; corner < 3; corner += 1) {
+        const vertex = indices[face * 3 + corner]
+        const neighbors = vertexFaces.get(vertex) || []
+        neighbors.forEach((neighborFace) => {
+          if (visited[neighborFace]) return
+          visited[neighborFace] = 1
+          stack.push(neighborFace)
+        })
+      }
+    }
+
+    components.push(faces)
+  }
+
+  if (components.length <= 1) return [geometry]
+
+  return components.map((faces) => {
+    const vertexMap = new Map()
+    const positions = []
+    const componentIndices = []
+
+    faces.forEach((face) => {
+      for (let corner = 0; corner < 3; corner += 1) {
+        const sourceVertex = indices[face * 3 + corner]
+        let targetVertex = vertexMap.get(sourceVertex)
+        if (targetVertex === undefined) {
+          targetVertex = positions.length / 3
+          vertexMap.set(sourceVertex, targetVertex)
+          positions.push(
+            position.getX(sourceVertex),
+            position.getY(sourceVertex),
+            position.getZ(sourceVertex),
+          )
+        }
+        componentIndices.push(targetVertex)
+      }
+    })
+
+    const component = new THREE.BufferGeometry()
+    component.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    component.setIndex(componentIndices)
+    component.computeBoundingBox()
+    component.computeVertexNormals()
+    return component
+  })
 }
 
 function computeCentroid(geometry) {
@@ -512,28 +595,22 @@ function createConnectorShape(manifold, type, { size, thickness, depth, clearanc
   }
 }
 
-export async function addConnectorsManifold(chunks, config) {
+export async function addConnectorsManifold(chunks, config = {}) {
   const type = resolveConnectorType(config.type)
   if (type === 'none') return chunks
   if (chunks.length < 2) return chunks
 
   const manifold = await getManifoldModule()
-  const depth = Number(config.depth || 10)
+  const depth = Number(config.depth ?? 5)
   const perFace = Math.max(1, Number(config.perFace || 1))
   if (!Number.isFinite(depth) || depth <= 0) {
     throw new Error('Connector depth must be greater than zero')
   }
 
-  const clearance = Number(config.clearance || 0.1)
+  const clearance = Number(config.clearance ?? 0.3)
   const size = toPositive(config.diameter, 6)
   const size2 = toPositive(config.tenonWidth ?? config.keyWidth ?? config.width, size)
   const thickness = toPositive(config.tenonThickness ?? config.keyHeight ?? config.thickness, type === 'key' ? Math.max(1.5, size * 0.55) : Math.max(1.5, size * 0.45))
-  const shape = createConnectorShape(manifold, type, {
-    size: type === 'dowel' ? size : size2,
-    thickness,
-    depth,
-    clearance,
-  })
 
   if (!Number.isFinite(clearance) || clearance < 0) {
     throw new Error('Connector clearance cannot be negative')
@@ -544,6 +621,7 @@ export async function addConnectorsManifold(chunks, config) {
     return chunk.geometry.boundingBox.clone()
   })
   const solids = chunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
+  const connectorCounts = chunks.map((chunk) => Number(chunk.connectorCount || 0))
 
   const worldSpan = new THREE.Vector3()
   bboxes.forEach((box) => {
@@ -598,9 +676,20 @@ export async function addConnectorsManifold(chunks, config) {
         }
 
         const faceTolerance = Math.max(bboxTouchTolerance * 20, 1e-3)
-        const connectorRadius = type === 'dowel'
-          ? Math.max(size / 2, 0.1)
-          : Math.max(size2, thickness) / 2
+        const connectorFit = fitConnectorToSharedFace(type, {
+          size,
+          size2,
+          thickness,
+          depth,
+          clearance,
+          extentA,
+          extentB,
+          axisDepthA: Math.max(faceTolerance, bbA.max.getComponent(axis) - bbA.min.getComponent(axis)),
+          axisDepthB: Math.max(faceTolerance, bbB.max.getComponent(axis) - bbB.min.getComponent(axis)),
+          faceTolerance,
+        })
+        if (!connectorFit) continue
+
         const candidates = findSharedCutFaceCandidates(
           chunks[i].geometry,
           chunks[j].geometry,
@@ -608,15 +697,21 @@ export async function addConnectorsManifold(chunks, config) {
           center.getComponent(axis),
           interBox,
           otherAxes,
-          Math.max(connectorRadius * 1.75, faceTolerance * 4),
+          Math.max(connectorFit.radius * 1.75, faceTolerance * 4),
           faceTolerance,
-          connectorRadius + clearance + faceTolerance,
+          connectorFit.radius + clearance + faceTolerance,
         )
 
         if (candidates.length === 0) {
           continue
         }
 
+        const shape = createConnectorShape(manifold, type, {
+          size: type === 'dowel' ? connectorFit.size : connectorFit.size2,
+          thickness: connectorFit.thickness,
+          depth: connectorFit.depth,
+          clearance,
+        })
         const positions = distributeConnectorCandidates(candidates, perFace, otherAxes)
         for (const pos of positions) {
           const peg = orientConnector(shape.makePeg(), axis).translate([pos.x, pos.y, pos.z])
@@ -630,6 +725,8 @@ export async function addConnectorsManifold(chunks, config) {
           socket.delete?.()
           solids[i] = male
           solids[j] = female
+          connectorCounts[i] += 1
+          connectorCounts[j] += 1
         }
       }
     }
@@ -643,11 +740,57 @@ export async function addConnectorsManifold(chunks, config) {
         geometry,
         volume: Math.abs(solids[index].volume()),
         centroid: computeCentroid(geometry),
+        connectorCount: connectorCounts[index],
         manifoldStatus: status,
       }
     })
   } finally {
     solids.forEach((solid) => solid.delete?.())
+  }
+}
+
+function fitConnectorToSharedFace(type, {
+  size,
+  size2,
+  thickness,
+  depth,
+  clearance,
+  extentA,
+  extentB,
+  axisDepthA,
+  axisDepthB,
+  faceTolerance,
+}) {
+  const smallestFaceExtent = Math.min(extentA, extentB)
+  const maxCrossSection = Math.max(0, (smallestFaceExtent - 2 * (clearance + faceTolerance)) * 0.8)
+  if (maxCrossSection <= 0.25) return null
+
+  const fittedDepth = Math.min(depth, Math.max(0.5, Math.min(axisDepthA, axisDepthB) * 0.45))
+  if (!Number.isFinite(fittedDepth) || fittedDepth <= 0) return null
+
+  if (type === 'dowel') {
+    const fittedDiameter = Math.max(0.25, Math.min(size, maxCrossSection))
+    return {
+      size: fittedDiameter,
+      size2: fittedDiameter,
+      thickness: fittedDiameter,
+      depth: fittedDepth,
+      radius: fittedDiameter / 2,
+    }
+  }
+
+  const requestedCross = Math.max(size2, thickness)
+  const scale = requestedCross > maxCrossSection ? maxCrossSection / requestedCross : 1
+  const fittedWidth = Math.max(0.25, size2 * scale)
+  const fittedThickness = Math.max(0.25, thickness * scale)
+  const fittedCross = Math.max(fittedWidth, fittedThickness)
+
+  return {
+    size: fittedWidth,
+    size2: fittedWidth,
+    thickness: fittedThickness,
+    depth: fittedDepth,
+    radius: fittedCross / 2,
   }
 }
 

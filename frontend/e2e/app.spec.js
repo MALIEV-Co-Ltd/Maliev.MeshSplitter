@@ -17,7 +17,15 @@ async function setBuildVolume(page, x, y, z) {
   await page.locator('#build-volume-Z').fill(String(z))
 }
 
-async function confirmSplitWithoutConnectors(page) {
+async function selectConnector(page, label) {
+  await page.locator('.conn-select-trigger').click()
+  await expect(page.locator('[role="listbox"]')).toBeVisible()
+  await page.locator('[role="option"]').filter({ hasText: label }).click()
+}
+
+async function splitWithExplicitNoConnectors(page) {
+  await selectConnector(page, 'None')
+  await page.getByRole('button', { name: 'Split' }).click()
   await expect(page.getByText('No connector selected')).toBeVisible()
   await page.getByRole('button', { name: 'Split without connectors' }).click()
 }
@@ -88,7 +96,6 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
 
     await page.getByRole('button', { name: 'Split' }).click()
-    await confirmSplitWithoutConnectors(page)
 
     await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
     await expect(page.getByText('P01-X0Y0Z0').first()).toBeVisible()
@@ -103,10 +110,18 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.col-right .pnl-meta').last()).toContainText('2×2×1')
 
     await page.getByRole('button', { name: 'Split' }).click()
-    await confirmSplitWithoutConnectors(page)
 
     await expect(page.locator('.parts-panel')).toContainText('4 total', { timeout: 15000 })
     await expect(page.getByText('P04-X1Y1Z0').first()).toBeVisible()
+  })
+
+  test('explicit None connector requires confirmation before splitting', async ({ page }) => {
+    await uploadTestStl(page)
+    await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
+
+    await splitWithExplicitNoConnectors(page)
+
+    await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
   })
 
   test('connector workflow keeps parts available for export', async ({ page }) => {
@@ -114,9 +129,7 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
     await setBuildVolume(page, 50, 100, 100)
     await expect(page.locator('.col-right .pnl-meta').last()).toContainText('2×1×1')
-    await page.locator('.conn-select-trigger').click()
-    await expect(page.locator('[role="listbox"]')).toBeVisible()
-    await page.locator('[role="option"]').filter({ hasText: 'Dowel' }).click()
+    await selectConnector(page, 'Dowel')
     await page.getByRole('button', { name: 'Split mesh' }).click()
     await expect(page.locator('.parts-panel')).toContainText('2 total', { timeout: 15000 })
     await expect(page.getByText('Connectors applied')).toBeVisible({ timeout: 15000 })
@@ -128,7 +141,6 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
 
     await page.getByRole('button', { name: 'Split' }).click()
-    await confirmSplitWithoutConnectors(page)
     await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
 
     const downloadPromise = page.waitForEvent('download')
@@ -142,7 +154,6 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
 
     await page.getByRole('button', { name: 'Split' }).click()
-    await confirmSplitWithoutConnectors(page)
     await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
 
     await page.evaluate(() => {

@@ -12,9 +12,16 @@ describe('ConnectorConfig', () => {
     expect(wrapper.findAll('a').map((a) => a.attributes('href')).some((href) => href.includes('wikipedia.org'))).toBe(true)
   })
 
-  it('emits a None config by default', () => {
+  it('emits a Mortise & Tenon config by default', () => {
     const wrapper = mount(ConnectorConfig)
-    expect(wrapper.emitted('update:modelValue').at(-1)[0]).toEqual({ type: 'None' })
+    expect(wrapper.emitted('update:modelValue').at(-1)[0]).toEqual({
+      type: 'Mortise & Tenon',
+      depth: 5,
+      clearance: 0.3,
+      perFace: 1,
+      tenonWidth: 6,
+      tenonThickness: 4,
+    })
   })
 
   it('emits dowel payload with diameter/depth when selected', async () => {
@@ -24,8 +31,8 @@ describe('ConnectorConfig', () => {
     const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
       type: 'Dowel',
-      depth: 10,
-      clearance: 0.1,
+      depth: 5,
+      clearance: 0.3,
       perFace: 1,
       diameter: 6,
     })
@@ -38,8 +45,8 @@ describe('ConnectorConfig', () => {
     const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
       type: 'Mortise & Tenon',
-      depth: 10,
-      clearance: 0.1,
+      depth: 5,
+      clearance: 0.3,
       perFace: 1,
       tenonWidth: 6,
       tenonThickness: 4,
@@ -53,8 +60,8 @@ describe('ConnectorConfig', () => {
     const payload = wrapper.emitted('update:modelValue').at(-1)[0]
     expect(payload).toEqual({
       type: 'Key',
-      depth: 10,
-      clearance: 0.1,
+      depth: 5,
+      clearance: 0.3,
       perFace: 1,
       keyWidth: 6,
       keyHeight: 3.5,

@@ -102,7 +102,17 @@ import { ChevronDown as ChevronDownIcon } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 
 const props = defineProps({
-  modelValue: { type: Object, default: () => ({ type: 'None' }) },
+  modelValue: {
+    type: Object,
+    default: () => ({
+      type: 'Mortise & Tenon',
+      depth: 5,
+      clearance: 0.3,
+      perFace: 1,
+      tenonWidth: 6,
+      tenonThickness: 4,
+    }),
+  },
   labels: {
     type: Object,
     default: () => ({
@@ -129,8 +139,8 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const diameter = ref(6)
-const depth = ref(10)
-const clearance = ref(0.1)
+const depth = ref(5)
+const clearance = ref(0.3)
 const perFace = ref(1)
 const mortiseWidth = ref(6)
 const mortiseThickness = ref(4)
@@ -210,7 +220,7 @@ const connectorTypes = computed(() => [
   },
 ])
 
-const connectorType = ref(props.modelValue?.type || 'None')
+const connectorType = ref(props.modelValue?.type || 'Mortise & Tenon')
 const isOpen = ref(false)
 const selectedType = computed(() => connectorTypes.value.find((type) => type.value === connectorType.value) || connectorTypes.value.at(-1))
 const isDowelConnector = computed(() => connectorType.value === 'Dowel')

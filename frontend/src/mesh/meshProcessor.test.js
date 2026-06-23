@@ -77,6 +77,46 @@ describe('splitMeshManifold', () => {
       expect(validateManifold(chunk.geometry).watertight).toBe(true)
     })
   })
+
+  it('reports disconnected mesh bodies inside one build-volume cell as separate parts', async () => {
+    const upperArm = new THREE.BoxGeometry(40, 12, 12).translate(0, 24, 0)
+    const lowerArm = new THREE.BoxGeometry(40, 12, 12).translate(0, -24, 0)
+    const mesh = new THREE.Mesh(mergeTestGeometries([upperArm, lowerArm]))
+
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [1, 1, 1])
+
+    expect(chunks).toHaveLength(2)
+    chunks.forEach((chunk) => {
+      expect(chunk.label).toMatch(/^P\d{2}-X0Y0Z0-B\d$/)
+      expect(validateManifold(chunk.geometry).watertight).toBe(true)
+    })
+  })
+
+  it('splits disconnected bodies before connector placement so each body can receive a connector', async () => {
+    const upperBeam = new THREE.BoxGeometry(80, 12, 20).translate(0, 24, 0)
+    const lowerBeam = new THREE.BoxGeometry(80, 12, 20).translate(0, -24, 0)
+    const mesh = new THREE.Mesh(mergeTestGeometries([upperBeam, lowerBeam]))
+
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+    const baselineVolumes = chunks.map((chunk) => chunk.volume)
+
+    expect(chunks).toHaveLength(4)
+
+    const result = await addConnectorsManifold(chunks, {
+      type: 'Mortise & Tenon',
+      tenonWidth: 6,
+      tenonThickness: 4,
+      depth: 5,
+      clearance: 0.3,
+      perFace: 1,
+    })
+
+    result.forEach((chunk, i) => {
+      expect(chunk.connectorCount).toBeGreaterThan(0)
+      expect(Math.abs(chunk.volume - baselineVolumes[i])).toBeGreaterThan(0.1)
+      expect(validateManifold(chunk.geometry).watertight).toBe(true)
+    })
+  })
 })
 
 describe('addConnectorsManifold', () => {
@@ -176,7 +216,7 @@ describe('addConnectorsManifold', () => {
     expect(result[0].centroid.z).toBeGreaterThan(0)
   })
 
-  it('skips connectors when the shared cut face is too close to exterior thin-wall edges', async () => {
+  it('automatically scales oversized connectors to fit thin shared split faces', async () => {
     const left = new THREE.BoxGeometry(20, 6, 80).translate(-10, 0, 0)
     const right = new THREE.BoxGeometry(20, 6, 80).translate(10, 0, 0)
     const expectedLeftVolume = computeVolume(left)
@@ -196,8 +236,11 @@ describe('addConnectorsManifold', () => {
     })
 
     expect(result).toHaveLength(2)
-    expect(result[0].volume).toBeCloseTo(expectedLeftVolume, 2)
-    expect(result[1].volume).toBeCloseTo(expectedRightVolume, 2)
+    expect(result[0].connectorCount).toBeGreaterThan(0)
+    expect(result[1].connectorCount).toBeGreaterThan(0)
+    expect(result[0].volume).toBeGreaterThan(expectedLeftVolume)
+    expect(result[1].volume).toBeLessThan(expectedRightVolume)
+    result.forEach((chunk) => expect(validateManifold(chunk.geometry).watertight).toBe(true))
   })
 })
 
