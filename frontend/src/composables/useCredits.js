@@ -58,9 +58,8 @@ export function useCredits(options = {}) {
         request(`${apiBaseUrl}/account`),
         request(`${apiBaseUrl}/pricing`),
       ])
-      account.value = accountResponse.account
       pricing.value = pricingResponse
-      hasAccountData.value = true
+      applyAccountResponse(accountResponse)
     } catch (e) {
       error.value = e.message
       if (enforcement === 'required') throw e
@@ -91,8 +90,7 @@ export function useCredits(options = {}) {
       pricing.value = await request(`${apiBaseUrl}/pricing`)
       try {
         const accountResponse = await request(`${apiBaseUrl}/account`)
-        account.value = accountResponse.account
-        hasAccountData.value = true
+        applyAccountResponse(accountResponse)
       } catch {
         hasAccountData.value = false
       }
@@ -146,6 +144,23 @@ export function useCredits(options = {}) {
     refreshPublic,
     consumeExport,
     consumeGeneration,
+  }
+
+  function applyAccountResponse(response) {
+    if (response?.account) {
+      account.value = response.account
+      hasAccountData.value = true
+      return
+    }
+
+    const freeLimit = Number(pricing.value.freeGenerationsPerMonth ?? DEFAULT_ACCOUNT.freeLimit)
+    account.value = {
+      ...DEFAULT_ACCOUNT,
+      freeLimit,
+      freeRemaining: freeLimit,
+      availableGenerations: freeLimit,
+    }
+    hasAccountData.value = false
   }
 }
 

@@ -26,6 +26,26 @@ describe('useCredits', () => {
     expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-10')
   })
 
+  it('keeps the app in public free mode when the account API returns anonymous state', async () => {
+    fetch
+      .mockResolvedValueOnce(jsonResponse({
+        authenticated: false,
+        account: null,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        freeGenerationsPerMonth: 3,
+        creditPacks: [{ sku: 'MS-CREDITS-10', credits: 10, priceCents: 900 }],
+      }))
+
+    const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+    await credits.refresh()
+
+    expect(credits.error.value).toBeNull()
+    expect(credits.hasAccountData.value).toBe(false)
+    expect(credits.account.value.availableGenerations).toBe(3)
+    expect(credits.account.value.freeRemaining).toBe(3)
+  })
+
   it('loads public pricing without requesting the protected account endpoint', async () => {
     fetch.mockResolvedValueOnce(jsonResponse({
       freeGenerationsPerMonth: 3,
@@ -58,6 +78,25 @@ describe('useCredits', () => {
     expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-30')
     expect(credits.account.value.availableGenerations).toBe(7)
     expect(credits.hasAccountData.value).toBe(true)
+  })
+
+  it('keeps public pricing when public account lookup returns anonymous state', async () => {
+    fetch
+      .mockResolvedValueOnce(jsonResponse({
+        freeGenerationsPerMonth: 3,
+        creditPacks: [{ sku: 'MS-CREDITS-30', credits: 30, priceCents: 87900 }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        authenticated: false,
+        account: null,
+      }))
+
+    const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+    await credits.refreshPublic()
+
+    expect(credits.pricing.value.creditPacks[0].sku).toBe('MS-CREDITS-30')
+    expect(credits.hasAccountData.value).toBe(false)
+    expect(credits.error.value).toBeNull()
   })
 
   it('keeps public pricing when anonymous account lookup is unavailable', async () => {

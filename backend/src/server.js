@@ -96,9 +96,12 @@ async function route(context) {
   }
 
   if (request.method === 'GET' && url.pathname === '/api/account') {
-    const identity = resolveIdentity(context, url)
+    const identity = resolveOptionalIdentity(context, url)
+    if (!identity) {
+      return sendJson(response, 200, { authenticated: false, account: null })
+    }
     const account = await ledger.getAccount(identity.customerId)
-    return sendJson(response, 200, { account })
+    return sendJson(response, 200, { authenticated: true, account })
   }
 
   if (
@@ -237,6 +240,27 @@ function resolveIdentity({ request, devCustomerBypass, shopifyAppProxySecret, se
 
   const query = Object.fromEntries(url.searchParams.entries())
   return verifyAppProxyIdentity(query, shopifyAppProxySecret)
+}
+
+function resolveOptionalIdentity({ request, devCustomerBypass, shopifyAppProxySecret, sessionSecret }, url) {
+  const devCustomerId = request.headers['x-mesh-customer-id']
+  if (devCustomerBypass && devCustomerId) {
+    return { customerId: String(devCustomerId), shop: 'local-dev' }
+  }
+
+  const sessionCookie = parseCookies(request.headers.cookie || '').mesh_splitter_session
+  if (sessionCookie) {
+    return verifySignedSession(sessionCookie, sessionSecret)
+  }
+
+  const query = Object.fromEntries(url.searchParams.entries())
+  if (query.signature) {
+    verifyAppProxySignature(query, shopifyAppProxySecret)
+    if (!query.logged_in_customer_id) return null
+    return verifyAppProxyIdentity(query, shopifyAppProxySecret)
+  }
+
+  return null
 }
 
 function createDefaultStore() {

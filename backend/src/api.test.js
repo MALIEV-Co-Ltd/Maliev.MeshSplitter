@@ -48,7 +48,22 @@ describe('HTTP API', () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
+    expect(body.authenticated).toBe(true)
     expect(body.account).toMatchObject({ customerId: 'local-customer', freeRemaining: 3 })
+  })
+
+  it('returns anonymous account state for signed app-proxy visitors without customer login', async () => {
+    const query = {
+      shop: 'example.myshopify.com',
+      path_prefix: '/tools/mesh-splitter',
+      timestamp: '1782050000',
+    }
+    const signature = signAppProxyQuery(query, 'proxy-secret')
+    const response = await fetch(`${baseUrl}/api/account?shop=${query.shop}&path_prefix=${encodeURIComponent(query.path_prefix)}&timestamp=${query.timestamp}&signature=${signature}`)
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({ authenticated: false, account: null })
   })
 
   it('sets a signed customer session from a Shopify app-proxy page request', async () => {
@@ -196,6 +211,24 @@ describe('HTTP API', () => {
     expect(response.status).toBe(201)
     expect(body.transaction).toMatchObject({ source: 'free_monthly' })
     expect(body.account.freeRemaining).toBe(2)
+  })
+
+  it('rejects anonymous app-proxy export requests without customer login', async () => {
+    const query = {
+      shop: 'example.myshopify.com',
+      path_prefix: '/tools/mesh-splitter',
+      timestamp: '1782050000',
+    }
+    const signature = signAppProxyQuery(query, 'proxy-secret')
+    const response = await fetch(`${baseUrl}/api/exports?shop=${query.shop}&path_prefix=${encodeURIComponent(query.path_prefix)}&timestamp=${query.timestamp}&signature=${signature}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idempotencyKey: 'anonymous-export' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.error).toBe('Shopify customer login is required')
   })
 
   it('is idempotent when reusing the same export idempotency key', async () => {
