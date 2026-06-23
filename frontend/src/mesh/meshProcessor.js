@@ -610,6 +610,7 @@ export async function addConnectorsManifold(chunks, config) {
           otherAxes,
           Math.max(connectorRadius * 1.75, faceTolerance * 4),
           faceTolerance,
+          connectorRadius + clearance + faceTolerance,
         )
 
         if (candidates.length === 0) {
@@ -650,14 +651,52 @@ export async function addConnectorsManifold(chunks, config) {
   }
 }
 
-function findSharedCutFaceCandidates(geometryA, geometryB, axis, plane, interBox, otherAxes, matchDistance, tolerance) {
-  const pointsA = collectCutFaceCentroids(geometryA, axis, plane, interBox, tolerance)
-  const pointsB = collectCutFaceCentroids(geometryB, axis, plane, interBox, tolerance)
-  if (pointsA.length === 0 || pointsB.length === 0) return []
+function findSharedCutFaceCandidates(geometryA, geometryB, axis, plane, interBox, otherAxes, matchDistance, tolerance, edgeMargin) {
+  const trianglesA = collectCutFaceTriangles(geometryA, axis, plane, interBox, tolerance)
+  const trianglesB = collectCutFaceTriangles(geometryB, axis, plane, interBox, tolerance)
+  if (trianglesA.length === 0 || trianglesB.length === 0) return []
 
+  const minU = interBox.min.getComponent(otherAxes[0]) + edgeMargin
+  const maxU = interBox.max.getComponent(otherAxes[0]) - edgeMargin
+  const minV = interBox.min.getComponent(otherAxes[1]) + edgeMargin
+  const maxV = interBox.max.getComponent(otherAxes[1]) - edgeMargin
+  if (minU > maxU || minV > maxV) return []
+
+  const points = []
+  const steps = 7
+  for (let uIndex = 1; uIndex <= steps; uIndex += 1) {
+    for (let vIndex = 1; vIndex <= steps; vIndex += 1) {
+      const u = minU + ((maxU - minU) * uIndex) / (steps + 1)
+      const v = minV + ((maxV - minV) * vIndex) / (steps + 1)
+      if (!pointOnCutTriangles(u, v, trianglesA, tolerance)) continue
+      if (!pointOnCutTriangles(u, v, trianglesB, tolerance)) continue
+
+      const point = new THREE.Vector3()
+      point.setComponent(axis, plane)
+      point.setComponent(otherAxes[0], u)
+      point.setComponent(otherAxes[1], v)
+      points.push(point)
+    }
+  }
+
+  if (points.length > 0) {
+    return dedupePoints(points, tolerance).sort((a, b) => {
+      const primary = a.getComponent(otherAxes[0]) - b.getComponent(otherAxes[0])
+      if (Math.abs(primary) > tolerance) return primary
+      return a.getComponent(otherAxes[1]) - b.getComponent(otherAxes[1])
+    })
+  }
+
+  const legacyPointsA = collectCutFaceVertices(geometryA, axis, plane, interBox, tolerance)
+  const legacyPointsB = collectCutFaceVertices(geometryB, axis, plane, interBox, tolerance)
   const maxDistanceSq = matchDistance * matchDistance
-  return pointsA
-    .filter((point) => pointsB.some((other) => distanceOnAxesSq(point, other, otherAxes) <= maxDistanceSq))
+  return legacyPointsA
+    .filter((point) => {
+      const u = point.getComponent(otherAxes[0])
+      const v = point.getComponent(otherAxes[1])
+      if (u < minU || u > maxU || v < minV || v > maxV) return false
+      return legacyPointsB.some((other) => distanceOnAxesSq(point, other, otherAxes) <= maxDistanceSq)
+    })
     .sort((a, b) => {
       const primary = a.getComponent(otherAxes[0]) - b.getComponent(otherAxes[0])
       if (Math.abs(primary) > tolerance) return primary
@@ -665,7 +704,86 @@ function findSharedCutFaceCandidates(geometryA, geometryB, axis, plane, interBox
     })
 }
 
-function collectCutFaceCentroids(geometry, axis, plane, interBox, tolerance) {
+function collectCutFaceTriangles(geometry, axis, plane, interBox, tolerance) {
+  const position = geometry.attributes.position
+  if (!position) return []
+
+  const index = geometry.index
+  const triangles = []
+  const a = new THREE.Vector3()
+  const b = new THREE.Vector3()
+  const c = new THREE.Vector3()
+  const max = index ? index.count : position.count
+
+  for (let i = 0; i + 2 < max; i += 3) {
+    const ai = index ? index.getX(i) : i
+    const bi = index ? index.getX(i + 1) : i + 1
+    const ci = index ? index.getX(i + 2) : i + 2
+    a.set(position.getX(ai), position.getY(ai), position.getZ(ai))
+    b.set(position.getX(bi), position.getY(bi), position.getZ(bi))
+    c.set(position.getX(ci), position.getY(ci), position.getZ(ci))
+
+    if (
+      Math.abs(a.getComponent(axis) - plane) > tolerance ||
+      Math.abs(b.getComponent(axis) - plane) > tolerance ||
+      Math.abs(c.getComponent(axis) - plane) > tolerance
+    ) {
+      continue
+    }
+
+    if (!containsPointWithTolerance(interBox, a, tolerance) || !containsPointWithTolerance(interBox, b, tolerance) || !containsPointWithTolerance(interBox, c, tolerance)) {
+      continue
+    }
+
+    const otherAxes = [(axis + 1) % 3, (axis + 2) % 3]
+    triangles.push({
+      a: [a.getComponent(otherAxes[0]), a.getComponent(otherAxes[1])],
+      b: [b.getComponent(otherAxes[0]), b.getComponent(otherAxes[1])],
+      c: [c.getComponent(otherAxes[0]), c.getComponent(otherAxes[1])],
+    })
+  }
+
+  return triangles
+}
+
+function containsPointWithTolerance(box, point, tolerance) {
+  return (
+    point.x >= box.min.x - tolerance &&
+    point.x <= box.max.x + tolerance &&
+    point.y >= box.min.y - tolerance &&
+    point.y <= box.max.y + tolerance &&
+    point.z >= box.min.z - tolerance &&
+    point.z <= box.max.z + tolerance
+  )
+}
+
+function pointOnCutTriangles(u, v, triangles, tolerance) {
+  return triangles.some((triangle) => pointInTriangle2D(u, v, triangle, tolerance))
+}
+
+function pointInTriangle2D(u, v, triangle, tolerance) {
+  const v0x = triangle.c[0] - triangle.a[0]
+  const v0y = triangle.c[1] - triangle.a[1]
+  const v1x = triangle.b[0] - triangle.a[0]
+  const v1y = triangle.b[1] - triangle.a[1]
+  const v2x = u - triangle.a[0]
+  const v2y = v - triangle.a[1]
+
+  const dot00 = v0x * v0x + v0y * v0y
+  const dot01 = v0x * v1x + v0y * v1y
+  const dot02 = v0x * v2x + v0y * v2y
+  const dot11 = v1x * v1x + v1y * v1y
+  const dot12 = v1x * v2x + v1y * v2y
+  const denom = dot00 * dot11 - dot01 * dot01
+  if (Math.abs(denom) <= tolerance * tolerance) return false
+
+  const invDenom = 1 / denom
+  const alpha = (dot11 * dot02 - dot01 * dot12) * invDenom
+  const beta = (dot00 * dot12 - dot01 * dot02) * invDenom
+  return alpha >= -tolerance && beta >= -tolerance && alpha + beta <= 1 + tolerance
+}
+
+function collectCutFaceVertices(geometry, axis, plane, interBox, tolerance) {
   const position = geometry.attributes.position
   if (!position) return []
 

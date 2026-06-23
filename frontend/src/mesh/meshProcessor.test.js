@@ -175,6 +175,30 @@ describe('addConnectorsManifold', () => {
     expect(result[0].centroid.y).toBeGreaterThan(0)
     expect(result[0].centroid.z).toBeGreaterThan(0)
   })
+
+  it('skips connectors when the shared cut face is too close to exterior thin-wall edges', async () => {
+    const left = new THREE.BoxGeometry(20, 6, 80).translate(-10, 0, 0)
+    const right = new THREE.BoxGeometry(20, 6, 80).translate(10, 0, 0)
+    const expectedLeftVolume = computeVolume(left)
+    const expectedRightVolume = computeVolume(right)
+    const chunks = [
+      { index: 0, geometry: left, label: 'P00', volume: expectedLeftVolume },
+      { index: 1, geometry: right, label: 'P01', volume: expectedRightVolume },
+    ]
+
+    const result = await addConnectorsManifold(chunks, {
+      type: 'Mortise & Tenon',
+      tenonWidth: 8,
+      tenonThickness: 4,
+      depth: 8,
+      clearance: 0.2,
+      perFace: 1,
+    })
+
+    expect(result).toHaveLength(2)
+    expect(result[0].volume).toBeCloseTo(expectedLeftVolume, 2)
+    expect(result[1].volume).toBeCloseTo(expectedRightVolume, 2)
+  })
 })
 
 function mergeTestGeometries(geometries) {
