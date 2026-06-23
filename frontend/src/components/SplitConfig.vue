@@ -8,14 +8,6 @@
       <span class="pnl-meta">{{ divisions[0] }}&times;{{ divisions[1] }}&times;{{ divisions[2] }} &middot; {{ totalParts }} {{ totalParts === 1 ? labels.part : labels.parts }}</span>
     </div>
     <div class="pnl-body space-y-3">
-      <div class="axis-row axis-row--readonly" :aria-label="labels.autoSplitLabel">
-        <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="axis-item">
-          <span class="axis-label">{{ axis }}</span>
-          <span class="axis-auto-note">{{ labels.autoSplitLabel }}</span>
-          <span class="axis-val">{{ divisions[i] }}</span>
-        </div>
-      </div>
-
       <div class="conn-subhead">
         <Link2Icon :size="13" :stroke-width="1.75" />
         {{ labels.connectors }}
@@ -23,7 +15,6 @@
       <ConnectorConfig v-model="connectorConfig" :labels="labels.connectorConfig" />
 
       <p v-if="err" class="text-sm text-destructive">{{ err }}</p>
-      <p v-if="success" class="text-sm text-positive">{{ success }}</p>
       <div v-if="showConnectorWarning" class="connector-warning" role="dialog" aria-modal="false" :aria-label="labels.connectorWarningTitle">
         <div>
           <strong>{{ labels.connectorWarningTitle }}</strong>
@@ -55,7 +46,6 @@ const props = defineProps({
   v: { type: Array, required: true },
   ok: { type: Boolean, default: false },
   err: { type: String, default: '' },
-  success: { type: String, default: '' },
   divisions: { type: Array, default: () => [2, 2, 1] },
   loading: { type: Boolean, default: false },
   labels: {

@@ -560,39 +560,84 @@ function clampConnectorSpacing(value, min = 0.1) {
   return value < min ? min : value
 }
 
-function createConnectorShape(manifold, type, { size, thickness, depth, clearance }) {
+// Peg (male) and socket (female) dimensions for a connector. The socket is the
+// peg grown by the clearance on every cross-section axis, so the male ALWAYS
+// fits the female — get this wrong and nothing assembles. Kept as a pure,
+// exported function so the socket > peg invariant can be unit-tested.
+export function connectorDimensions(type, { size, thickness, depth, clearance } = {}) {
+  const gap = Math.max(0, Number(clearance) || 0)
+  const height = depth * 2
+
   if (type === 'dowel') {
     const radius = clampConnectorSpacing(size / 2, 0.1)
-    const socketRadius = clampConnectorSpacing(radius + (clearance || 0), 0.1)
     return {
-      makePeg: () => manifold.Manifold.cylinder(depth * 2, radius, radius, 24, true),
-      makeSocket: () => manifold.Manifold.cylinder(depth * 2, socketRadius, socketRadius, 24, true),
+      shape: 'cylinder',
+      peg: { radius, height },
+      socket: { radius: clampConnectorSpacing(radius + gap, 0.1), height },
     }
   }
 
-  if (type === 'mortise-and-tenon') {
-    const width = clampConnectorSpacing(size, 1.5)
-    const keyHeight = clampConnectorSpacing(thickness, 1.5)
-    return {
-      makePeg: () => manifold.Manifold.cube([width, keyHeight, depth * 2], true),
-      makeSocket: () => manifold.Manifold.cube(
-        [width + (clearance || 0) * 2, keyHeight + (clearance || 0) * 2, depth * 2 + (clearance || 0) * 2],
-        true,
-      ),
-    }
-  }
-
-  const keyWidth = clampConnectorSpacing(size, 1.5)
-  const keyHeight = clampConnectorSpacing(thickness, 1.0)
+  const width = clampConnectorSpacing(size, 1.5)
+  const cross = clampConnectorSpacing(thickness, type === 'key' ? 1.0 : 1.5)
   return {
-    makePeg: () => manifold.Manifold.cube([keyWidth * 1.25, keyHeight, depth * 2], true),
-    makeSocket: () => {
-      return manifold.Manifold.cube(
-        [keyWidth + (clearance || 0) * 2, keyHeight + (clearance || 0) * 2, depth * 2 + (clearance || 0) * 2],
-        true,
-      )
-    },
+    shape: 'cube',
+    peg: { x: width, y: cross, z: height },
+    socket: { x: width + gap * 2, y: cross + gap * 2, z: height + gap * 2 },
   }
+}
+
+function createConnectorShape(manifold, type, options) {
+  const dims = connectorDimensions(type, options)
+  if (dims.shape === 'cylinder') {
+    return {
+      makePeg: () => manifold.Manifold.cylinder(dims.peg.height, dims.peg.radius, dims.peg.radius, 24, true),
+      makeSocket: () => manifold.Manifold.cylinder(dims.socket.height, dims.socket.radius, dims.socket.radius, 24, true),
+    }
+  }
+  return {
+    makePeg: () => manifold.Manifold.cube([dims.peg.x, dims.peg.y, dims.peg.z], true),
+    makeSocket: () => manifold.Manifold.cube([dims.socket.x, dims.socket.y, dims.socket.z], true),
+  }
+}
+
+// A connector shorter than this isn't worth placing (and signals the wall is
+// too thin to take one safely), so the face is skipped instead of forced.
+const MIN_CONNECTOR_DEPTH = 0.8
+
+// Largest connector count that physically fits across a shared face span. A
+// requested "connectors per face" is REDUCED (never forced) when the face is
+// too small, so connectors can't overlap/merge on a tiny mating surface.
+export function fittedConnectorCount(requestedPerFace, faceSpan, connectorCross, clearance) {
+  const requested = Math.max(1, Math.floor(Number(requestedPerFace) || 1))
+  const cross = Math.max(0.1, Number(connectorCross) || 0.1)
+  const pitch = cross + Math.max(0, Number(clearance) || 0) * 2 + cross * 0.6
+  const usable = Math.max(0, Number(faceSpan) || 0)
+  const maxFit = Math.max(1, Math.floor(usable / pitch))
+  return Math.min(requested, maxFit)
+}
+
+// Clamp insertion depth to a fraction of the local wall thickness so the peg
+// (and its socket) can't punch through the opposite surface — that both wrecks
+// the visible surface and leaves an unprintably thin wall.
+export function clampConnectorDepth(requestedDepth, localThickness, factor = 0.4) {
+  const requested = Math.max(0, Number(requestedDepth) || 0)
+  if (!Number.isFinite(localThickness)) return requested
+  return Math.min(requested, Math.max(0, localThickness) * factor)
+}
+
+// Distance from the shared cut plane to the far wall of a part at a point, by
+// raycasting into the body. Used to size connectors to the LOCAL thickness
+// rather than the (often far larger, for thin/curved parts) bounding box.
+function localWallThickness(raycaster, mesh, bbox, point, axis, plane, nudge) {
+  const inwardSign = bbox.min.getComponent(axis) + bbox.max.getComponent(axis) < plane * 2 ? -1 : 1
+  const direction = new THREE.Vector3()
+  direction.setComponent(axis, inwardSign)
+  const origin = point.clone()
+  origin.setComponent(axis, plane)
+  origin.addScaledVector(direction, nudge)
+  raycaster.set(origin, direction)
+  const hits = raycaster.intersectObject(mesh, false)
+  return hits.length ? hits[0].distance : Infinity
 }
 
 export async function addConnectorsManifold(chunks, config = {}) {
@@ -622,6 +667,14 @@ export async function addConnectorsManifold(chunks, config = {}) {
   })
   const solids = chunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
   const connectorCounts = chunks.map((chunk) => Number(chunk.connectorCount || 0))
+  // Raycast meshes (double-sided so back walls register) for local-thickness
+  // probing, so connectors are clamped to the part's real wall, not its bbox.
+  const raycaster = new THREE.Raycaster()
+  const raycastMeshes = chunks.map((chunk) => {
+    const mesh = new THREE.Mesh(chunk.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+    mesh.updateMatrixWorld()
+    return mesh
+  })
 
   const worldSpan = new THREE.Vector3()
   bboxes.forEach((box) => {
@@ -706,13 +759,34 @@ export async function addConnectorsManifold(chunks, config = {}) {
           continue
         }
 
+        // Reduce the per-face count to what physically fits this mating face.
+        const connectorCross = type === 'dowel'
+          ? connectorFit.radius * 2
+          : Math.max(connectorFit.size2, connectorFit.thickness)
+        const edgeMargin = connectorFit.radius + clearance + faceTolerance
+        const effectivePerFace = fittedConnectorCount(perFace, extentA - edgeMargin * 2, connectorCross, clearance)
+        const positions = distributeConnectorCandidates(candidates, effectivePerFace, otherAxes)
+
+        // Clamp depth to the thinnest local wall across the chosen positions so
+        // neither the peg nor its socket punches through the opposite surface.
+        const planeValue = center.getComponent(axis)
+        let minWall = Infinity
+        for (const pos of positions) {
+          minWall = Math.min(
+            minWall,
+            localWallThickness(raycaster, raycastMeshes[i], bbA, pos, axis, planeValue, faceTolerance),
+            localWallThickness(raycaster, raycastMeshes[j], bbB, pos, axis, planeValue, faceTolerance),
+          )
+        }
+        const safeDepth = clampConnectorDepth(connectorFit.depth, minWall)
+        if (safeDepth < MIN_CONNECTOR_DEPTH) continue
+
         const shape = createConnectorShape(manifold, type, {
           size: type === 'dowel' ? connectorFit.size : connectorFit.size2,
           thickness: connectorFit.thickness,
-          depth: connectorFit.depth,
+          depth: safeDepth,
           clearance,
         })
-        const positions = distributeConnectorCandidates(candidates, perFace, otherAxes)
         for (const pos of positions) {
           const peg = orientConnector(shape.makePeg(), axis).translate([pos.x, pos.y, pos.z])
           const socket = orientConnector(shape.makeSocket(), axis).translate([pos.x, pos.y, pos.z])
@@ -746,6 +820,7 @@ export async function addConnectorsManifold(chunks, config = {}) {
     })
   } finally {
     solids.forEach((solid) => solid.delete?.())
+    raycastMeshes.forEach((mesh) => mesh.material.dispose())
   }
 }
 
@@ -1131,16 +1206,16 @@ async function addHeader(pdf, title, subtitle, appUrl, qrImage) {
   pdf.rect(70, 0, PDF_PAGE.width - 70, 27, 'F')
 
   drawLogo(pdf)
-  setRgb(pdf, 'setDrawColor', [203, 213, 225])
-  pdf.line(PDF_LOGO.x + PDF_LOGO.width + 7, 8.7, PDF_LOGO.x + PDF_LOGO.width + 7, 17.7)
   setFont(pdf, 5.8, 'normal', [229, 231, 235])
-  pdf.text('Mesh Splitter', PDF_LOGO.x + PDF_LOGO.width + 11, 14.2)
   pdf.text(appUrl, PDF_PAGE.width - PDF_PAGE.margin, 14, { align: 'right' })
 }
 
 function addPageTitle(pdf, title, subtitle, qrImage) {
   if (qrImage) {
-    addQrPanel(pdf, qrImage, PDF_PAGE.width - PDF_PAGE.margin - 24, 35, 24, 29)
+    // Compact, caption-less QR that ends above the page content (y≈55) so the
+    // part image frames at y58 never overdraw it. The captioned QR lives on the
+    // cover hero instead.
+    addQrPanel(pdf, qrImage, PDF_PAGE.width - PDF_PAGE.margin - 24, 31, 24, 24, { caption: false })
   }
 
   setFont(pdf, 20, 'bold', BRAND.black)
@@ -1374,15 +1449,21 @@ function drawPill(pdf, text, x, y, width, height) {
   pdf.text(text, x + width / 2, y + 4, { align: 'center' })
 }
 
-function addQrPanel(pdf, qrImage, x, y, width, height) {
+function addQrPanel(pdf, qrImage, x, y, width, height, { caption = true } = {}) {
   setRgb(pdf, 'setFillColor', BRAND.panel)
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 4, 4, 'FD')
+  // Without a caption the QR fills the panel (square inset); with one it leaves
+  // room below for the two-line "Scan to open" label.
+  const inset = caption ? 3.5 : 3
+  const qrSize = caption ? width - 7 : Math.min(width - inset * 2, height - inset * 2)
   if (qrImage) {
-    pdf.addImage(qrImage, 'PNG', x + 3.5, y + 3.5, width - 7, width - 7)
+    pdf.addImage(qrImage, 'PNG', x + (width - qrSize) / 2, y + inset, qrSize, qrSize)
   }
-  setFont(pdf, 5.2, 'bold', BRAND.muted)
-  pdf.text(['Scan to open', 'Mesh Splitter'], x + width / 2, y + height - 8, { align: 'center' })
+  if (caption) {
+    setFont(pdf, 5.2, 'bold', BRAND.muted)
+    pdf.text(['Scan to open', 'Mesh Splitter'], x + width / 2, y + height - 8, { align: 'center' })
+  }
 }
 
 function addCoverHero(pdf, qrImage, appUrl) {
@@ -1408,25 +1489,72 @@ function addCoverHero(pdf, qrImage, appUrl) {
   addQrPanel(pdf, qrImage, x + width - 33, y + 8, 24, 31)
 }
 
+// Page-1 packet copy. Each entry is hand-broken into lines sized to fit its
+// column; the card widths below feed both the layout and PACKET_TEXT_LAYOUT so a
+// real-jsPDF test can guarantee no line re-wraps. A re-wrapped line would spill
+// a hidden extra line that overlaps the next row, icon, or card border.
+const CHECKLIST_CARD_WIDTH = 50
+const ASSEMBLY_FLOW_CARD_WIDTH = 50
+const PACKAGE_CONTENTS_CARD_WIDTH = 83
+const IMPORTANT_NOTE_CARD_WIDTH = 75
+
+const PACKET_CHECKLIST_ITEMS = [
+  ['Print all bundled STL files', 'at the intended scale.'],
+  ['Keep labels visible until', 'assembly is complete.'],
+  ['Check nozzle, layer height,', 'and support before printing.'],
+  ['Dry-fit parts before using', 'glue or fasteners.'],
+]
+
+const PACKET_ASSEMBLY_STEPS = [
+  ['Sort printed parts by label and', 'connector location.'],
+  ['Dry-fit and confirm orientation', 'with the preview.'],
+  ['Join from the largest mating', 'faces outward.'],
+]
+
+const PACKAGE_CONTENTS_BODY = [
+  'This packet is the visual reference for the exported mesh package.',
+  'Keep it with the split STL files so the operator can verify the model,',
+  'part count, and print setup.',
+]
+const PACKAGE_CONTENTS_NOTE = [
+  'For multi-part models, exported filenames and labels should',
+  'match the assembly order shown in this packet.',
+]
+const IMPORTANT_NOTE_BODY = [
+  'Confirm build volume, units, and orientation before production printing.',
+  'Recheck scale after any model repair or re-split.',
+]
+const IMPORTANT_NOTE_NOTE = [
+  'Scan the QR code to reopen Mesh Splitter',
+  'for re-splitting or regeneration.',
+]
+
+// Wrap-sensitive blocks: each line must fit its column at the listed font size.
+// The maxWidth mirrors the in-card text padding (checklist x+11/right-4 => -15;
+// info note x+15/right-5 => -20; flow x+13/right-5 => -18).
+export const PACKET_TEXT_LAYOUT = [
+  { label: 'checklist', fontSize: 6.1, maxWidth: CHECKLIST_CARD_WIDTH - 15, lines: PACKET_CHECKLIST_ITEMS.flat() },
+  { label: 'assemblyFlow', fontSize: 5.9, maxWidth: ASSEMBLY_FLOW_CARD_WIDTH - 18, lines: PACKET_ASSEMBLY_STEPS.flat() },
+  { label: 'packageContentsNote', fontSize: 6.1, maxWidth: PACKAGE_CONTENTS_CARD_WIDTH - 20, lines: PACKAGE_CONTENTS_NOTE },
+  { label: 'importantNote', fontSize: 6.1, maxWidth: IMPORTANT_NOTE_CARD_WIDTH - 20, lines: IMPORTANT_NOTE_NOTE },
+]
+
 function addChecklistCard(pdf, x, y, width, height) {
   setRgb(pdf, 'setFillColor', [255, 255, 255])
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 4, 4, 'FD')
   setFont(pdf, 9, 'bold', BRAND.black)
   pdf.text('Print checklist', x + 5, y + 10)
-  const items = [
-    ['Print every bundled STL file at the', 'intended scale.'],
-    ['Keep labels or filenames visible until', 'assembly is complete.'],
-    ['Check material, nozzle, layer height, and', 'support settings before starting.'],
-    ['Dry-fit all pieces before using adhesive or', 'fasteners.'],
-  ]
-  let rowY = y + 21
-  items.forEach((item) => {
+  // Four two-line items spread across the card body. Start/step are tuned so the
+  // final item's second line clears the bottom border instead of touching it.
+  let rowY = y + 20
+  const rowStep = 11
+  PACKET_CHECKLIST_ITEMS.forEach((item) => {
     setRgb(pdf, 'setDrawColor', [148, 163, 184])
     pdf.roundedRect(x + 5, rowY - 2.5, 3.2, 3.2, 0.6, 0.6, 'S')
-    setFont(pdf, 6.4, 'normal', BRAND.ink)
-    pdf.text(item, x + 11, rowY, { maxWidth: width - 17 })
-    rowY += 12
+    setFont(pdf, 6.1, 'normal', BRAND.ink)
+    pdf.text(item, x + 11, rowY, { maxWidth: width - 15 })
+    rowY += rowStep
   })
 }
 
@@ -1436,17 +1564,15 @@ function addAssemblyFlowCard(pdf, x, y, width, height) {
   pdf.roundedRect(x, y, width, height, 4, 4, 'FD')
   setFont(pdf, 9, 'bold', BRAND.black)
   pdf.text('Assembly flow', x + 5, y + 10)
-  const steps = [
-    ['Sort printed parts by label and', 'connector location.'],
-    ['Dry-fit and confirm orientation', 'with the preview.'],
-    ['Join from the largest mating', 'faces outward.'],
-  ]
+  const steps = PACKET_ASSEMBLY_STEPS
   let rowY = y + 21
   steps.forEach((step, index) => {
+    const circleY = rowY - 1.4
     setRgb(pdf, 'setFillColor', BRAND.black)
-    pdf.circle(x + 7.5, rowY - 1.4, 3.5, 'F')
+    pdf.circle(x + 7.5, circleY, 3.5, 'F')
     setFont(pdf, 6.3, 'bold', [255, 255, 255])
-    pdf.text(String(index + 1), x + 7.5, rowY + 0.7, { align: 'center' })
+    // Anchor the digit on the circle's exact center so it reads centered.
+    pdf.text(String(index + 1), x + 7.5, circleY, { align: 'center', baseline: 'middle' })
     setFont(pdf, 5.9, 'normal', BRAND.ink)
     pdf.text(step, x + 13, rowY, { maxWidth: width - 18 })
     rowY += 9.6
@@ -1463,9 +1589,17 @@ function addInfoCard(pdf, title, body, info, x, y, width, height) {
   pdf.text(body, x + 5, y + 20, { maxWidth: width - 10 })
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.line(x + 5, y + height - 18, x + width - 5, y + height - 18)
-  drawInfoIcon(pdf, x + 8, y + height - 9)
+  // Center the icon and the note block on a shared line so the text sits level
+  // with the middle of the "i" badge rather than riding above it.
+  const noteCenterY = y + height - 9
+  drawInfoIcon(pdf, x + 8, noteCenterY)
   setFont(pdf, 6.1, 'normal', BRAND.ink)
-  pdf.text(info, x + 15, y + height - 12, { maxWidth: width - 20 })
+  const noteLines = Array.isArray(info) ? info : [info]
+  const noteLineHeight = 2.5
+  const noteTop = noteCenterY - ((noteLines.length - 1) * noteLineHeight) / 2
+  noteLines.forEach((line, i) => {
+    pdf.text(line, x + 15, noteTop + i * noteLineHeight, { maxWidth: width - 20, baseline: 'middle' })
+  })
 }
 
 function drawInfoIcon(pdf, centerX, centerY) {
@@ -1602,39 +1736,26 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
       'Preview for verification before printing and assembly.',
       { title: 'Complete assembly preview', badge: 'Assembled result' },
     )
-    addChecklistCard(pdf, 136, 99, 50, 62)
-    addAssemblyFlowCard(pdf, 136, 165, 50, 48)
+    addChecklistCard(pdf, 136, 99, CHECKLIST_CARD_WIDTH, 62)
+    addAssemblyFlowCard(pdf, 136, 165, ASSEMBLY_FLOW_CARD_WIDTH, 48)
     addInfoCard(
       pdf,
       'Package contents',
-      [
-        'This packet is the visual reference for the exported mesh package.',
-        'Keep it with the split STL files so the operator can verify the model,',
-        'part count, and print setup.',
-      ],
-      [
-        'For multi-part models, exported filenames and labels should',
-        'match the assembly order shown in this packet.',
-      ],
+      PACKAGE_CONTENTS_BODY,
+      PACKAGE_CONTENTS_NOTE,
       PDF_PAGE.margin,
       218,
-      83,
+      PACKAGE_CONTENTS_CARD_WIDTH,
       48,
     )
     addInfoCard(
       pdf,
       'Important note',
-      [
-        'Confirm build volume, units, and orientation before production printing.',
-        'Recheck scale after any model repair or re-split.',
-      ],
-      [
-        'Scan the QR code to reopen Mesh Splitter for re-splitting',
-        'or regeneration.',
-      ],
+      IMPORTANT_NOTE_BODY,
+      IMPORTANT_NOTE_NOTE,
       111,
       218,
-      75,
+      IMPORTANT_NOTE_CARD_WIDTH,
       48,
     )
 

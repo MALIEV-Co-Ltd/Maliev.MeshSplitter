@@ -23,19 +23,6 @@
           />
         </div>
       </div>
-      <div class="flex flex-wrap gap-2" :aria-label="labels.presets">
-        <Button
-          v-for="preset in presets"
-          :key="preset.label"
-          type="button"
-          variant="outline"
-          size="xs"
-          :disabled="!enabled || loading"
-          @click="applyPreset(preset.value)"
-        >
-          {{ preset.label }}
-        </Button>
-      </div>
     </div>
   </div>
 </template>
@@ -43,7 +30,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { Ruler as RulerIcon } from '@lucide/vue'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 const props = defineProps({
@@ -63,12 +49,6 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'apply'])
 
 const draftScale = ref(props.modelValue)
-const presets = [
-  { label: '50%', value: 0.5 },
-  { label: '100%', value: 1 },
-  { label: '200%', value: 2 },
-  { label: '2540%', value: 25.4 },
-]
 
 // meshInfo.bounds reflects the mesh at the CURRENT scale, so dividing by the
 // current scale recovers the original (scale=1) size — the fixed reference
@@ -100,7 +80,9 @@ const roundedSize = computed(() => ({
 }))
 
 const numericDraft = computed(() => Number(draftScale.value))
-const isValid = computed(() => Number.isFinite(numericDraft.value) && numericDraft.value > 0 && numericDraft.value <= 25.4)
+// Scale is driven by manually entered target dimensions, so allow any positive
+// factor up to a sane ceiling instead of the old 25.4x preset cap.
+const isValid = computed(() => Number.isFinite(numericDraft.value) && numericDraft.value > 0 && numericDraft.value <= 1000)
 const percent = computed(() => Math.round(props.modelValue * 100))
 
 watch(() => props.modelValue, (value) => {
@@ -116,11 +98,6 @@ function onSizeInput(axis, value) {
   const target = Number(value)
   if (!Number.isFinite(target) || target <= 0) return
   draftScale.value = target / baseSize.value[axis]
-  apply()
-}
-
-function applyPreset(value) {
-  draftScale.value = value
   apply()
 }
 

@@ -41,7 +41,7 @@ test.describe('Mesh Split Application', () => {
     await expect(page.getByText('Drag & drop an STL file or click to browse')).toBeVisible()
     await expect(page.locator('.parts-panel')).toContainText('0 total')
     await expect(page.getByText('No parts yet. Upload and split a mesh.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /Download package/ })).toBeDisabled()
   })
 
   test('upload STL file and display metadata', async ({ page }) => {
@@ -99,7 +99,7 @@ test.describe('Mesh Split Application', () => {
 
     await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
     await expect(page.getByText('P01-X0Y0Z0').first()).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: /Download package/ })).toBeEnabled()
   })
 
   test('split counts are calculated from build volume and cannot be manually edited', async ({ page }) => {
@@ -133,7 +133,7 @@ test.describe('Mesh Split Application', () => {
     await page.getByRole('button', { name: 'Split mesh' }).click()
     await expect(page.locator('.parts-panel')).toContainText('2 total', { timeout: 15000 })
     await expect(page.getByText('Connectors applied')).toBeVisible({ timeout: 15000 })
-    await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: /Download package/ })).toBeEnabled()
   })
 
   test('download package zip after split', async ({ page }) => {
@@ -144,7 +144,7 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
 
     const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' }).click()
+    await page.getByRole('button', { name: /Download package/ }).click()
     const download = await downloadPromise
     expect(download.suggestedFilename()).toContain('.zip')
   })
@@ -165,7 +165,7 @@ test.describe('Mesh Split Application', () => {
 
     await expect(page.locator('.parts-panel')).toContainText('0 total', { timeout: 10000 })
     await expect(page.getByText('No parts yet. Upload and split a mesh.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /Download package/ })).toBeDisabled()
   })
 
 })

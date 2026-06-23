@@ -8,7 +8,8 @@ import {
   splitMeshManifold,
   validateManifold,
 } from '../mesh/meshProcessor'
-import { createPreviewGeometry } from '../mesh/previewGeometry'
+import { createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
+import { renderPartThumbnail, disposeThumbnailRenderer } from '../mesh/thumbnailRenderer'
 
 const COLORS = [
   0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6,
@@ -132,12 +133,9 @@ export function useMeshProcessor(options = {}) {
         geometry: markRaw(chunk.geometry),
         color: COLORS[i % COLORS.length],
       }))
-      chunks.value = splitChunks.value.map((chunk, i) => ({
-        ...chunk,
-        geometry: markRaw(chunk.geometry),
-        color: COLORS[i % COLORS.length],
-      }))
+      chunks.value = decorateChunks(splitChunks.value)
       setPreviewChunks(chunks.value)
+      generateThumbnails()
     } catch (e) {
       error.value = e.message
       throw e
@@ -152,12 +150,9 @@ export function useMeshProcessor(options = {}) {
     try {
       const base = splitChunks.value.length > 0 ? splitChunks.value : chunks.value
       const updated = await addConnectorsManifold(base, config)
-      chunks.value = updated.map((chunk, i) => ({
-        ...chunk,
-        geometry: markRaw(chunk.geometry),
-        color: COLORS[i % COLORS.length],
-      }))
+      chunks.value = decorateChunks(updated)
       setPreviewChunks(chunks.value)
+      generateThumbnails()
     } catch (e) {
       error.value = e.message
       throw e
@@ -217,6 +212,7 @@ export function useMeshProcessor(options = {}) {
     loading.value = false
     error.value = null
     scaleFactor.value = 1
+    disposeThumbnailRenderer()
   }
 
   return {
@@ -240,6 +236,43 @@ export function useMeshProcessor(options = {}) {
     downloadStl: downloadExportPackage,
     downloadPdf: downloadExportPackage,
     clearMesh,
+  }
+
+  // Attach the per-part facts the parts list shows (faces + bounding box), so
+  // the UI never recomputes geometry stats on every render.
+  function decorateChunks(list) {
+    return list.map((chunk, i) => {
+      const geometry = markRaw(chunk.geometry)
+      return {
+        ...chunk,
+        geometry,
+        color: COLORS[i % COLORS.length],
+        faces: getGeometryFaceCount(geometry),
+        dims: chunkDims(geometry),
+      }
+    })
+  }
+
+  function chunkDims(geometry) {
+    if (!geometry.boundingBox) geometry.computeBoundingBox()
+    const size = new THREE.Vector3()
+    geometry.boundingBox.getSize(size)
+    return { x: size.x, y: size.y, z: size.z }
+  }
+
+  // Thumbnails render after the list is already on screen (deferred), and the
+  // guard drops a stale pass if the chunks were replaced (e.g. connectors
+  // applied) before it ran.
+  function generateThumbnails() {
+    if (typeof window === 'undefined') return
+    const target = chunks.value
+    setTimeout(() => {
+      if (chunks.value !== target) return
+      chunks.value = target.map((chunk) => ({
+        ...chunk,
+        thumbnail: renderPartThumbnail(chunk.geometry, chunk.color),
+      }))
+    }, 0)
   }
 
   function setPreviewMeshGeometry(geometry) {
