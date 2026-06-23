@@ -1048,6 +1048,20 @@ const BRAND = {
 }
 
 const DEFAULT_APP_URL = 'https://shop.maliev.com/tools/mesh-splitter'
+const SNAPSHOT_IMAGE_ASPECT = 4 / 3
+const PDF_LOGO = {
+  x: PDF_PAGE.margin,
+  y: 7,
+  width: 26,
+  height: 6,
+}
+const MALIEV_WORDMARK_BOUNDS = {
+  x: -1604.676,
+  y: -390,
+  width: 1698.258,
+  height: 390,
+  invertY: true,
+}
 
 function setRgb(pdf, method, color) {
   pdf[method](color[0], color[1], color[2])
@@ -1063,17 +1077,9 @@ async function addHeader(pdf, title, subtitle, appUrl, qrImage) {
   setRgb(pdf, 'setFillColor', BRAND.black)
   pdf.rect(0, 0, PDF_PAGE.width, 24, 'F')
 
-  if (canRenderSvgLogo()) {
-    try {
-      await pdf.addSvgAsImage(malievLogoWhiteSvg, PDF_PAGE.margin, 7, 18, 6)
-    } catch {
-      drawLogoFallback(pdf)
-    }
-  } else {
-    drawLogoFallback(pdf)
-  }
+  drawLogo(pdf)
   setFont(pdf, 8, 'normal', [229, 231, 235])
-  pdf.text('Mesh Splitter', PDF_PAGE.margin + 24, 14)
+  pdf.text('Mesh Splitter', PDF_LOGO.x + PDF_LOGO.width + 6, 14)
   pdf.text(appUrl, PDF_PAGE.width - PDF_PAGE.margin, 14, { align: 'right' })
 
   if (qrImage) {
@@ -1088,16 +1094,139 @@ async function addHeader(pdf, title, subtitle, appUrl, qrImage) {
   }
 }
 
-function canRenderSvgLogo() {
-  if (typeof document === 'undefined') return false
-  if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')) return false
-  const canvas = document.createElement('canvas')
-  return typeof canvas.getContext === 'function'
+function drawLogo(pdf) {
+  if (typeof pdf.path !== 'function' || typeof pdf.fill !== 'function') {
+    drawLogoFallback(pdf)
+    return
+  }
+
+  try {
+    const commands = createPdfPathFromSvgPath(getMalievLogoPathData(), MALIEV_WORDMARK_BOUNDS, PDF_LOGO)
+    if (!commands.length) {
+      drawLogoFallback(pdf)
+      return
+    }
+
+    setRgb(pdf, 'setFillColor', [242, 242, 242])
+    pdf.path(commands)
+    pdf.fill()
+  } catch {
+    drawLogoFallback(pdf)
+  }
 }
 
 function drawLogoFallback(pdf) {
   setFont(pdf, 11, 'bold', [255, 255, 255])
   pdf.text('MALIEV', PDF_PAGE.margin, 14)
+}
+
+function getMalievLogoPathData() {
+  const match = malievLogoWhiteSvg.match(/<path\b[\s\S]*?\sd=["']([^"']+)["']/i)
+  if (!match?.[1]) throw new Error('MALIEV logo SVG path not found')
+  return match[1]
+}
+
+function createPdfPathFromSvgPath(pathData, bounds, box) {
+  const tokens = pathData.match(/[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) ?? []
+  const commands = []
+  let cursor = 0
+  let command = null
+  let current = { x: 0, y: 0 }
+  let subpathStart = { x: 0, y: 0 }
+
+  const isCommand = (value) => /^[A-Za-z]$/.test(value)
+  const hasNumber = () => cursor < tokens.length && !isCommand(tokens[cursor])
+  const readNumber = () => {
+    if (!hasNumber()) throw new Error('Malformed logo path')
+    return Number(tokens[cursor++])
+  }
+  const point = (x, y, relative) => ({
+    x: relative ? current.x + x : x,
+    y: relative ? current.y + y : y,
+  })
+  const append = (op, sourcePoint) => {
+    commands.push({ op, c: mapLogoPoint(sourcePoint, bounds, box) })
+    current = sourcePoint
+  }
+
+  while (cursor < tokens.length) {
+    if (isCommand(tokens[cursor])) {
+      command = tokens[cursor++]
+    }
+    if (!command) throw new Error('Malformed logo path')
+
+    const relative = command === command.toLowerCase()
+    switch (command.toUpperCase()) {
+      case 'M': {
+        let firstPoint = true
+        while (hasNumber()) {
+          const next = point(readNumber(), readNumber(), relative)
+          append(firstPoint ? 'm' : 'l', next)
+          if (firstPoint) {
+            subpathStart = next
+            firstPoint = false
+          }
+        }
+        command = relative ? 'l' : 'L'
+        break
+      }
+      case 'L':
+        while (hasNumber()) {
+          append('l', point(readNumber(), readNumber(), relative))
+        }
+        break
+      case 'H':
+        while (hasNumber()) {
+          const x = readNumber()
+          append('l', { x: relative ? current.x + x : x, y: current.y })
+        }
+        break
+      case 'V':
+        while (hasNumber()) {
+          const y = readNumber()
+          append('l', { x: current.x, y: relative ? current.y + y : y })
+        }
+        break
+      case 'C':
+        while (hasNumber()) {
+          const controlA = point(readNumber(), readNumber(), relative)
+          const controlB = point(readNumber(), readNumber(), relative)
+          const end = point(readNumber(), readNumber(), relative)
+          commands.push({
+            op: 'c',
+            c: [
+              ...mapLogoPoint(controlA, bounds, box),
+              ...mapLogoPoint(controlB, bounds, box),
+              ...mapLogoPoint(end, bounds, box),
+            ],
+          })
+          current = end
+        }
+        break
+      case 'Z':
+        commands.push({ op: 'h', c: [] })
+        current = subpathStart
+        command = null
+        break
+      default:
+        throw new Error(`Unsupported logo path command: ${command}`)
+    }
+  }
+
+  return commands
+}
+
+function mapLogoPoint(sourcePoint, bounds, box) {
+  const x = box.x + ((sourcePoint.x - bounds.x) / bounds.width) * box.width
+  const normalizedY = bounds.invertY
+    ? (bounds.y + bounds.height - sourcePoint.y) / bounds.height
+    : (sourcePoint.y - bounds.y) / bounds.height
+  const y = box.y + normalizedY * box.height
+  return [roundPdfCoordinate(x), roundPdfCoordinate(y)]
+}
+
+function roundPdfCoordinate(value) {
+  return Number(value.toFixed(3))
 }
 
 function addFooter(pdf, appUrl, pageNumber) {
@@ -1119,7 +1248,8 @@ function addImageFrame(pdf, image, x, y, width, height, caption) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 2, 2, 'FD')
   if (image) {
-    pdf.addImage(image, 'JPEG', x + 3, y + 6, width - 6, height - 14)
+    const contentBox = containImageBox(x + 3, y + 6, width - 6, height - 14, SNAPSHOT_IMAGE_ASPECT)
+    pdf.addImage(image, 'JPEG', contentBox.x, contentBox.y, contentBox.width, contentBox.height)
   } else {
     setFont(pdf, 9, 'normal', BRAND.muted)
     pdf.text('Preview image unavailable in this browser session.', x + width / 2, y + height / 2, { align: 'center' })
@@ -1127,6 +1257,27 @@ function addImageFrame(pdf, image, x, y, width, height, caption) {
   if (caption) {
     setFont(pdf, 8, 'normal', BRAND.muted)
     pdf.text(caption, x + 3, y + height - 4)
+  }
+}
+
+function containImageBox(x, y, width, height, imageAspect) {
+  const boxAspect = width / height
+  if (boxAspect > imageAspect) {
+    const containedWidth = height * imageAspect
+    return {
+      x: x + (width - containedWidth) / 2,
+      y,
+      width: containedWidth,
+      height,
+    }
+  }
+
+  const containedHeight = width / imageAspect
+  return {
+    x,
+    y: y + (height - containedHeight) / 2,
+    width,
+    height: containedHeight,
   }
 }
 

@@ -10,6 +10,8 @@ import * as THREE from 'three'
 
 const WIDTH = 900
 const HEIGHT = 675
+const CAMERA_FOV_DEGREES = 40
+const CAMERA_FIT_MARGIN = 1.35
 const NEUTRAL_COLOR = 0x9fb8d6
 const ALREADY_PLACED_COLOR = 0xb9c2cc
 
@@ -50,23 +52,35 @@ function ensureScene() {
   const fill = new THREE.DirectionalLight(0xffffff, 0.35)
   fill.position.set(-1, -0.4, 1)
   scene.add(fill)
-  camera = new THREE.PerspectiveCamera(40, WIDTH / HEIGHT, 0.1, 100000)
+  camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEGREES, WIDTH / HEIGHT, 0.1, 100000)
   camera.up.set(0, 0, 1)
 }
 
 const LIGHT_COUNT = 3
 
+export function calculateSnapshotCameraDistance(box, fovDegrees = CAMERA_FOV_DEGREES, aspect = WIDTH / HEIGHT) {
+  if (!box || box.isEmpty()) return 0
+  const sphere = new THREE.Sphere()
+  box.getBoundingSphere(sphere)
+  const radius = Math.max(sphere.radius, 1)
+  const verticalFov = THREE.MathUtils.degToRad(fovDegrees)
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect)
+  const fitFov = Math.max(0.01, Math.min(verticalFov, horizontalFov))
+  return (radius / Math.sin(fitFov / 2)) * CAMERA_FIT_MARGIN
+}
+
 function fitCameraToBox(box) {
   if (box.isEmpty()) return
-  const size = new THREE.Vector3()
-  const center = new THREE.Vector3()
-  box.getSize(size)
-  box.getCenter(center)
-  const maxDim = Math.max(size.x, size.y, size.z) || 1
-  const dist = maxDim * 1.7
-  camera.position.set(center.x + dist * 0.75, center.y + dist * 0.62, center.z + dist * 0.62)
+  const sphere = new THREE.Sphere()
+  box.getBoundingSphere(sphere)
+  const center = sphere.center
+  const radius = Math.max(sphere.radius, 1)
+  const dist = calculateSnapshotCameraDistance(box, camera.fov, camera.aspect)
+  const viewDirection = new THREE.Vector3(0.75, 0.62, 0.62).normalize()
+
+  camera.position.copy(center).addScaledVector(viewDirection, dist)
   camera.near = Math.max(0.01, dist / 1000)
-  camera.far = dist * 10
+  camera.far = dist + radius * 8
   camera.lookAt(center)
   camera.updateProjectionMatrix()
 }
