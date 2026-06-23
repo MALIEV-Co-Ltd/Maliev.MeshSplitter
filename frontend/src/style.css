@@ -66,7 +66,9 @@
     /* ---- MALIEV raw scale: full oklch(), for hand-written CSS only —
        Tailwind utility classes should use the bridge vars above. ---- */
     --font-sans: "Noto Sans", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    /* JetBrains Mono has no Thai glyphs; "Noto Sans Thai" must stay in the chain
+       so Thai UI text falls back to it instead of a random system font. */
+    --font-mono: "JetBrains Mono", "Noto Sans Thai", ui-monospace, "SF Mono", Menlo, monospace;
 
     --steel-50: oklch(0.985 0.003 255);
     --steel-100: oklch(0.968 0.004 255);
@@ -93,6 +95,60 @@
     --shadow-md: 0 2px 4px oklch(0.232 0.008 256 / 0.08), 0 4px 12px oklch(0.232 0.008 256 / 0.06);
     --shadow-lg: 0 8px 24px oklch(0.232 0.008 256 / 0.10), 0 2px 6px oklch(0.232 0.008 256 / 0.06);
     --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* ---- Dark theme: the whole UI is var-driven, so inverting the steel scale
+     and flipping the semantic bridge vars re-themes every component at once.
+     The PDF/snapshot renderers stay light (print) and are unaffected. ---- */
+  :root.dark {
+    --background: 0.175 0.012 256;
+    --foreground: 0.950 0.005 256;
+    --card: 0.220 0.013 256;
+    --card-foreground: 0.950 0.005 256;
+    --popover: 0.220 0.013 256;
+    --popover-foreground: 0.950 0.005 256;
+    --primary: 0.920 0.007 256;
+    --primary-foreground: 0.200 0.012 256;
+    --secondary: 0.260 0.013 256;
+    --secondary-foreground: 0.850 0.009 256;
+    --muted: 0.260 0.013 256;
+    --muted-foreground: 0.640 0.014 256;
+    --accent: 0.320 0.045 252;
+    --accent-foreground: 0.840 0.100 252;
+    --destructive: 0.640 0.160 25;
+    --destructive-foreground: 0.985 0 0;
+    --destructive-surface: 0.300 0.070 25;
+    --positive: 0.720 0.130 155;
+    --positive-surface: 0.300 0.060 155;
+    --signal: 0.640 0.150 252;
+    --signal-foreground: 0.985 0 0;
+    --border: 0.320 0.014 256;
+    --input: 0.320 0.014 256;
+    --ring: 0.640 0.150 252;
+
+    --steel-50: oklch(0.205 0.012 256);
+    --steel-100: oklch(0.245 0.013 256);
+    --steel-200: oklch(0.300 0.014 256);
+    --steel-300: oklch(0.360 0.015 256);
+    --steel-400: oklch(0.500 0.016 256);
+    --steel-500: oklch(0.640 0.014 256);
+    --steel-600: oklch(0.720 0.013 256);
+    --steel-700: oklch(0.800 0.011 256);
+    --steel-800: oklch(0.870 0.009 256);
+    --steel-900: oklch(0.920 0.007 256);
+    --steel-950: oklch(0.970 0.005 256);
+
+    --signal-50: oklch(0.300 0.050 252);
+    --signal-100: oklch(0.330 0.060 252);
+    --signal-300: oklch(0.620 0.120 252);
+    --signal-500: oklch(0.660 0.150 252);
+    --signal-600: oklch(0.720 0.140 252);
+    --signal-700: oklch(0.800 0.100 252);
+
+    --shadow-xs: 0 1px 2px oklch(0 0 0 / 0.45);
+    --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.5), 0 1px 1px oklch(0 0 0 / 0.3);
+    --shadow-md: 0 2px 4px oklch(0 0 0 / 0.5), 0 4px 12px oklch(0 0 0 / 0.4);
+    --shadow-lg: 0 8px 24px oklch(0 0 0 / 0.55), 0 2px 6px oklch(0 0 0 / 0.4);
   }
 
   * {
@@ -373,6 +429,73 @@
     margin: 0;
   }
 
+  /* ---- Loaded-file summary (replaces the drop zone once a mesh is in) ---- */
+  .mesh-loaded {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mesh-loaded__row {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+  }
+
+  .mesh-loaded__icon {
+    align-items: center;
+    background: var(--steel-100);
+    border-radius: var(--radius-sm);
+    color: var(--signal-600);
+    display: flex;
+    flex: none;
+    height: 36px;
+    justify-content: center;
+    width: 36px;
+  }
+
+  .mesh-loaded__info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .mesh-loaded__name {
+    color: oklch(var(--primary));
+    font-size: 13px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mesh-loaded__stats {
+    color: var(--steel-500);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    margin-top: 2px;
+  }
+
+  .mesh-loaded__status {
+    align-items: center;
+    border-radius: var(--radius-sm);
+    display: flex;
+    font-size: 11px;
+    font-weight: 600;
+    gap: 6px;
+    padding: 6px 9px;
+  }
+
+  .mesh-loaded__status.is-ok {
+    background: oklch(var(--positive-surface));
+    color: oklch(var(--positive));
+  }
+
+  .mesh-loaded__status.is-warn {
+    background: oklch(var(--destructive-surface));
+    color: oklch(var(--destructive));
+  }
+
   .spec-row {
     border-bottom: 1px solid var(--steel-100);
     display: flex;
@@ -441,12 +564,35 @@
     overflow-y: auto;
   }
 
+  .parts-empty {
+    align-items: center;
+    color: var(--steel-400);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: center;
+    padding: 32px 20px;
+    text-align: center;
+  }
+
+  .parts-empty__icon {
+    color: var(--steel-300);
+  }
+
+  .parts-empty__text {
+    color: var(--steel-500);
+    font-size: 12px;
+    line-height: 1.45;
+    margin: 0;
+    max-width: 28ch;
+  }
+
   .pl-row {
     align-items: center;
     border-bottom: 1px solid var(--steel-100);
     display: flex;
-    gap: 9px;
-    padding: 8px 14px;
+    gap: 10px;
+    padding: 9px 14px;
     transition: background 100ms var(--ease-standard);
   }
 
@@ -463,11 +609,29 @@
     box-shadow: none;
   }
 
-  .pl-dot {
-    border-radius: 50%;
+  .pl-thumb {
+    align-items: center;
+    background: var(--steel-50);
+    border: 1.5px solid var(--steel-300);
+    border-radius: var(--radius-sm);
+    display: flex;
     flex: none;
-    height: 10px;
-    width: 10px;
+    height: 44px;
+    justify-content: center;
+    overflow: hidden;
+    width: 44px;
+  }
+
+  .pl-thumb img {
+    height: 100%;
+    object-fit: contain;
+    width: 100%;
+  }
+
+  .pl-thumb-dot {
+    border-radius: 50%;
+    height: 12px;
+    width: 12px;
   }
 
   .pl-info {
@@ -483,12 +647,20 @@
     font-weight: 600;
   }
 
-  .pl-vol {
+  .pl-meta {
     color: var(--steel-500);
     display: block;
     font-family: var(--font-mono);
-    font-size: 10px;
-    margin-top: 1px;
+    font-size: 9.5px;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pl-vol {
+    color: var(--steel-600);
+    font-weight: 600;
   }
 
   .pl-idx {
@@ -498,43 +670,6 @@
     font-size: 10px;
   }
 
-  /* ---- Automatic split axis summary ---- */
-  .axis-row {
-    display: flex;
-    flex-direction: column;
-    gap: 9px;
-  }
-
-  .axis-item {
-    align-items: center;
-    display: flex;
-    gap: 9px;
-  }
-
-  .axis-row--readonly .axis-item {
-    background: var(--steel-50);
-    border: 1px solid var(--steel-200);
-    border-radius: var(--radius-sm);
-    min-height: 38px;
-    padding: 8px 10px;
-  }
-
-  .axis-label {
-    color: oklch(var(--primary));
-    flex: none;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 700;
-    width: 14px;
-  }
-
-  .axis-auto-note {
-    color: var(--steel-500);
-    flex: 1;
-    font-size: 11px;
-    font-weight: 600;
-  }
-
   .visual-axis-label {
     color: var(--steel-600);
     flex: none;
@@ -542,16 +677,6 @@
     font-size: 11px;
     font-weight: 600;
     width: 10px;
-  }
-
-  .axis-val {
-    color: oklch(var(--primary));
-    flex: none;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    font-weight: 800;
-    text-align: right;
-    width: 22px;
   }
 
   /* ---- Connectors - custom select with visual option cards ---- */
@@ -642,12 +767,12 @@
 
   .connector-preview-wrapper {
     color: var(--steel-300);
-    height: 30px;
+    height: 38px;
     margin: 2px 0;
   }
 
   .connector-preview-wrapper--selected {
-    height: 28px;
+    height: 32px;
     margin: 0;
   }
 
@@ -736,6 +861,95 @@
     padding: 10px;
     position: sticky;
     bottom: 0;
+  }
+
+  .export-btn {
+    align-items: center;
+    background: oklch(var(--background));
+    border: 1px solid oklch(var(--input));
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    color: oklch(var(--foreground));
+    cursor: pointer;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    font-family: var(--font-sans);
+    gap: 5px;
+    justify-content: center;
+    min-height: 52px;
+    padding: 8px 12px;
+    transition: background 120ms var(--ease-standard), border-color 120ms var(--ease-standard), box-shadow 120ms var(--ease-standard);
+  }
+
+  .export-btn:hover:not(:disabled) {
+    background: oklch(var(--accent));
+    border-color: var(--signal-300);
+    box-shadow: var(--shadow-md);
+  }
+
+  .export-btn:active:not(:disabled) {
+    box-shadow: var(--shadow-xs);
+  }
+
+  .export-btn:disabled {
+    background: var(--steel-50);
+    border-color: var(--steel-200);
+    box-shadow: none;
+    color: var(--steel-400);
+    cursor: not-allowed;
+  }
+
+  .export-btn__main {
+    align-items: center;
+    display: flex;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    gap: 7px;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+
+  .export-btn__main svg {
+    color: var(--signal-600);
+    flex: none;
+  }
+
+  /* Highlighted credit-usage chip — tint + color says what a click will cost. */
+  .export-btn__cost {
+    align-items: center;
+    border-radius: var(--radius-pill);
+    display: inline-flex;
+    font-size: 10px;
+    font-weight: 600;
+    gap: 4px;
+    line-height: 1;
+    padding: 3px 9px;
+  }
+
+  .export-btn__cost svg {
+    flex: none;
+  }
+
+  .export-btn--free .export-btn__cost {
+    background: oklch(var(--positive-surface));
+    color: oklch(var(--positive));
+  }
+
+  .export-btn--credit .export-btn__cost {
+    background: oklch(0.95 0.045 85);
+    color: oklch(0.52 0.13 80);
+  }
+
+  .export-btn--unlocked .export-btn__cost {
+    background: var(--steel-100);
+    color: var(--steel-600);
+  }
+
+  .export-btn--login .export-btn__cost {
+    background: var(--signal-100);
+    color: var(--signal-700);
   }
 
   /* ---- 3D preview overlay labels ---- */

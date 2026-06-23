@@ -9,6 +9,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { calculatePerspectiveFitDistance } from '../mesh/cameraFit'
 import { createCadSurfaceMaterial } from '../mesh/cadMaterial'
 import { resolvePreviewPixelRatio } from '../mesh/previewGeometry'
+import { calculateSafeZone } from '../mesh/splitPlanning'
 
 const props = defineProps({
   chunks: { type: Array, default: () => [] },
@@ -19,17 +20,25 @@ const props = defineProps({
   upAxis: { type: String, default: 'Z' },
   selectedChunkIndex: { type: Number, default: null },
   previewInfo: { type: Object, default: null },
+  isDark: { type: Boolean, default: false },
 })
 
 const container = ref(null)
 const selectedOpacity = 0.22
 
-let renderer, scene, camera, controls, meshGroup, gridOverlay, renderFrame, isUnmounting = false
+let renderer, scene, camera, controls, meshGroup, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
+
+function sceneBackground() {
+  return props.isDark ? 0x161b26 : 0xffffff
+}
+function gridColors() {
+  return props.isDark ? { main: 0x3a4760, sub: 0x262e3d } : { main: 0x8fb4e8, sub: 0xe5e9ee }
+}
 
 function initScene() {
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0xffffff)
+  scene.background = new THREE.Color(sceneBackground())
   scene.add(new THREE.AmbientLight(0xffffff, 0.34))
   const key = new THREE.DirectionalLight(0xffffff, 1.05)
   key.position.set(1.1, 1.8, 1.35)
@@ -37,9 +46,32 @@ function initScene() {
   const fill = new THREE.DirectionalLight(0xffffff, 0.18)
   fill.position.set(-1.2, -0.45, 0.8)
   scene.add(fill)
-  const grid = new THREE.GridHelper(500, 20, 0x8fb4e8, 0xe5e9ee)
+}
+
+// The floor grid is rebuilt to always extend well past whatever is on screen —
+// a fixed 500mm grid disappears entirely inside a larger model.
+function setGrid(maxExtent) {
+  if (grid) {
+    scene.remove(grid)
+    grid.geometry?.dispose()
+    grid.material?.dispose()
+    grid = null
+  }
+  lastGridExtent = Number(maxExtent) || 0
+  const span = Math.max(50, lastGridExtent)
+  const size = Math.ceil((span * 1.6) / 50) * 50
+  const divisions = Math.max(8, Math.round(size / 50))
+  const colors = gridColors()
+  grid = new THREE.GridHelper(size, divisions, colors.main, colors.sub)
   if (props.upAxis === 'Z') grid.rotation.x = -Math.PI / 2
+  grid.renderOrder = -1
   scene.add(grid)
+}
+
+function maxBoxExtent(box) {
+  const size = new THREE.Vector3()
+  box.getSize(size)
+  return Math.max(size.x, size.y, size.z)
 }
 
 function initRenderer() {
@@ -95,6 +127,10 @@ function clearScene() {
     scene.remove(gridOverlay)
     gridOverlay = null
   }
+  if (buildVolumeOverlay) {
+    disposeGroup(buildVolumeOverlay)
+    buildVolumeOverlay = null
+  }
   requestRender()
 }
 
@@ -103,22 +139,33 @@ function buildMeshes(chunks) {
   if (!chunks || chunks.length === 0) return
   meshGroup = new THREE.Group()
   const box = new THREE.Box3()
+  const labels = []
   chunks.forEach((chunk, i) => {
     if (!chunk.geometry) return
     const geom = chunk.geometry.clone()
     const color = chunk.color || COLORS[i % COLORS.length]
-    const mat = createCadSurfaceMaterial(color)
-    const mesh = new THREE.Mesh(geom, mat)
+    const mesh = new THREE.Mesh(geom, createCadSurfaceMaterial(color))
     mesh.userData.chunkIndex = chunk.index
     meshGroup.add(mesh)
-    meshGroup.add(createLabelSprite(chunk.label || `P${i + 1}`, chunk.centroid || computeGeometryCenter(geom), color))
     box.expandByObject(mesh)
+    labels.push({ text: chunk.label || `P${i + 1}`, position: chunk.centroid || computeGeometryCenter(geom), color })
   })
   if (meshGroup.children.length === 0) return
+  // Labels sized off the model so they stay readable on large assemblies.
+  const labelScale = labelScaleForBox(box)
+  labels.forEach((l) => meshGroup.add(createLabelSprite(l.text, l.position, l.color, labelScale)))
   scene.add(meshGroup)
+  setGrid(maxBoxExtent(box))
   applyChunkVisibility(props.selectedChunkIndex)
   fitCamera(box)
   requestRender()
+}
+
+function labelScaleForBox(box) {
+  const size = new THREE.Vector3()
+  box.getSize(size)
+  const w = THREE.MathUtils.clamp(size.length() * 0.12, 30, 600)
+  return { w, h: w * 0.375 }
 }
 
 function applyChunkVisibility(selectedChunkIndex) {
@@ -144,30 +191,31 @@ function computeGeometryCenter(geometry) {
   return geometry.boundingBox.getCenter(new THREE.Vector3())
 }
 
-function createLabelSprite(label, position, color) {
+function createLabelSprite(label, position, color, scale = { w: 48, h: 18 }) {
   const canvas = document.createElement('canvas')
-  canvas.width = 256
-  canvas.height = 96
+  canvas.width = 512
+  canvas.height = 192
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = 'rgba(38, 38, 38, 0.92)'
-  roundRect(ctx, 12, 14, 232, 64, 12)
+  roundRect(ctx, 24, 28, 464, 136, 22)
   ctx.fill()
   ctx.strokeStyle = `#${new THREE.Color(color).getHexString()}`
-  ctx.lineWidth = 6
-  roundRect(ctx, 12, 14, 232, 64, 12)
+  ctx.lineWidth = 12
+  roundRect(ctx, 24, 28, 464, 136, 22)
   ctx.stroke()
   ctx.fillStyle = '#ffffff'
-  ctx.font = '600 28px Arial'
+  ctx.font = '700 64px Arial'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(label, 128, 47, 210)
+  ctx.fillText(label, 256, 100, 430)
 
   const texture = new THREE.CanvasTexture(canvas)
+  texture.anisotropy = renderer?.capabilities?.getMaxAnisotropy?.() ?? 1
   const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false })
   const sprite = new THREE.Sprite(material)
   sprite.position.copy(position)
-  sprite.position.z += 12
-  sprite.scale.set(48, 18, 1)
+  sprite.position.z += scale.h * 0.7
+  sprite.scale.set(scale.w, scale.h, 1)
   sprite.renderOrder = 10
   return sprite
 }
@@ -197,8 +245,77 @@ function showOriginal(geometry, divisions) {
   const box = new THREE.Box3().expandByObject(mesh)
   scene.add(meshGroup)
   drawGridOverlay(geometry, divisions)
+  // The build-volume + support-safe-zone box only makes sense when the whole
+  // model fits a single build volume (1x1x1). Once it has to be split, a lone
+  // box floating inside a larger model reads as broken — the cut planes above
+  // are the split preview, and the safe margin is already baked into how many
+  // cuts there are.
+  const singleCell = !divisions || divisions.every((d) => Number(d) <= 1)
+  if (singleCell) {
+    drawBuildVolume(props.buildVolume)
+    if (buildVolumeOverlay) {
+      buildVolumeOverlay.updateMatrixWorld(true)
+      box.expandByObject(buildVolumeOverlay)
+    }
+  }
+  setGrid(maxBoxExtent(box))
   fitCamera(box)
   requestRender()
+}
+
+// Build-volume envelope plus the support-clearance safe zone. The mesh is
+// centered on X/Y with its base on z=0, so the box is drawn the same way: the
+// outer wireframe is the printer build volume, the inner wireframe is the
+// printable safe zone, and the translucent grey band between them marks the
+// X/Y clearance reserved for support material, brims, and skirts.
+function drawBuildVolume(buildVolume) {
+  if (buildVolumeOverlay) {
+    disposeGroup(buildVolumeOverlay)
+    buildVolumeOverlay = null
+  }
+  if (!buildVolume) return
+
+  const { outer, inner, margin } = calculateSafeZone(buildVolume)
+  const [bx, by, bz] = outer.map(Number)
+  const [ix, iy] = inner.map(Number)
+  if (![bx, by, bz].every((n) => Number.isFinite(n) && n > 0)) return
+
+  buildVolumeOverlay = new THREE.Group()
+  addWireBox(buildVolumeOverlay, bx, by, bz, 0x64748b, 0.85)
+
+  if (margin > 0 && ix > 0 && iy > 0) {
+    addWireBox(buildVolumeOverlay, ix, iy, bz, 0x3b82f6, 0.65)
+    const bandMaterial = new THREE.MeshBasicMaterial({
+      color: 0x94a3b8,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+    const slabs = [
+      { w: margin, d: by, x: (bx - margin) / 2, y: 0 },
+      { w: margin, d: by, x: -(bx - margin) / 2, y: 0 },
+      { w: ix, d: margin, x: 0, y: (by - margin) / 2 },
+      { w: ix, d: margin, x: 0, y: -(by - margin) / 2 },
+    ]
+    slabs.forEach(({ w, d, x, y }) => {
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(w, d, bz), bandMaterial)
+      slab.position.set(x, y, bz / 2)
+      slab.renderOrder = 2
+      buildVolumeOverlay.add(slab)
+    })
+  }
+
+  scene.add(buildVolumeOverlay)
+}
+
+function addWireBox(group, width, depth, height, color, opacity) {
+  const box = new THREE.BoxGeometry(width, depth, height)
+  const edges = new THREE.EdgesGeometry(box)
+  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color, transparent: true, opacity }))
+  line.position.set(0, 0, height / 2)
+  group.add(line)
+  box.dispose()
 }
 
 function drawGridOverlay(geometry, divisions) {
@@ -335,12 +452,24 @@ watch(() => props.divisions, (val) => {
   }
 }, { deep: true })
 
+watch(() => props.buildVolume, () => {
+  if (props.meshGeometry && (!props.chunks || props.chunks.length === 0)) {
+    showOriginal(props.meshGeometry, props.divisions)
+  }
+}, { deep: true })
+
 watch(() => props.selectedChunkIndex, (selectedChunkIndex) => {
   applyChunkVisibility(selectedChunkIndex)
 })
 
 watch(() => props.previewInfo?.optimized, () => {
   applyPixelRatio()
+  requestRender()
+})
+
+watch(() => props.isDark, () => {
+  if (scene) scene.background = new THREE.Color(sceneBackground())
+  if (grid) setGrid(lastGridExtent)
   requestRender()
 })
 </script>

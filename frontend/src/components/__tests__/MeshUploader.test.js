@@ -10,7 +10,7 @@ describe('MeshUploader', () => {
     expect(wrapper.text()).toContain('Drag & drop')
   })
 
-  it('shows watertight status without rendering mesh metadata rows', () => {
+  it('shows the loaded-file summary with watertight status once a mesh is loaded', () => {
     const wrapper = mount(MeshUploader, {
       props: {
         meshInfo: { filename: 'test.stl', verts: 100, faces: 50, is_watertight: true, bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 100, y: 100, z: 100 } } },
@@ -18,9 +18,11 @@ describe('MeshUploader', () => {
         error: '',
       }
     })
-    expect(wrapper.text()).toContain('Watertight')
-    expect(wrapper.text()).not.toContain('test.stl')
-    expect(wrapper.text()).not.toContain('Vertices')
+    expect(wrapper.text()).toContain('test.stl')
+    expect(wrapper.text()).toContain('Watertight mesh loaded')
+    expect(wrapper.text()).toContain('Replace file')
+    // The drop prompt is replaced by the summary once a mesh is loaded.
+    expect(wrapper.text()).not.toContain('Drag & drop')
   })
 
   it('shows loading state', () => {

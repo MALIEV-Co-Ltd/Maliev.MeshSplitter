@@ -33,6 +33,10 @@
         </span>
       </div>
       <div class="header-right">
+        <Button variant="ghost" size="icon-sm" :aria-label="uiCopy.toggleTheme" @click="toggleTheme">
+          <SunIcon v-if="isDark" :size="16" :stroke-width="1.75" />
+          <MoonIcon v-else :size="16" :stroke-width="1.75" />
+        </Button>
         <Button variant="ghost" size="sm" class="language-toggle" @click="toggleLocale">
           {{ locale === 'th' ? 'EN' : 'ไทย' }}
         </Button>
@@ -63,6 +67,7 @@
               :build-volume="buildVolume"
               :divisions="divisions"
               :up-axis="upAxis"
+              :is-dark="isDark"
               :selected-chunk-index="selectedChunkIndex"
             />
           </CardContent>
@@ -88,10 +93,11 @@
       <section class="col-right">
         <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
         <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
-        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :success="connectorSuccess" :loading="splitAuthorizing || loading" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
+        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
         <ExportPanel
           :has-chunks="chunks.length > 0"
           :loading="loading || exportingPackage"
+          :cost="exportCost"
           :labels="uiCopy.exportPanel"
           @export-package="onExportPackage"
         />
@@ -173,7 +179,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon } from '@lucide/vue'
+import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon } from '@lucide/vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
@@ -189,6 +195,7 @@ import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import PublicLanding from './components/PublicLanding.vue'
 import { calculateAutoDivisions } from './mesh/splitPlanning'
+import { exportIdempotencyKey } from './lib/exportIdentity'
 import { buildCustomerLoginUrl, STOREFRONT_BASE_PATH, storefrontReturnPath } from './auth/customerLogin'
 
 const {
@@ -215,19 +222,26 @@ const signInUrl = computed(() => buildCustomerLoginUrl({
   storeHomeUrl,
   fallbackPath: storefrontBasePath,
 }))
-const connectorSuccess = ref('')
 const creditDialog = ref(null)
 const loginDialog = ref(null)
 const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
-const exportSessionId = ref('')
+// The split inputs that produced the current chunks. The build volume can be
+// edited after a split without re-splitting, so the value used for billing must
+// be captured at split time, not read live.
+const lastSplitContext = ref(null)
+// Export keys already charged this session -> their authorization. Lets repeat
+// downloads of the same configuration rebuild instantly with no second charge
+// (the backend is also idempotent on the key; this is the UX layer).
+const exportedAuthByKey = ref(new Map())
 const exportingPackage = ref(false)
 const scaleInput = ref(1)
 const selectedChunkIndex = ref(null)
 const appTranslations = {
   en: {
     buyCredits: 'Buy credits',
+    toggleTheme: 'Toggle light / dark theme',
     watertight: 'Watertight',
     awaitingMesh: 'Awaiting mesh',
     parts: 'parts',
@@ -264,6 +278,11 @@ const appTranslations = {
       uploading: 'Uploading...',
       selectStl: 'Please select an .stl file',
       nonWatertightWarning: 'Mesh is not watertight. Mesh Splitter will try automatic repair before splitting.',
+      replace: 'Replace file',
+      loadedWatertight: 'Watertight mesh loaded',
+      loadedNotWatertight: 'Mesh loaded · not watertight',
+      verts: 'vertices',
+      faces: 'faces',
     },
     partList: {
       title: 'Parts',
@@ -312,6 +331,10 @@ const appTranslations = {
     exportPanel: {
       preparing: 'Preparing package...',
       downloadPackage: 'Download package (STL + PDF ZIP)',
+      costFree: 'Uses 1 free export · {n} left this month',
+      costCredit: 'Uses 1 credit',
+      costUnlocked: 'Already paid · re-download is free',
+      costSignIn: 'Sign in to export',
     },
     loginRequired: {
       eyebrow: 'Free account required',
@@ -328,6 +351,7 @@ const appTranslations = {
   },
   th: {
     buyCredits: 'ซื้อเครดิต',
+    toggleTheme: 'สลับธีมสว่าง / มืด',
     watertight: 'ปิดผิวสมบูรณ์',
     awaitingMesh: 'รอเมช',
     parts: 'ชิ้น',
@@ -364,6 +388,11 @@ const appTranslations = {
       uploading: 'กำลังอัปโหลด...',
       selectStl: 'กรุณาเลือกไฟล์ .stl',
       nonWatertightWarning: 'เมชไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
+      replace: 'เปลี่ยนไฟล์',
+      loadedWatertight: 'โหลดเมชแบบปิดผิวสมบูรณ์แล้ว',
+      loadedNotWatertight: 'โหลดเมชแล้ว · ผิวไม่ปิดสมบูรณ์',
+      verts: 'จุดยอด',
+      faces: 'หน้า',
     },
     partList: {
       title: 'รายการชิ้นงาน',
@@ -412,6 +441,10 @@ const appTranslations = {
     exportPanel: {
       preparing: 'กำลังเตรียมแพ็กเกจ...',
       downloadPackage: 'ดาวน์โหลดแพ็กเกจ (STL + PDF ZIP)',
+      costFree: 'ใช้สิทธิ์ส่งออกฟรี 1 ครั้ง · เหลือ {n} ครั้งเดือนนี้',
+      costCredit: 'ใช้ 1 เครดิต',
+      costUnlocked: 'ชำระแล้ว · ดาวน์โหลดซ้ำฟรี',
+      costSignIn: 'เข้าสู่ระบบเพื่อส่งออก',
     },
     loginRequired: {
       eyebrow: 'ต้องมีบัญชีฟรี',
@@ -453,6 +486,25 @@ const previewStatusTitle = computed(() => {
   return `${formatWhole(previewInfo.value.previewFaces)} ${uiCopy.value.previewFaces}; ${formatWhole(previewInfo.value.originalFaces)} ${uiCopy.value.printFaces}`
 })
 const exportRequiresLogin = computed(() => import.meta.env.VITE_CREDITS_ENFORCEMENT === 'required' && !hasCreditAccount.value)
+const currentExportKey = computed(() => {
+  if (!chunks.value.length || !lastSplitContext.value) return ''
+  return exportIdempotencyKey({
+    format: 'package',
+    meshInfo: meshInfo.value,
+    scaleFactor: scaleFactor.value,
+    buildVolume: lastSplitContext.value.buildVolume,
+    connectorConfig: lastSplitContext.value.connectorConfig,
+  })
+})
+const exportAlreadyUnlocked = computed(() => Boolean(currentExportKey.value) && exportedAuthByKey.value.has(currentExportKey.value))
+const exportCost = computed(() => {
+  const copy = uiCopy.value.exportPanel
+  if (exportAlreadyUnlocked.value) return { kind: 'unlocked', label: copy.costUnlocked }
+  if (exportRequiresLogin.value) return { kind: 'login', label: copy.costSignIn }
+  const free = Number(creditAccount.value.freeRemaining ?? 0)
+  if (free > 0) return { kind: 'free', label: copy.costFree.replace('{n}', free) }
+  return { kind: 'credit', label: copy.costCredit }
+})
 const previewDims = computed(() => {
   const bounds = meshInfo.value?.bounds
   if (!bounds) return ''
@@ -477,6 +529,24 @@ function resolveInitialLocale() {
   return ['en', 'th'].includes(queryLocale) ? queryLocale : ['en', 'th'].includes(storedLocale) ? storedLocale : browserLocale
 }
 
+const theme = ref(resolveInitialTheme())
+const isDark = computed(() => theme.value === 'dark')
+
+function resolveInitialTheme() {
+  const stored = window.localStorage?.getItem('meshSplitterTheme')
+  if (stored === 'light' || stored === 'dark') return stored
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function toggleTheme() {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+}
+
+watch(theme, (value) => {
+  document.documentElement.classList.toggle('dark', value === 'dark')
+  window.localStorage?.setItem('meshSplitterTheme', value)
+}, { immediate: true })
+
 function toggleLocale() {
   locale.value = locale.value === 'th' ? 'en' : 'th'
   window.localStorage?.setItem('meshSplitterLocale', locale.value)
@@ -496,32 +566,26 @@ watch(buildVolume, (bv) => {
 })
 
 async function onUpload(file) {
-  connectorSuccess.value = ''
   selectedChunkIndex.value = null
   await loadStl(file)
 }
 
 function onScaleApply(value) {
-  connectorSuccess.value = ''
   setScaleFactor(value)
 }
 
 async function onSplit(volume, gridDivisions, connectorConfig) {
-  connectorSuccess.value = ''
   splitAuthorizing.value = true
   try {
     await split(volume, gridDivisions)
     selectedChunkIndex.value = null
     if (connectorConfig?.type && connectorConfig.type !== 'None') {
       await applyConnectors(connectorConfig)
-      connectorSuccess.value = uiCopy.value.connectorsApplied
     }
-    exportSessionId.value = createExportSessionId({
-      filename: meshInfo.value?.filename,
-      divisions: gridDivisions,
-      buildVolume: volume,
-      chunkCount: chunks.value.length,
-    })
+    lastSplitContext.value = {
+      buildVolume: [...volume],
+      connectorConfig: { ...(connectorConfig || { type: 'None' }) },
+    }
   } catch {
     // error set by composable
   } finally {
@@ -567,27 +631,43 @@ function closeLoginDialog() {
 
 async function exportAfterCredit(format, buildFn) {
   if (!chunks.value.length) return
+  const key = currentExportKey.value
+
+  // Same configuration already paid for this session: rebuild and download
+  // again with no second charge (skip both consume and complete).
+  if (key && exportedAuthByKey.value.has(key)) {
+    exportingPackage.value = true
+    try {
+      const { blob, filename } = await buildFn({ authorization: exportedAuthByKey.value.get(key) })
+      saveBlob(blob, filename)
+    } finally {
+      exportingPackage.value = false
+    }
+    return
+  }
+
   if (exportRequiresLogin.value) {
     showLoginDialog()
     return
   }
+
   exportingPackage.value = true
   try {
     const metadata = {
       filename: meshInfo.value?.filename,
       format,
       divisions: divisions.value,
-      buildVolume: buildVolume.value,
+      buildVolume: lastSplitContext.value?.buildVolume ?? buildVolume.value,
       chunkCount: chunks.value.length,
     }
-    const transaction = await credits.consumeExport({
-      idempotencyKey: createExportKey(format),
-      metadata,
-    })
+    const transaction = await credits.consumeExport({ idempotencyKey: key, metadata })
     const authorization = transaction.authorization
     if (import.meta.env.VITE_CREDITS_ENFORCEMENT === 'required' && !authorization?.token) {
       throw new Error('Export authorization is unavailable')
     }
+    // Charge is recorded against this key now; cache the authorization so repeat
+    // downloads of the same configuration are free re-builds.
+    if (key) exportedAuthByKey.value = new Map(exportedAuthByKey.value).set(key, authorization)
 
     const { blob, filename } = await buildFn({
       authorization,
@@ -607,24 +687,7 @@ async function exportAfterCredit(format, buildFn) {
   }
 }
 
-function createExportKey(format) {
-  if (!exportSessionId.value) {
-    exportSessionId.value = createExportSessionId({
-      filename: meshInfo.value?.filename,
-      divisions: divisions.value,
-      buildVolume: buildVolume.value,
-      chunkCount: chunks.value.length,
-    })
-  }
-  return `${format}:${exportSessionId.value}`
-}
-
 function onExportPackage() {
   return exportAfterCredit('package', buildExportPackage)
-}
-
-function createExportSessionId({ filename, divisions, buildVolume, chunkCount }) {
-  const random = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
-  return `session:${filename || 'mesh'}:${buildVolume.join('x')}:${divisions.join('x')}:${chunkCount}:${random}`
 }
 </script>

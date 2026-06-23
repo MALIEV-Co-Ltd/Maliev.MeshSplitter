@@ -11,12 +11,15 @@ beforeAll(() => {
 })
 
 describe('SplitConfig', () => {
-  it('shows automatic X Y Z split counts without manual sliders', () => {
+  it('summarizes the automatic split counts in the header without manual sliders or per-axis rows', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: false, err: '', divisions: [3, 1, 1] }
     })
-    expect(wrapper.text()).toContain('X')
-    expect(wrapper.text()).toContain('3')
+    // Divisions live only in the header meta now ("3×1×1 · 3 parts"); the
+    // redundant "X/Y/Z Auto" rows were removed.
+    expect(wrapper.find('.pnl-meta').text()).toContain('3')
+    expect(wrapper.find('.pnl-meta').text()).toContain('parts')
+    expect(wrapper.find('.axis-row').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'Slider' }).exists()).toBe(false)
   })
 

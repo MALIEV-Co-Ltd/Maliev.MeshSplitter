@@ -147,51 +147,68 @@ const mortiseThickness = ref(4)
 const keyWidth = ref(6)
 const keyThickness = ref(3.5)
 
-// Two-block side-view diagrams: a steel "part A" / "part B" pair joined by a
-// signal-colored connector shape, so the joint type reads at a glance instead
-// of the abstract circle/rect rows this replaced.
-const BLOCK_A = { x: '4', y: '6', width: '28', height: '28', rx: '2', fill: 'var(--steel-100)', stroke: 'var(--steel-300)' }
-const BLOCK_B = { x: '48', y: '6', width: '28', height: '28', rx: '2', fill: 'var(--steel-100)', stroke: 'var(--steel-300)' }
-const SEAM = { x1: '40', y1: '3', x2: '40', y2: '37', stroke: 'var(--steel-300)', 'stroke-width': '1', 'stroke-dasharray': '2 2' }
+// Exploded cross-section: two steel halves pulled apart so BOTH mating faces are
+// visible, with the male feature, the female pocket, and (for keys) the loose
+// piece drawn distinctly. The defining geometry — round pin vs square tenon vs
+// separate key bar vs nothing — is the hero of each icon so they don't blur
+// together at thumbnail size.
+const BY = 9
+const BH = 22
+const BW = 24
+const LX = 4 // left block 4..28
+const RX = 52 // right block 52..76
+const MID = 40
 
-const DowelVisual = defineComponent({
-  name: 'DowelVisual',
-  render: () => h('svg', { viewBox: '0 0 80 40', class: 'h-full w-full', 'aria-hidden': true }, [
-    h('rect', BLOCK_A),
-    h('rect', BLOCK_B),
-    h('line', SEAM),
-    h('rect', { x: '28', y: '16', width: '24', height: '8', rx: '4', fill: 'var(--signal-100)', stroke: 'var(--signal-500)' }),
-  ]),
-})
+const BLOCK = { fill: 'var(--steel-100)', stroke: 'var(--steel-400)', 'stroke-width': '1.4', rx: '2', 'stroke-linejoin': 'round' }
+const POCKET = { fill: 'var(--steel-50)', stroke: 'var(--steel-400)', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }
+const PIN = { fill: 'var(--signal-500)', stroke: 'var(--signal-700)', 'stroke-width': '1', 'stroke-linejoin': 'round' }
 
-const MortiseVisual = defineComponent({
-  name: 'MortiseVisual',
-  render: () => h('svg', { viewBox: '0 0 80 40', class: 'h-full w-full', 'aria-hidden': true }, [
-    h('rect', BLOCK_A),
-    h('rect', BLOCK_B),
-    h('line', SEAM),
-    h('rect', { x: '30', y: '15', width: '20', height: '10', fill: 'var(--signal-100)', stroke: 'var(--signal-500)' }),
-  ]),
-})
+function leftBlock() {
+  return h('rect', { x: LX, y: BY, width: BW, height: BH, ...BLOCK })
+}
+function rightBlock() {
+  return h('rect', { x: RX, y: BY, width: BW, height: BH, ...BLOCK })
+}
 
-const KeyVisual = defineComponent({
-  name: 'KeyVisual',
-  render: () => h('svg', { viewBox: '0 0 80 40', class: 'h-full w-full', 'aria-hidden': true }, [
-    h('rect', BLOCK_A),
-    h('rect', BLOCK_B),
-    h('line', SEAM),
-    h('rect', { x: '26', y: '18', width: '28', height: '4', rx: '1', fill: 'var(--signal-100)', stroke: 'var(--signal-500)' }),
-  ]),
-})
+function svg(name, children) {
+  return defineComponent({
+    name,
+    render: () => h('svg', { viewBox: '0 0 80 40', class: 'h-full w-full', 'aria-hidden': true }, children),
+  })
+}
 
-const NoneVisual = defineComponent({
-  name: 'NoneVisual',
-  render: () => h('svg', { viewBox: '0 0 80 40', class: 'h-full w-full', 'aria-hidden': true }, [
-    h('rect', { ...BLOCK_A, width: '26' }),
-    h('rect', { ...BLOCK_B, x: '50', width: '26' }),
-    h('line', { x1: '38', y1: '20', x2: '42', y2: '20', stroke: 'var(--steel-300)', 'stroke-width': '2', 'stroke-dasharray': '2 2' }),
-  ]),
-})
+// Round pin (rounded ends = cylinder) entering a round bore on the far block.
+const DowelVisual = svg('DowelVisual', [
+  leftBlock(),
+  rightBlock(),
+  h('ellipse', { cx: 56, cy: BY + BH / 2, rx: '3.5', ry: '5', ...POCKET }),
+  h('rect', { x: '24', y: BY + BH / 2 - 4, width: '22', height: '8', rx: '4', ...PIN }),
+])
+
+// Square-shouldered tenon projecting from the left half into a rectangular
+// mortise pocket cut in the right half.
+const MortiseVisual = svg('MortiseVisual', [
+  leftBlock(),
+  rightBlock(),
+  h('rect', { x: '52', y: BY + 5, width: '9', height: BH - 10, ...POCKET }),
+  h('rect', { x: '28', y: BY + 5, width: '20', height: BH - 10, rx: '0.5', ...PIN }),
+])
+
+// Loose flat key seated symmetrically in slots cut into BOTH halves.
+const KeyVisual = svg('KeyVisual', [
+  leftBlock(),
+  rightBlock(),
+  h('rect', { x: '21', y: BY + 6, width: '7', height: BH - 12, ...POCKET }),
+  h('rect', { x: '52', y: BY + 6, width: '7', height: BH - 12, ...POCKET }),
+  h('rect', { x: '24', y: BY + BH / 2 - 3.5, width: '32', height: '7', rx: '1', ...PIN }),
+])
+
+// Plain butt joint — two halves that simply meet, no hardware.
+const NoneVisual = svg('NoneVisual', [
+  h('rect', { x: '4', y: BY, width: '36', height: BH, ...BLOCK }),
+  h('rect', { x: '40', y: BY, width: '36', height: BH, ...BLOCK }),
+  h('line', { x1: MID, y1: BY - 2, x2: MID, y2: BY + BH + 2, stroke: 'var(--steel-400)', 'stroke-width': '1.4', 'stroke-dasharray': '3 2' }),
+])
 
 const connectorTypes = computed(() => [
   {

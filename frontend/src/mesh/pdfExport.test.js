@@ -160,4 +160,52 @@ describe('exportPdf', () => {
     expect(textPayloads).not.toContain(`WA${'SM'}`)
     expect(textPayloads).not.toContain(`100% ${'local'}`)
   })
+
+  it('vertically centers each assembly-flow step number on its circle', async () => {
+    await exportPdf(makeChunks(), [250, 250, 250], {
+      sourceGeometry: new THREE.BoxGeometry(25, 12, 8),
+    })
+    const pdf = pdfInstances[0]
+    const flowCircles = pdf.circle.mock.calls.filter((call) => Math.abs(call[2] - 3.5) < 1e-6)
+    expect(flowCircles).toHaveLength(3)
+    for (const digit of ['1', '2', '3']) {
+      const digitCall = pdf.text.mock.calls.find((call) => call[0] === digit && call[3]?.align === 'center')
+      expect(digitCall, `missing centered digit ${digit}`).toBeTruthy()
+      expect(digitCall[3]?.baseline).toBe('middle')
+      // The digit is anchored on the exact center of one of the flow circles.
+      const onCircle = flowCircles.some((c) => Math.abs(c[0] - digitCall[1]) < 1e-6 && Math.abs(c[1] - digitCall[2]) < 1e-6)
+      expect(onCircle, `digit ${digit} not on a circle center`).toBe(true)
+    }
+  })
+
+  it('keeps the print checklist clear of the card bottom border', async () => {
+    await exportPdf(makeChunks(), [250, 250, 250], {
+      sourceGeometry: new THREE.BoxGeometry(25, 12, 8),
+    })
+    const pdf = pdfInstances[0]
+    // addChecklistCard(pdf, 136, 99, 50, 62) -> bottom border at y = 161.
+    const lastItem = pdf.text.mock.calls.find(
+      (call) => Array.isArray(call[0]) && call[0][0] === 'Dry-fit parts before using',
+    )
+    expect(lastItem).toBeTruthy()
+    // Baseline plus a line of descent must still sit above the 161mm border.
+    expect(lastItem[2] + 3).toBeLessThanOrEqual(161)
+  })
+
+  it('vertically centers info-card notes on the info icon', async () => {
+    await exportPdf(makeChunks(), [250, 250, 250], {
+      sourceGeometry: new THREE.BoxGeometry(25, 12, 8),
+    })
+    const pdf = pdfInstances[0]
+    const iconCircles = pdf.circle.mock.calls.filter((call) => Math.abs(call[2] - 3.4) < 1e-6)
+    expect(iconCircles).toHaveLength(2)
+    const noteLineA = pdf.text.mock.calls.find((call) => call[0] === 'For multi-part models, exported filenames and labels should')
+    const noteLineB = pdf.text.mock.calls.find((call) => call[0] === 'match the assembly order shown in this packet.')
+    expect(noteLineA).toBeTruthy()
+    expect(noteLineB).toBeTruthy()
+    expect(noteLineA[3]?.baseline).toBe('middle')
+    // The two note lines straddle the icon center symmetrically.
+    const iconCenterY = iconCircles[0][1]
+    expect((noteLineA[2] + noteLineB[2]) / 2).toBeCloseTo(iconCenterY, 5)
+  })
 })
