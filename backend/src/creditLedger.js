@@ -89,6 +89,32 @@ export class CreditLedger {
     return transaction
   }
 
+  async recordExportCompletion(customerId, { idempotencyKey, authorization, metadata = {} }) {
+    if (!idempotencyKey) throw new Error('idempotencyKey is required')
+    if (!authorization?.exportId || !authorization?.fingerprint) {
+      throw new Error('authorization is required')
+    }
+
+    const existing = await this.store.getTransaction(idempotencyKey)
+    if (existing) return existing
+
+    const normalizedCustomerId = normalizeCustomerId(customerId)
+    const account = await this.store.getAccount(normalizedCustomerId, this.#period())
+    const transaction = {
+      idempotencyKey,
+      customerId: normalizedCustomerId,
+      type: 'export_complete',
+      source: 'authorized_export',
+      exportId: authorization.exportId,
+      fingerprint: authorization.fingerprint,
+      metadata,
+      createdAt: this.now().toISOString(),
+      account: this.#publicAccount(account),
+    }
+    await this.store.saveTransaction(transaction)
+    return transaction
+  }
+
   async resetCustomerAccount(customerId) {
     const normalizedCustomerId = normalizeCustomerId(customerId)
     const account = await this.store.getAccount(normalizedCustomerId, this.#period())

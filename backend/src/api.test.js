@@ -211,6 +211,89 @@ describe('HTTP API', () => {
     expect(response.status).toBe(201)
     expect(body.transaction).toMatchObject({ source: 'free_monthly' })
     expect(body.account.freeRemaining).toBe(2)
+    expect(body.authorization).toMatchObject({
+      exportId: 'gen-1',
+      fingerprint: expect.any(String),
+      token: expect.any(String),
+    })
+  })
+
+  it('finalizes an export with a signed authorization token', async () => {
+    const exportResponse = await fetch(`${baseUrl}/api/exports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'local-customer',
+      },
+      body: JSON.stringify({ idempotencyKey: 'authorized-export', metadata: { filename: 'part.stl' } }),
+    })
+    const exportBody = await exportResponse.json()
+
+    const completeResponse = await fetch(`${baseUrl}/api/exports/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'local-customer',
+      },
+      body: JSON.stringify({
+        authorizationToken: exportBody.authorization.token,
+        metadata: { packageFilename: 'part-package.zip' },
+      }),
+    })
+    const completeBody = await completeResponse.json()
+
+    expect(completeResponse.status).toBe(200)
+    expect(completeBody).toMatchObject({
+      ok: true,
+      exportId: 'authorized-export',
+      fingerprint: exportBody.authorization.fingerprint,
+      transaction: {
+        type: 'export_complete',
+        source: 'authorized_export',
+        exportId: 'authorized-export',
+        fingerprint: exportBody.authorization.fingerprint,
+      },
+    })
+  })
+
+  it('rejects export completion when the authorization belongs to another customer', async () => {
+    const exportResponse = await fetch(`${baseUrl}/api/exports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'customer-a',
+      },
+      body: JSON.stringify({ idempotencyKey: 'customer-a-export' }),
+    })
+    const exportBody = await exportResponse.json()
+
+    const completeResponse = await fetch(`${baseUrl}/api/exports/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'customer-b',
+      },
+      body: JSON.stringify({ authorizationToken: exportBody.authorization.token }),
+    })
+    const body = await completeResponse.json()
+
+    expect(completeResponse.status).toBe(403)
+    expect(body.error).toBe('Export authorization does not match the signed-in customer')
+  })
+
+  it('rejects export completion without a valid authorization token', async () => {
+    const completeResponse = await fetch(`${baseUrl}/api/exports/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mesh-customer-id': 'local-customer',
+      },
+      body: JSON.stringify({ authorizationToken: 'not-a-valid-token' }),
+    })
+    const body = await completeResponse.json()
+
+    expect(completeResponse.status).toBe(401)
+    expect(body.error).toBe('Invalid export authorization')
   })
 
   it('rejects anonymous app-proxy export requests without customer login', async () => {

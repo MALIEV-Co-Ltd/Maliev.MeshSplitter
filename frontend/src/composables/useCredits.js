@@ -107,7 +107,7 @@ export function useCredits(options = {}) {
       if (enforcement === 'required') {
         throw new Error('Credit authorization is unavailable')
       }
-      return { source: 'local_demo', account: account.value }
+      return { source: 'demo_export', account: account.value }
     }
 
     loading.value = true
@@ -120,7 +120,10 @@ export function useCredits(options = {}) {
       })
       account.value = response.account
       hasAccountData.value = true
-      return response.transaction
+      return {
+        ...response.transaction,
+        authorization: response.authorization,
+      }
     } catch (e) {
       error.value = e.message || 'Credit authorization is unavailable'
       throw new Error(error.value === 'Failed to fetch' ? 'Credit authorization is unavailable' : error.value)
@@ -131,6 +134,21 @@ export function useCredits(options = {}) {
 
   async function consumeGeneration({ idempotencyKey, metadata = {} }) {
     return consumeExport({ idempotencyKey, metadata })
+  }
+
+  async function completeExport({ authorizationToken, metadata = {} }) {
+    if (!apiBaseUrl) return { ok: true, demo: true }
+
+    try {
+      return await request(`${apiBaseUrl}/exports/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ authorizationToken, metadata }),
+      })
+    } catch (e) {
+      error.value = e.message || 'Export completion could not be verified'
+      throw e
+    }
   }
 
   return {
@@ -144,6 +162,7 @@ export function useCredits(options = {}) {
     refreshPublic,
     consumeExport,
     consumeGeneration,
+    completeExport,
   }
 
   function applyAccountResponse(response) {

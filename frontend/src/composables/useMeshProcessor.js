@@ -166,7 +166,7 @@ export function useMeshProcessor(options = {}) {
     }
   }
 
-  async function buildExportPackage() {
+  async function buildExportPackage(options = {}) {
     loading.value = true
     error.value = null
     try {
@@ -174,6 +174,7 @@ export function useMeshProcessor(options = {}) {
         appUrl: import.meta.env.VITE_MESH_SPLITTER_PUBLIC_URL || 'https://shop.maliev.com/tools/mesh-splitter',
         sourceGeometry: meshGeometry.value,
         sourceFilename: meshInfo.value?.filename,
+        exportAuthorization: options.authorization,
       })
       const filename = meshInfo.value?.filename
         ? meshInfo.value.filename.replace(/\.stl$/i, '')

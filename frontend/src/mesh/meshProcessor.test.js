@@ -302,7 +302,18 @@ describe('export validation', () => {
 
   it('exports STL + PDF in a single ZIP package', async () => {
     const chunks = await splitMeshManifold(new THREE.Mesh(new THREE.BoxGeometry(20, 20, 20)), [20, 20, 20], [2, 1, 1])
-    const packageBlob = await exportPackage(chunks, [20, 20, 20])
+    const exportAuthorization = {
+      token: 'signed-export-token',
+      exportId: 'export-123',
+      fingerprint: 'ABCDEF1234567890',
+      issuedAt: '2026-06-23T10:00:00.000Z',
+      expiresAt: '2026-06-23T10:15:00.000Z',
+    }
+    const packageBlob = await exportPackage(chunks, [20, 20, 20], {
+      exportAuthorization,
+      requireExportAuthorization: true,
+      sourceFilename: 'cube.stl',
+    })
     const JSZip = (await import('jszip')).default
     const zip = await JSZip.loadAsync(packageBlob)
     const files = Object.keys(zip.files)
@@ -310,12 +321,31 @@ describe('export validation', () => {
     expect(files.some((f) => f.endsWith('.pdf'))).toBe(true)
     expect(files.some((f) => f.endsWith('.stl'))).toBe(true)
     expect(files.some((f) => f.includes('mesh-splitter-assembly.pdf'))).toBe(true)
+    expect(files).toContain('mesh-splitter-license.json')
+
+    const license = JSON.parse(await zip.file('mesh-splitter-license.json').async('string'))
+    expect(license).toMatchObject({
+      product: 'MALIEV Mesh Splitter',
+      exportId: 'export-123',
+      receipt: 'ABCDEF1234567890',
+      sourceFilename: 'cube.stl',
+    })
 
     const stlName = files.find((f) => f.endsWith('.stl'))
     const stlBytes = await zip.file(stlName).async('uint8array')
+    const header = new TextDecoder().decode(stlBytes.slice(0, 80))
     const view = new DataView(stlBytes.buffer, stlBytes.byteOffset, stlBytes.byteLength)
     const triangleCount = view.getUint32(80, true)
 
+    expect(header).toContain('MALIEV Mesh Splitter receipt ABCDEF1234567890')
     expect(stlBytes.byteLength).toBe(84 + triangleCount * 50)
+  })
+
+  it('requires export authorization when enforcement is enabled', async () => {
+    const chunks = await splitMeshManifold(new THREE.Mesh(new THREE.BoxGeometry(20, 20, 20)), [20, 20, 20], [1, 1, 1])
+
+    await expect(exportPackage(chunks, [20, 20, 20], {
+      requireExportAuthorization: true,
+    })).rejects.toThrow('Export authorization is required')
   })
 })

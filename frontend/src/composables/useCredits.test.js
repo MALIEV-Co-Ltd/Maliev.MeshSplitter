@@ -119,6 +119,11 @@ describe('useCredits', () => {
     fetch.mockResolvedValueOnce(jsonResponse({
       transaction: { source: 'free_monthly' },
       account: { freeRemaining: 2, paidCredits: 0, availableGenerations: 2 },
+      authorization: {
+        token: 'signed-export-token',
+        exportId: 'mesh:test.stl:2x2x1',
+        fingerprint: 'ABCDEF1234567890',
+      },
     }))
 
     const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
@@ -128,6 +133,10 @@ describe('useCredits', () => {
     })
 
     expect(result.source).toBe('free_monthly')
+    expect(result.authorization).toMatchObject({
+      token: 'signed-export-token',
+      fingerprint: 'ABCDEF1234567890',
+    })
     expect(fetch).toHaveBeenCalledWith('/api/exports', expect.objectContaining({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -137,6 +146,30 @@ describe('useCredits', () => {
       }),
     }))
     expect(credits.account.value.availableGenerations).toBe(2)
+  })
+
+  it('posts export completion with the signed authorization token', async () => {
+    fetch.mockResolvedValueOnce(jsonResponse({
+      ok: true,
+      exportId: 'mesh:test.stl:2x2x1',
+      fingerprint: 'ABCDEF1234567890',
+    }))
+
+    const credits = useCredits({ apiBaseUrl: '/api', enforcement: 'required' })
+    const result = await credits.completeExport({
+      authorizationToken: 'signed-export-token',
+      metadata: { packageFilename: 'test-package.zip' },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(fetch).toHaveBeenCalledWith('/api/exports/complete', expect.objectContaining({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        authorizationToken: 'signed-export-token',
+        metadata: { packageFilename: 'test-package.zip' },
+      }),
+    }))
   })
 
   it('fails closed when required enforcement cannot reach the API', async () => {
@@ -163,12 +196,12 @@ describe('useCredits', () => {
     expect(credits.error.value).toBe('No free exports or paid credits remain')
   })
 
-  it('allows demo mode without an API for local testing', async () => {
+  it('allows demo mode without an API for tests', async () => {
     const credits = useCredits({ apiBaseUrl: '', enforcement: 'demo' })
 
     await expect(credits.consumeExport({
       idempotencyKey: 'mesh:test.stl:1x1x1',
-    })).resolves.toMatchObject({ source: 'local_demo' })
+    })).resolves.toMatchObject({ source: 'demo_export' })
     expect(credits.hasAccountData.value).toBe(false)
   })
 })

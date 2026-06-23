@@ -2,7 +2,7 @@ import { createServer as createHttpServer } from 'node:http'
 import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { CreditLedger, InsufficientCreditsError } from './creditLedger.js'
 import { serializePricing } from './pricing.js'
 import { applyPaidOrderCredits } from './shopifyOrders.js'
@@ -23,7 +23,8 @@ import { PostgresCreditStore } from './stores/postgresCreditStore.js'
 
 export function createServer(options = {}) {
   const store = options.store || createDefaultStore()
-  const ledger = new CreditLedger({ store, now: options.now })
+  const now = options.now || (() => new Date())
+  const ledger = new CreditLedger({ store, now })
   const devCustomerBypass = options.devCustomerBypass ?? process.env.DEV_CUSTOMER_BYPASS === 'true'
   const shopifyAppProxySecret = options.shopifyAppProxySecret || process.env.SHOPIFY_APP_PROXY_SECRET
   const shopifyWebhookSecret = options.shopifyWebhookSecret || process.env.SHOPIFY_WEBHOOK_SECRET
@@ -36,6 +37,7 @@ export function createServer(options = {}) {
   const adminSecret = options.adminSecret || process.env.CREDIT_ADMIN_TOKEN
   const exchangeShopifyCode = options.exchangeShopifyCode || exchangeShopifyAccessToken
   const sessionSecret = options.sessionSecret || process.env.SESSION_SECRET || shopifyAppProxySecret
+  const exportAuthSecret = options.exportAuthSecret || process.env.EXPORT_AUTH_SECRET || sessionSecret || shopifyApiSecret || shopifyAppProxySecret
   const frontendDistDir = options.frontendDistDir || process.env.FRONTEND_DIST_DIR || defaultFrontendDistDir()
 
   return createHttpServer(async (request, response) => {
@@ -56,7 +58,9 @@ export function createServer(options = {}) {
         customerLoginUrl,
         exchangeShopifyCode,
         sessionSecret,
+        exportAuthSecret,
         frontendDistDir,
+        now,
       })
     } catch (error) {
       sendError(response, error)
@@ -104,6 +108,32 @@ async function route(context) {
     return sendJson(response, 200, { authenticated: true, account })
   }
 
+  if (request.method === 'POST' && url.pathname === '/api/exports/complete') {
+    const identity = resolveIdentity(context, url)
+    const body = await readJson(request)
+    const authorization = verifyExportAuthorization(body.authorizationToken || body.token, {
+      secret: context.exportAuthSecret,
+      now: context.now,
+    })
+    if (authorization.customerHash !== exportCustomerHash(identity.customerId, context.exportAuthSecret)) {
+      const error = new Error('Export authorization does not match the signed-in customer')
+      error.statusCode = 403
+      throw error
+    }
+
+    const transaction = await ledger.recordExportCompletion(identity.customerId, {
+      idempotencyKey: `export-complete:${authorization.exportId}`,
+      authorization,
+      metadata: body.metadata || {},
+    })
+    return sendJson(response, 200, {
+      ok: true,
+      exportId: authorization.exportId,
+      fingerprint: authorization.fingerprint,
+      transaction,
+    })
+  }
+
   if (
     request.method === 'POST'
     && (url.pathname === '/api/exports' || url.pathname === '/api/generations')
@@ -118,7 +148,13 @@ async function route(context) {
         requestType,
       },
     })
-    return sendJson(response, 201, { transaction, account: transaction.account })
+    const authorization = createExportAuthorization({
+      customerId: identity.customerId,
+      transaction,
+      secret: context.exportAuthSecret,
+      now: context.now,
+    })
+    return sendJson(response, 201, { transaction, account: transaction.account, authorization })
   }
 
   if (request.method === 'POST' && url.pathname === '/webhooks/shopify/orders-paid') {
@@ -261,6 +297,105 @@ function resolveOptionalIdentity({ request, devCustomerBypass, shopifyAppProxySe
   }
 
   return null
+}
+
+function createExportAuthorization({ customerId, transaction, secret, now, ttlMs = 15 * 60 * 1000 }) {
+  requireExportAuthSecret(secret)
+  const issuedAtDate = now()
+  const payload = {
+    v: 1,
+    customerHash: exportCustomerHash(customerId, secret),
+    exportId: transaction.idempotencyKey,
+    source: transaction.source,
+    issuedAt: issuedAtDate.toISOString(),
+    expiresAt: new Date(issuedAtDate.getTime() + ttlMs).toISOString(),
+    nonce: randomBytes(16).toString('base64url'),
+  }
+  const token = signExportPayload(payload, secret)
+  return {
+    token,
+    exportId: payload.exportId,
+    fingerprint: exportFingerprint(token),
+    issuedAt: payload.issuedAt,
+    expiresAt: payload.expiresAt,
+  }
+}
+
+function verifyExportAuthorization(token, { secret, now }) {
+  requireExportAuthSecret(secret)
+  if (!token || typeof token !== 'string') {
+    const error = new Error('Export authorization is required')
+    error.statusCode = 401
+    throw error
+  }
+
+  const parts = token.split('.')
+  if (parts.length !== 2) {
+    const error = new Error('Invalid export authorization')
+    error.statusCode = 401
+    throw error
+  }
+  const [encodedPayload, signature] = parts
+  if (!encodedPayload || !signature) {
+    const error = new Error('Invalid export authorization')
+    error.statusCode = 401
+    throw error
+  }
+
+  const expected = createHmac('sha256', secret).update(encodedPayload).digest('base64url')
+  const expectedBuffer = Buffer.from(expected)
+  const signatureBuffer = Buffer.from(signature)
+  if (expectedBuffer.length !== signatureBuffer.length || !timingSafeEqual(expectedBuffer, signatureBuffer)) {
+    const error = new Error('Invalid export authorization')
+    error.statusCode = 401
+    throw error
+  }
+
+  let payload
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'))
+  } catch {
+    const error = new Error('Invalid export authorization')
+    error.statusCode = 401
+    throw error
+  }
+  if (payload.v !== 1 || !payload.customerHash || !payload.exportId || !payload.expiresAt) {
+    const error = new Error('Invalid export authorization')
+    error.statusCode = 401
+    throw error
+  }
+
+  if (new Date(payload.expiresAt).getTime() <= now().getTime()) {
+    const error = new Error('Export authorization has expired')
+    error.statusCode = 401
+    throw error
+  }
+
+  return {
+    ...payload,
+    fingerprint: exportFingerprint(token),
+  }
+}
+
+function signExportPayload(payload, secret) {
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  const signature = createHmac('sha256', secret).update(encodedPayload).digest('base64url')
+  return `${encodedPayload}.${signature}`
+}
+
+function exportFingerprint(token) {
+  return createHash('sha256').update(token).digest('hex').slice(0, 16).toUpperCase()
+}
+
+function exportCustomerHash(customerId, secret) {
+  return createHmac('sha256', secret).update(String(customerId)).digest('base64url')
+}
+
+function requireExportAuthSecret(secret) {
+  if (secret) return
+  const error = new Error('Export authorization is not configured')
+  error.statusCode = 500
+  throw error
 }
 
 function createDefaultStore() {

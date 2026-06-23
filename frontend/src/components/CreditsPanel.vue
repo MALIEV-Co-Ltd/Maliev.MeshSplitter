@@ -27,7 +27,7 @@
         </a>
       </div>
       <p v-else class="text-sm text-muted-foreground">
-        Credit packs load from the backend when connected to Shopify.
+        Credit packs load when connected to the MALIEV store.
       </p>
     </CardContent>
   </Card>

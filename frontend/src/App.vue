@@ -252,7 +252,7 @@ const appTranslations = {
     freeThisMonth: 'Free this month',
     pricesIn: 'Prices in',
     viaStore: 'via the MALIEV Shopify store.',
-    creditPacksLoading: 'Credit packs load from the backend when connected to Shopify.',
+    creditPacksLoading: 'Credit packs load when connected to the MALIEV store.',
     connectorsApplied: 'Connectors applied',
     uploader: {
       title: 'Mesh file',
@@ -352,7 +352,7 @@ const appTranslations = {
     freeThisMonth: 'ฟรีเดือนนี้',
     pricesIn: 'ราคาเป็น',
     viaStore: 'ผ่านร้าน MALIEV Shopify',
-    creditPacksLoading: 'แพ็กเครดิตจะโหลดจาก backend เมื่อเชื่อมต่อ Shopify',
+    creditPacksLoading: 'แพ็กเครดิตจะโหลดเมื่อเชื่อมต่อร้าน MALIEV',
     connectorsApplied: 'เพิ่มตัวต่อเรียบร้อย',
     uploader: {
       title: 'ไฟล์เมช',
@@ -573,16 +573,32 @@ async function exportAfterCredit(format, buildFn) {
   }
   exportingPackage.value = true
   try {
-    // Build the file first; a failed/blank render must never burn a paid credit.
-    const { blob, filename } = await buildFn()
-    await credits.consumeExport({
+    const metadata = {
+      filename: meshInfo.value?.filename,
+      format,
+      divisions: divisions.value,
+      buildVolume: buildVolume.value,
+      chunkCount: chunks.value.length,
+    }
+    const transaction = await credits.consumeExport({
       idempotencyKey: createExportKey(format),
+      metadata,
+    })
+    const authorization = transaction.authorization
+    if (import.meta.env.VITE_CREDITS_ENFORCEMENT === 'required' && !authorization?.token) {
+      throw new Error('Export authorization is unavailable')
+    }
+
+    const { blob, filename } = await buildFn({
+      authorization,
+      transaction,
+    })
+    await credits.completeExport({
+      authorizationToken: authorization?.token,
       metadata: {
-        filename: meshInfo.value?.filename,
-        format,
-        divisions: divisions.value,
-        buildVolume: buildVolume.value,
-        chunkCount: chunks.value.length,
+        ...metadata,
+        packageFilename: filename,
+        packageBytes: blob.size,
       },
     })
     saveBlob(blob, filename)
