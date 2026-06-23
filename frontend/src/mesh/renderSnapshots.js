@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { calculatePerspectiveFitDistance } from './cameraFit'
+import { createCadSurfaceMaterial } from './cadMaterial'
 
 // Offscreen renderer for PDF report images. One WebGLRenderer/scene/camera
 // is created lazily and reused across every snapshot (browsers cap live
@@ -45,12 +47,12 @@ function ensureScene() {
   if (scene) return
   scene = new THREE.Scene()
   scene.background = new THREE.Color(0xffffff)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.65))
-  const key = new THREE.DirectionalLight(0xffffff, 0.85)
-  key.position.set(1, 2, 1.4)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.34))
+  const key = new THREE.DirectionalLight(0xffffff, 1.05)
+  key.position.set(1.1, 1.8, 1.35)
   scene.add(key)
-  const fill = new THREE.DirectionalLight(0xffffff, 0.35)
-  fill.position.set(-1, -0.4, 1)
+  const fill = new THREE.DirectionalLight(0xffffff, 0.18)
+  fill.position.set(-1.2, -0.45, 0.8)
   scene.add(fill)
   camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEGREES, WIDTH / HEIGHT, 0.1, 100000)
   camera.up.set(0, 0, 1)
@@ -59,14 +61,7 @@ function ensureScene() {
 const LIGHT_COUNT = 3
 
 export function calculateSnapshotCameraDistance(box, fovDegrees = CAMERA_FOV_DEGREES, aspect = WIDTH / HEIGHT) {
-  if (!box || box.isEmpty()) return 0
-  const sphere = new THREE.Sphere()
-  box.getBoundingSphere(sphere)
-  const radius = Math.max(sphere.radius, 1)
-  const verticalFov = THREE.MathUtils.degToRad(fovDegrees)
-  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect)
-  const fitFov = Math.max(0.01, Math.min(verticalFov, horizontalFov))
-  return (radius / Math.sin(fitFov / 2)) * CAMERA_FIT_MARGIN
+  return calculatePerspectiveFitDistance(box, fovDegrees, aspect, CAMERA_FIT_MARGIN)
 }
 
 function fitCameraToBox(box) {
@@ -86,7 +81,7 @@ function fitCameraToBox(box) {
 }
 
 function createMaterial(color, extra = {}) {
-  return new THREE.MeshPhongMaterial({ color, side: THREE.DoubleSide, ...extra })
+  return createCadSurfaceMaterial(color, extra)
 }
 
 function disposeGroup(group) {

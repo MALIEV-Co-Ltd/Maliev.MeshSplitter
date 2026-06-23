@@ -6,6 +6,8 @@
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { calculatePerspectiveFitDistance } from '../mesh/cameraFit'
+import { createCadSurfaceMaterial } from '../mesh/cadMaterial'
 import { resolvePreviewPixelRatio } from '../mesh/previewGeometry'
 
 const props = defineProps({
@@ -28,10 +30,13 @@ const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe6
 function initScene() {
   scene = new THREE.Scene()
   scene.background = new THREE.Color(0xffffff)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5))
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8)
-  dir.position.set(1, 2, 1)
-  scene.add(dir)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.34))
+  const key = new THREE.DirectionalLight(0xffffff, 1.05)
+  key.position.set(1.1, 1.8, 1.35)
+  scene.add(key)
+  const fill = new THREE.DirectionalLight(0xffffff, 0.18)
+  fill.position.set(-1.2, -0.45, 0.8)
+  scene.add(fill)
   const grid = new THREE.GridHelper(500, 20, 0x8fb4e8, 0xe5e9ee)
   if (props.upAxis === 'Z') grid.rotation.x = -Math.PI / 2
   scene.add(grid)
@@ -102,10 +107,7 @@ function buildMeshes(chunks) {
     if (!chunk.geometry) return
     const geom = chunk.geometry.clone()
     const color = chunk.color || COLORS[i % COLORS.length]
-    const mat = new THREE.MeshPhongMaterial({
-      color,
-      side: THREE.DoubleSide,
-    })
+    const mat = createCadSurfaceMaterial(color)
     const mesh = new THREE.Mesh(geom, mat)
     mesh.userData.chunkIndex = chunk.index
     meshGroup.add(mesh)
@@ -189,9 +191,7 @@ function showOriginal(geometry, divisions) {
   if (!geometry) return
   meshGroup = new THREE.Group()
   const geom = geometry.clone()
-  const mat = new THREE.MeshPhongMaterial({
-    color: 0x4a90d9, side: THREE.DoubleSide,
-  })
+  const mat = createCadSurfaceMaterial(0x4a90d9)
   const mesh = new THREE.Mesh(geom, mat)
   meshGroup.add(mesh)
   const box = new THREE.Box3().expandByObject(mesh)
@@ -253,16 +253,19 @@ function drawGridOverlay(geometry, divisions) {
 
 function fitCamera(box) {
   if (box.isEmpty()) return
-  const size = box.getSize(new THREE.Vector3())
-  const center = box.getCenter(new THREE.Vector3())
-  const maxDim = Math.max(size.x, size.y, size.z)
-  const dist = maxDim * 1.5
+  const sphere = new THREE.Sphere()
+  box.getBoundingSphere(sphere)
+  const center = sphere.center
+  const radius = Math.max(sphere.radius, 1)
+  const dist = calculatePerspectiveFitDistance(box, camera.fov, camera.aspect, 1.45)
+  const direction = props.upAxis === 'Z'
+    ? new THREE.Vector3(0.75, 0.62, 0.62)
+    : new THREE.Vector3(0.7, 0.5, 1)
 
-  if (props.upAxis === 'Z') {
-    camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist * 0.7)
-  } else {
-    camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist)
-  }
+  camera.position.copy(center).addScaledVector(direction.normalize(), dist)
+  camera.near = Math.max(0.01, dist / 1000)
+  camera.far = dist + radius * 8
+  camera.updateProjectionMatrix()
   controls.target.copy(center)
   controls.update()
   requestRender()
