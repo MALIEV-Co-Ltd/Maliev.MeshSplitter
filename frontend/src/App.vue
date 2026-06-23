@@ -83,7 +83,7 @@
       <section class="col-right">
         <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
         <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
-        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :success="connectorSuccess" :loading="splitAuthorizing || loading" :divisions="divisions" :labels="uiCopy.splitConfig" @update:divisions="divisions = $event" @split="onSplit" />
+        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :success="connectorSuccess" :loading="splitAuthorizing || loading" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
         <ExportPanel
           :has-chunks="chunks.length > 0"
           :loading="loading || exportingPackage"
@@ -183,6 +183,7 @@ import ThreePreview from './components/ThreePreview.vue'
 import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import PublicLanding from './components/PublicLanding.vue'
+import { calculateAutoDivisions } from './mesh/splitPlanning'
 
 const {
   meshInfo, meshGeometry, chunks, loading, error, scaleFactor, buildVolume,
@@ -269,6 +270,11 @@ const appTranslations = {
       connectors: 'Connectors',
       working: 'Working...',
       splitMesh: 'Split mesh',
+      autoSplitLabel: 'Auto',
+      connectorWarningTitle: 'No connector selected',
+      connectorWarningBody: 'Printed parts may be difficult to align without connectors. Select Dowel, Mortise & Tenon, or Key unless you intentionally want plain cut faces.',
+      connectorWarningCancel: 'Choose connector',
+      connectorWarningConfirm: 'Split without connectors',
       connectorConfig: {
         reference: 'Reference',
         diameter: 'Diameter (mm)',
@@ -360,6 +366,11 @@ const appTranslations = {
       connectors: 'ตัวต่อ',
       working: 'กำลังทำงาน...',
       splitMesh: 'แยกเมช',
+      autoSplitLabel: 'อัตโนมัติ',
+      connectorWarningTitle: 'ยังไม่ได้เลือกตัวต่อ',
+      connectorWarningBody: 'ชิ้นงานที่พิมพ์แล้วอาจจัดแนวยากถ้าไม่มีตัวต่อ เลือกเดือยกลม เดือยสี่เหลี่ยม หรือคีย์ล็อก เว้นแต่ตั้งใจใช้หน้าตัดเรียบ',
+      connectorWarningCancel: 'เลือกตัวต่อ',
+      connectorWarningConfirm: 'แยกโดยไม่มีตัวต่อ',
       connectorConfig: {
         reference: 'ตัวอย่าง',
         diameter: 'เส้นผ่านศูนย์กลาง (มม.)',
@@ -452,27 +463,16 @@ function toggleLocale() {
   window.localStorage?.setItem('meshSplitterLocale', locale.value)
 }
 
-function calcAutoDivisions(meshBounds, bv) {
-  const sx = meshBounds.max.x - meshBounds.min.x
-  const sy = meshBounds.max.y - meshBounds.min.y
-  const sz = meshBounds.max.z - meshBounds.min.z
-  return [
-    Math.max(1, Math.ceil(sx / bv[0])),
-    Math.max(1, Math.ceil(sy / bv[1])),
-    Math.max(1, Math.ceil(sz / bv[2])),
-  ]
-}
-
 watch(meshInfo, (info) => {
   if (info && info.bounds) {
-    divisions.value = calcAutoDivisions(info.bounds, buildVolume.value)
+    divisions.value = calculateAutoDivisions(info.bounds, buildVolume.value)
     scaleInput.value = scaleFactor.value
   }
 })
 
 watch(buildVolume, (bv) => {
   if (meshInfo.value && meshInfo.value.bounds) {
-    divisions.value = calcAutoDivisions(meshInfo.value.bounds, bv)
+    divisions.value = calculateAutoDivisions(meshInfo.value.bounds, bv)
   }
 })
 

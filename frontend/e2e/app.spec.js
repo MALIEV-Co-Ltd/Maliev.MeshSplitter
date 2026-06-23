@@ -11,15 +11,15 @@ async function uploadTestStl(page) {
   await (await fc).setFiles(TEST_STL)
 }
 
-async function setSplitDivisions(page, x, y, z) {
-  const targets = [x, y, z]
-  const sliders = page.locator('[role="slider"]')
-  for (let i = 0; i < targets.length; i += 1) {
-    await sliders.nth(i).focus()
-    for (let step = 1; step < targets[i]; step += 1) {
-      await page.keyboard.press('ArrowRight')
-    }
-  }
+async function setBuildVolume(page, x, y, z) {
+  await page.locator('#build-volume-X').fill(String(x))
+  await page.locator('#build-volume-Y').fill(String(y))
+  await page.locator('#build-volume-Z').fill(String(z))
+}
+
+async function confirmSplitWithoutConnectors(page) {
+  await expect(page.getByText('No connector selected')).toBeVisible()
+  await page.getByRole('button', { name: 'Split without connectors' }).click()
 }
 
 test.describe('Mesh Split Application', () => {
@@ -88,18 +88,22 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
 
     await page.getByRole('button', { name: 'Split' }).click()
+    await confirmSplitWithoutConnectors(page)
 
     await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
     await expect(page.getByText('P01-X0Y0Z0').first()).toBeVisible()
     await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeEnabled()
   })
 
-  test('split mesh with custom divisions produces 4 parts', async ({ page }) => {
+  test('split counts are calculated from build volume and cannot be manually edited', async ({ page }) => {
     await uploadTestStl(page)
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
-    await setSplitDivisions(page, 2, 2, 1)
+    await expect(page.locator('[role="slider"]')).toHaveCount(0)
+    await setBuildVolume(page, 50, 50, 100)
+    await expect(page.locator('.col-right .pnl-meta').last()).toContainText('2×2×1')
 
     await page.getByRole('button', { name: 'Split' }).click()
+    await confirmSplitWithoutConnectors(page)
 
     await expect(page.locator('.parts-panel')).toContainText('4 total', { timeout: 15000 })
     await expect(page.getByText('P04-X1Y1Z0').first()).toBeVisible()
@@ -108,14 +112,13 @@ test.describe('Mesh Split Application', () => {
   test('connector workflow keeps parts available for export', async ({ page }) => {
     await uploadTestStl(page)
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
-    await setSplitDivisions(page, 2, 1, 1)
-    await page.getByRole('button', { name: 'Split' }).click()
-    await expect(page.locator('.parts-panel')).toContainText('2 total', { timeout: 15000 })
-
+    await setBuildVolume(page, 50, 100, 100)
+    await expect(page.locator('.col-right .pnl-meta').last()).toContainText('2×1×1')
     await page.locator('.conn-select-trigger').click()
     await expect(page.locator('[role="listbox"]')).toBeVisible()
     await page.locator('[role="option"]').filter({ hasText: 'Dowel' }).click()
     await page.getByRole('button', { name: 'Split mesh' }).click()
+    await expect(page.locator('.parts-panel')).toContainText('2 total', { timeout: 15000 })
     await expect(page.getByText('Connectors applied')).toBeVisible({ timeout: 15000 })
     await expect(page.getByRole('button', { name: 'Download package (STL + PDF ZIP)' })).toBeEnabled()
   })
@@ -125,6 +128,7 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
 
     await page.getByRole('button', { name: 'Split' }).click()
+    await confirmSplitWithoutConnectors(page)
     await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
 
     const downloadPromise = page.waitForEvent('download')
@@ -138,6 +142,7 @@ test.describe('Mesh Split Application', () => {
     await expect(page.locator('.canvas-inspector')).toBeVisible({ timeout: 10000 })
 
     await page.getByRole('button', { name: 'Split' }).click()
+    await confirmSplitWithoutConnectors(page)
     await expect(page.locator('.parts-panel')).toContainText('1 total', { timeout: 15000 })
 
     await page.evaluate(() => {

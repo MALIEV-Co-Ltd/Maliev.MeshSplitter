@@ -11,13 +11,13 @@ beforeAll(() => {
 })
 
 describe('SplitConfig', () => {
-  it('renders sliders for X Y Z', () => {
+  it('shows automatic X Y Z split counts without manual sliders', () => {
     const wrapper = mount(SplitConfig, {
-      props: { v: [250, 250, 250], ok: false, err: '' }
+      props: { v: [250, 250, 250], ok: false, err: '', divisions: [3, 1, 1] }
     })
     expect(wrapper.text()).toContain('X')
-    expect(wrapper.text()).toContain('Y')
-    expect(wrapper.text()).toContain('Z')
+    expect(wrapper.text()).toContain('3')
+    expect(wrapper.findComponent({ name: 'Slider' }).exists()).toBe(false)
   })
 
   it('also renders the connector picker inline', async () => {
@@ -53,7 +53,33 @@ describe('SplitConfig', () => {
     expect(wrapper.text()).toContain('parts')
   })
 
-  it('emits split with the build volume, divisions, and connector config together', async () => {
+  it('shows a connector warning instead of splitting silently when connector type is none', async () => {
+    const wrapper = mount(SplitConfig, {
+      props: { v: [250, 250, 250], ok: true, err: '', divisions: [2, 2, 1] }
+    })
+
+    await wrapper.get('button.w-full').trigger('click')
+
+    expect(wrapper.emitted('split')).toBeUndefined()
+    expect(wrapper.text()).toContain('No connector selected')
+    expect(wrapper.text()).toContain('Split without connectors')
+  })
+
+  it('confirms the connector warning before splitting without connectors', async () => {
+    const wrapper = mount(SplitConfig, {
+      props: { v: [250, 250, 250], ok: true, err: '', divisions: [2, 2, 1] }
+    })
+
+    await wrapper.get('button.w-full').trigger('click')
+    await wrapper.get('[data-testid="confirm-split-without-connectors"]').trigger('click')
+
+    const [volume, divisions, connectorConfig] = wrapper.emitted('split')[0]
+    expect(volume).toEqual([250, 250, 250])
+    expect(divisions).toEqual([2, 2, 1])
+    expect(connectorConfig).toEqual({ type: 'None' })
+  })
+
+  it('emits split with the build volume, automatic divisions, and connector config together', async () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: true, err: '', divisions: [2, 2, 1] }
     })
