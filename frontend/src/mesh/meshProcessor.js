@@ -868,8 +868,11 @@ async function createStlZip(chunks) {
 
   chunks.forEach(chunk => {
     const mesh = new THREE.Mesh(chunk.geometry)
-    const stlString = exporter.parse(mesh, { binary: false })
-    zip.file(`part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`, stlString)
+    const stlData = exporter.parse(mesh, { binary: true })
+    const stlBuffer = stlData instanceof ArrayBuffer
+      ? stlData
+      : stlData.buffer.slice(stlData.byteOffset, stlData.byteOffset + stlData.byteLength)
+    zip.file(`part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`, stlBuffer)
   })
   return zip
 }

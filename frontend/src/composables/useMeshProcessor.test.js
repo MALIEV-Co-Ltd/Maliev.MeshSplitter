@@ -138,6 +138,26 @@ describe('useMeshProcessor', () => {
       expect(min.x).toBeLessThan(0)
       expect(max.x).toBeGreaterThan(0)
     })
+
+    it('stores a reduced preview mesh separately from the full print mesh', async () => {
+      const geometry = new THREE.SphereGeometry(25, 48, 24)
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true,
+        volume: 1000,
+        euler: 2,
+        faceCount: 2208,
+        vertCount: geometry.attributes.position.count,
+      })
+
+      const { loadStl, meshGeometry, previewMeshGeometry, previewInfo } = useMeshProcessor({ previewTargetFaces: 120 })
+      await loadStl(createMockFile('dense.stl'))
+
+      expect(previewInfo.value.optimized).toBe(true)
+      expect(previewMeshGeometry.value).not.toBe(meshGeometry.value)
+      expect(previewMeshGeometry.value.attributes.position.count).toBeLessThan(meshGeometry.value.attributes.position.count)
+      expect(meshGeometry.value.attributes.position.count).toBe(geometry.attributes.position.count)
+    })
   })
 
   describe('split', () => {
@@ -167,6 +187,32 @@ describe('useMeshProcessor', () => {
       expect(typeof chunks.value[0].color).toBe('number')
       expect(loading.value).toBe(false)
       expect(error.value).toBeNull()
+    })
+
+    it('splits the full-resolution mesh and creates separate preview chunks', async () => {
+      const geometry = new THREE.SphereGeometry(25, 48, 24)
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true,
+        volume: 1000,
+        euler: 2,
+        faceCount: 2208,
+        vertCount: geometry.attributes.position.count,
+      })
+
+      const rawChunks = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+      ]
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
+
+      const { loadStl, split, meshGeometry, chunks, previewChunks } = useMeshProcessor({ previewTargetFaces: 120 })
+      await loadStl(createMockFile('dense.stl'))
+      await split([250, 250, 250], [1, 1, 1])
+
+      expect(mockSplitMeshManifold.mock.calls[0][0].geometry).toBe(meshGeometry.value)
+      expect(chunks.value[0].geometry).toBe(geometry)
+      expect(previewChunks.value[0].geometry).not.toBe(chunks.value[0].geometry)
+      expect(previewChunks.value[0].geometry.attributes.position.count).toBeLessThan(chunks.value[0].geometry.attributes.position.count)
     })
   })
 
@@ -263,7 +309,7 @@ describe('useMeshProcessor', () => {
       })
       mockExportPackage.mockResolvedValue(new Blob(['zip']))
 
-      const { loadStl, buildExportPackage, buildVolume } = useMeshProcessor()
+      const { loadStl, buildExportPackage, buildVolume, meshGeometry, previewMeshGeometry } = useMeshProcessor({ previewTargetFaces: 6 })
       await loadStl(createMockFile('packet.stl'))
       buildVolume.value = [180, 180, 180]
       const result = await buildExportPackage()
@@ -274,9 +320,10 @@ describe('useMeshProcessor', () => {
         expect.objectContaining({
           appUrl: 'https://shop.maliev.com/tools/mesh-splitter',
           sourceFilename: 'packet.stl',
-          sourceGeometry: expect.any(THREE.BufferGeometry),
+          sourceGeometry: meshGeometry.value,
         }),
       )
+      expect(mockExportPackage.mock.calls[0][2].sourceGeometry).not.toBe(previewMeshGeometry.value)
       expect(result.filename).toBe('packet-mesh-splitter-package.zip')
     })
   })

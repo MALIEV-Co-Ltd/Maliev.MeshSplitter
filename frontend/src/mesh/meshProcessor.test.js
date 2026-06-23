@@ -267,5 +267,12 @@ describe('export validation', () => {
     expect(files.some((f) => f.endsWith('.pdf'))).toBe(true)
     expect(files.some((f) => f.endsWith('.stl'))).toBe(true)
     expect(files.some((f) => f.includes('mesh-splitter-assembly.pdf'))).toBe(true)
+
+    const stlName = files.find((f) => f.endsWith('.stl'))
+    const stlBytes = await zip.file(stlName).async('uint8array')
+    const view = new DataView(stlBytes.buffer, stlBytes.byteOffset, stlBytes.byteLength)
+    const triangleCount = view.getUint32(80, true)
+
+    expect(stlBytes.byteLength).toBe(84 + triangleCount * 50)
   })
 })

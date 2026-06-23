@@ -6,6 +6,7 @@
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { resolvePreviewPixelRatio } from '../mesh/previewGeometry'
 
 const props = defineProps({
   chunks: { type: Array, default: () => [] },
@@ -15,12 +16,13 @@ const props = defineProps({
   divisions: { type: Array, default: () => [2, 2, 1] },
   upAxis: { type: String, default: 'Z' },
   selectedChunkIndex: { type: Number, default: null },
+  previewInfo: { type: Object, default: null },
 })
 
 const container = ref(null)
 const selectedOpacity = 0.22
 
-let renderer, scene, camera, controls, meshGroup, gridOverlay
+let renderer, scene, camera, controls, meshGroup, gridOverlay, renderFrame, isUnmounting = false
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
 
 function initScene() {
@@ -41,9 +43,17 @@ function initRenderer() {
   // face, which standard linear depth precision can't reliably resolve —
   // shows up as off-color slivers flickering at the seam between parts.
   renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true })
-  renderer.setPixelRatio(window.devicePixelRatio)
+  applyPixelRatio()
   renderer.setSize(el.clientWidth, el.clientHeight)
   el.appendChild(renderer.domElement)
+}
+
+function applyPixelRatio() {
+  if (!renderer) return
+  renderer.setPixelRatio(resolvePreviewPixelRatio({
+    optimized: Boolean(props.previewInfo?.optimized),
+    devicePixelRatio: window.devicePixelRatio,
+  }))
 }
 
 function initCamera() {
@@ -54,8 +64,8 @@ function initCamera() {
 
 function initControls() {
   controls = new OrbitControls(camera, renderer.domElement)
-  controls.enableDamping = true
-  controls.dampingFactor = 0.1
+  controls.enableDamping = false
+  controls.addEventListener('change', requestRender)
 }
 
 function disposeGroup(group) {
@@ -70,6 +80,7 @@ function disposeGroup(group) {
     }
   })
   scene?.remove(group)
+  requestRender()
 }
 
 function clearScene() {
@@ -79,6 +90,7 @@ function clearScene() {
     scene.remove(gridOverlay)
     gridOverlay = null
   }
+  requestRender()
 }
 
 function buildMeshes(chunks) {
@@ -104,6 +116,7 @@ function buildMeshes(chunks) {
   scene.add(meshGroup)
   applyChunkVisibility(props.selectedChunkIndex)
   fitCamera(box)
+  requestRender()
 }
 
 function applyChunkVisibility(selectedChunkIndex) {
@@ -121,6 +134,7 @@ function applyChunkVisibility(selectedChunkIndex) {
     child.material.needsUpdate = true
     child.renderOrder = isSelected ? 0 : 1
   })
+  requestRender()
 }
 
 function computeGeometryCenter(geometry) {
@@ -184,6 +198,7 @@ function showOriginal(geometry, divisions) {
   scene.add(meshGroup)
   drawGridOverlay(geometry, divisions)
   fitCamera(box)
+  requestRender()
 }
 
 function drawGridOverlay(geometry, divisions) {
@@ -250,12 +265,20 @@ function fitCamera(box) {
   }
   controls.target.copy(center)
   controls.update()
+  requestRender()
 }
 
-function animate() {
-  requestAnimationFrame(animate)
-  controls?.update()
+function renderScene() {
   if (renderer && scene && camera) renderer.render(scene, camera)
+}
+
+function requestRender() {
+  if (isUnmounting) return
+  if (renderFrame) return
+  renderFrame = requestAnimationFrame(() => {
+    renderFrame = null
+    renderScene()
+  })
 }
 
 function onResize() {
@@ -264,7 +287,9 @@ function onResize() {
   const h = container.value.clientHeight
   camera.aspect = w / h
   camera.updateProjectionMatrix()
+  applyPixelRatio()
   renderer.setSize(w, h)
+  requestRender()
 }
 
 onMounted(() => {
@@ -272,13 +297,15 @@ onMounted(() => {
   initRenderer()
   initCamera()
   initControls()
-  animate()
+  requestRender()
   window.addEventListener('resize', onResize)
 })
 
 onBeforeUnmount(() => {
+  isUnmounting = true
   window.removeEventListener('resize', onResize)
   controls?.dispose()
+  if (renderFrame) cancelAnimationFrame(renderFrame)
   clearScene()
   renderer?.dispose()
 })
@@ -291,13 +318,13 @@ watch(() => props.chunks, (val) => {
   } else {
     clearScene()
   }
-}, { deep: true })
+})
 
 watch(() => props.meshGeometry, (val) => {
   if (val && (!props.chunks || props.chunks.length === 0)) {
     showOriginal(val, props.divisions)
   }
-}, { deep: true })
+})
 
 watch(() => props.divisions, (val) => {
   if (props.meshGeometry && (!props.chunks || props.chunks.length === 0)) {
@@ -307,5 +334,10 @@ watch(() => props.divisions, (val) => {
 
 watch(() => props.selectedChunkIndex, (selectedChunkIndex) => {
   applyChunkVisibility(selectedChunkIndex)
+})
+
+watch(() => props.previewInfo?.optimized, () => {
+  applyPixelRatio()
+  requestRender()
 })
 </script>

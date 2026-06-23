@@ -1,4 +1,4 @@
-import { ref, readonly } from 'vue'
+import { markRaw, readonly, ref, shallowRef } from 'vue'
 import * as THREE from 'three'
 import {
   addConnectorsManifold,
@@ -8,6 +8,7 @@ import {
   splitMeshManifold,
   validateManifold,
 } from '../mesh/meshProcessor'
+import { createPreviewGeometry } from '../mesh/previewGeometry'
 
 const COLORS = [
   0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6,
@@ -15,12 +16,16 @@ const COLORS = [
   0x8bc34a, 0xff5722, 0x607d8b, 0x795548, 0x9c27b0,
 ]
 
-export function useMeshProcessor() {
+export function useMeshProcessor(options = {}) {
+  const previewTargetFaces = Math.max(12, Number(options.previewTargetFaces || 150_000))
   const meshInfo = ref(null)
-  const sourceGeometry = ref(null)
-  const meshGeometry = ref(null)
-  const splitChunks = ref([])
-  const chunks = ref([])
+  const sourceGeometry = shallowRef(null)
+  const meshGeometry = shallowRef(null)
+  const previewMeshGeometry = shallowRef(null)
+  const previewInfo = shallowRef(null)
+  const splitChunks = shallowRef([])
+  const chunks = shallowRef([])
+  const previewChunks = shallowRef([])
   const loading = ref(false)
   const error = ref(null)
   const scaleFactor = ref(1)
@@ -43,9 +48,12 @@ export function useMeshProcessor() {
         max: { x: box.max.x, y: box.max.y, z: box.max.z },
       },
     }
-    meshGeometry.value = geometry
+    meshGeometry.value = markRaw(geometry)
+    setPreviewMeshGeometry(geometry)
     splitChunks.value = []
     chunks.value = []
+    disposePreviewChunks()
+    previewChunks.value = []
     return meshInfo.value
   }
 
@@ -70,7 +78,7 @@ export function useMeshProcessor() {
         }
       }
 
-      sourceGeometry.value = workingGeometry
+      sourceGeometry.value = markRaw(workingGeometry)
       scaleFactor.value = 1
 
       return setMeshState(workingGeometry.clone(), file.name, { wasRepaired })
@@ -121,12 +129,15 @@ export function useMeshProcessor() {
       const rawChunks = await splitMeshManifold(mesh, bv, divisions)
       splitChunks.value = rawChunks.map((chunk, i) => ({
         ...chunk,
+        geometry: markRaw(chunk.geometry),
         color: COLORS[i % COLORS.length],
       }))
       chunks.value = splitChunks.value.map((chunk, i) => ({
         ...chunk,
+        geometry: markRaw(chunk.geometry),
         color: COLORS[i % COLORS.length],
       }))
+      setPreviewChunks(chunks.value)
     } catch (e) {
       error.value = e.message
       throw e
@@ -143,8 +154,10 @@ export function useMeshProcessor() {
       const updated = await addConnectorsManifold(base, config)
       chunks.value = updated.map((chunk, i) => ({
         ...chunk,
+        geometry: markRaw(chunk.geometry),
         color: COLORS[i % COLORS.length],
       }))
+      setPreviewChunks(chunks.value)
     } catch (e) {
       error.value = e.message
       throw e
@@ -194,6 +207,10 @@ export function useMeshProcessor() {
     meshInfo.value = null
     sourceGeometry.value = null
     meshGeometry.value = null
+    disposeGeometry(previewMeshGeometry.value)
+    previewMeshGeometry.value = null
+    setPreviewChunks([])
+    previewInfo.value = null
     splitChunks.value = []
     chunks.value = []
     loading.value = false
@@ -204,7 +221,10 @@ export function useMeshProcessor() {
   return {
     meshInfo: readonly(meshInfo),
     meshGeometry: readonly(meshGeometry),
+    previewMeshGeometry: readonly(previewMeshGeometry),
+    previewInfo: readonly(previewInfo),
     chunks: readonly(chunks),
+    previewChunks: readonly(previewChunks),
     loading: readonly(loading),
     error: readonly(error),
     scaleFactor: readonly(scaleFactor),
@@ -219,5 +239,65 @@ export function useMeshProcessor() {
     downloadStl: downloadExportPackage,
     downloadPdf: downloadExportPackage,
     clearMesh,
+  }
+
+  function setPreviewMeshGeometry(geometry) {
+    disposeGeometry(previewMeshGeometry.value)
+    const preview = createPreviewGeometry(geometry, { targetFaces: previewTargetFaces })
+    previewMeshGeometry.value = preview.geometry ? markRaw(preview.geometry) : null
+    previewInfo.value = summarizePreview([preview])
+  }
+
+  function setPreviewChunks(sourceChunks) {
+    disposePreviewChunks()
+    if (!sourceChunks?.length) {
+      previewChunks.value = []
+      if (meshGeometry.value) setPreviewMeshGeometry(meshGeometry.value)
+      return
+    }
+
+    const perChunkTarget = Math.max(12, Math.floor(previewTargetFaces / sourceChunks.length))
+    const previews = sourceChunks.map((chunk, i) => {
+      const preview = createPreviewGeometry(chunk.geometry, { targetFaces: perChunkTarget })
+      return {
+        preview,
+        chunk: {
+          ...chunk,
+          geometry: preview.geometry ? markRaw(preview.geometry) : null,
+          color: chunk.color || COLORS[i % COLORS.length],
+        },
+      }
+    })
+    previewChunks.value = previews.map(({ chunk }) => chunk)
+    previewInfo.value = summarizePreview(previews.map(({ preview }) => preview))
+  }
+
+  function summarizePreview(previews) {
+    const totals = previews.reduce((acc, preview) => {
+      acc.originalFaces += preview.originalFaces || 0
+      acc.previewFaces += preview.previewFaces || 0
+      acc.originalVertices += preview.originalVertices || 0
+      acc.previewVertices += preview.previewVertices || 0
+      acc.optimized = acc.optimized || Boolean(preview.optimized)
+      return acc
+    }, {
+      optimized: false,
+      originalFaces: 0,
+      previewFaces: 0,
+      originalVertices: 0,
+      previewVertices: 0,
+    })
+    return {
+      ...totals,
+      ratio: totals.originalFaces > 0 ? totals.previewFaces / totals.originalFaces : 1,
+    }
+  }
+
+  function disposePreviewChunks() {
+    previewChunks.value.forEach((chunk) => disposeGeometry(chunk.geometry))
+  }
+
+  function disposeGeometry(geometry) {
+    geometry?.dispose?.()
   }
 }

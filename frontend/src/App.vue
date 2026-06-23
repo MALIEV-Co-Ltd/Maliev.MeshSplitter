@@ -28,6 +28,9 @@
           <CoinsIcon v-else :size="12" :stroke-width="1.75" class="coin-icon" />
           {{ creditChipText }}
         </span>
+        <span v-if="previewInfo?.optimized" class="status-chip performance-chip" :title="previewStatusTitle">
+          {{ uiCopy.previewOptimized }}
+        </span>
       </div>
       <div class="header-right">
         <Button variant="ghost" size="sm" class="language-toggle" @click="toggleLocale">
@@ -53,9 +56,10 @@
         <Card class="preview-card h-full rounded-none border-x border-y-0 shadow-none">
           <CardContent class="p-0 h-full">
             <ThreePreview
-              :chunks="chunks"
+              :preview-info="previewInfo"
               :mesh-info="meshInfo"
-              :mesh-geometry="meshGeometry"
+              :mesh-geometry="previewMeshGeometry || meshGeometry"
+              :chunks="previewChunks"
               :build-volume="buildVolume"
               :divisions="divisions"
               :up-axis="upAxis"
@@ -74,9 +78,10 @@
             <div><span>{{ uiCopy.faces }}</span><strong>{{ meshInfo.faces?.toLocaleString() }}</strong></div>
             <div><span>{{ uiCopy.bounds }}</span><strong>{{ previewDims }}</strong></div>
             <div><span>{{ uiCopy.scale }}</span><strong>{{ scaleFactor.toFixed(3) }}x</strong></div>
+            <div v-if="previewInfo?.optimized"><span>{{ uiCopy.previewQuality }}</span><strong>{{ previewFaceSummary }}</strong></div>
           </div>
         </div>
-        <div class="canvas-label">{{ uiCopy.preview }}{{ previewDims ? ` · ${previewDims}` : '' }} · {{ uiCopy.scale.toUpperCase() }} {{ scaleFactor.toFixed(3) }}&times;</div>
+        <div class="canvas-label">{{ uiCopy.preview }}{{ previewDims ? ` · ${previewDims}` : '' }} · {{ uiCopy.scale.toUpperCase() }} {{ scaleFactor.toFixed(3) }}&times;{{ previewInfo?.optimized ? ` · ${uiCopy.previewOptimized}` : '' }}</div>
         <div class="canvas-hint">{{ uiCopy.canvasHint }}</div>
       </section>
 
@@ -186,7 +191,7 @@ import PublicLanding from './components/PublicLanding.vue'
 import { calculateAutoDivisions } from './mesh/splitPlanning'
 
 const {
-  meshInfo, meshGeometry, chunks, loading, error, scaleFactor, buildVolume,
+  meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks, loading, error, scaleFactor, buildVolume,
   loadStl, setScaleFactor, split, applyConnectors, buildExportPackage, saveBlob,
 } = useMeshProcessor()
 
@@ -230,6 +235,10 @@ const appTranslations = {
     bounds: 'Bounds',
     scale: 'Scale',
     preview: '3D PREVIEW',
+    previewOptimized: 'Optimized preview',
+    previewQuality: 'Preview',
+    previewFaces: 'preview faces',
+    printFaces: 'print faces',
     canvasHint: 'DRAG TO ROTATE · SCROLL TO ZOOM',
     close: 'Close',
     getCredits: 'Get extra credits',
@@ -326,6 +335,10 @@ const appTranslations = {
     bounds: 'ขนาด',
     scale: 'สเกล',
     preview: 'พรีวิว 3D',
+    previewOptimized: 'พรีวิวแบบประหยัด',
+    previewQuality: 'พรีวิว',
+    previewFaces: 'หน้าในพรีวิว',
+    printFaces: 'หน้าไฟล์จริง',
     canvasHint: 'ลากเพื่อหมุน · เลื่อนเพื่อซูม',
     close: 'ปิด',
     getCredits: 'ซื้อเครดิตเพิ่ม',
@@ -424,6 +437,14 @@ const creditChipTitle = computed(() => {
   if (showCreditSpinner.value) return uiCopy.value.credits
   if (hasCreditAccount.value) return `${uiCopy.value.free} / ${uiCopy.value.credits}`
   return uiCopy.value.free
+})
+const previewFaceSummary = computed(() => {
+  if (!previewInfo.value?.optimized) return ''
+  return `${formatWhole(previewInfo.value.previewFaces)} / ${formatWhole(previewInfo.value.originalFaces)}`
+})
+const previewStatusTitle = computed(() => {
+  if (!previewInfo.value?.optimized) return ''
+  return `${formatWhole(previewInfo.value.previewFaces)} ${uiCopy.value.previewFaces}; ${formatWhole(previewInfo.value.originalFaces)} ${uiCopy.value.printFaces}`
 })
 const exportRequiresLogin = computed(() => import.meta.env.VITE_CREDITS_ENFORCEMENT === 'required' && !hasCreditAccount.value)
 const previewDims = computed(() => {
@@ -524,6 +545,10 @@ function formatPrice(priceCents, currency) {
     style: 'currency',
     currency: currency || 'USD',
   }).format(priceCents / 100)
+}
+
+function formatWhole(value) {
+  return Number(value || 0).toLocaleString()
 }
 
 function showCreditDialog() {
