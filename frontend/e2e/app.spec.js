@@ -190,7 +190,7 @@ test.describe('public presentation', () => {
     await expect(page.locator('.lnd-logo')).toHaveAttribute('href', 'https://shop.maliev.com/')
     await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toHaveAttribute(
       'href',
-      'https://shop.maliev.com/account/login?return_to=%2Ftools%2Fmesh-splitter&return_url=%2Ftools%2Fmesh-splitter',
+      'https://shop.maliev.com/customer_authentication/login?return_to=%2Ftools%2Fmesh-splitter',
     )
     await expect(page.getByRole('link', { name: 'Launch MeshSplitter' }).first()).toHaveAttribute('href', '/tools/mesh-splitter/app')
   })

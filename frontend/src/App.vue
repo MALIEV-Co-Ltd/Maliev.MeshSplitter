@@ -189,6 +189,7 @@ import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import PublicLanding from './components/PublicLanding.vue'
 import { calculateAutoDivisions } from './mesh/splitPlanning'
+import { buildCustomerLoginUrl, STOREFRONT_BASE_PATH, storefrontReturnPath } from './auth/customerLogin'
 
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks, loading, error, scaleFactor, buildVolume,
@@ -202,13 +203,18 @@ const creditError = credits.error
 const creditLoading = credits.loading
 const hasCreditAccount = credits.hasAccountData
 const shopifyStoreDomain = import.meta.env.VITE_SHOPIFY_STORE_DOMAIN || ''
-const storefrontBasePath = '/tools/mesh-splitter'
+const storefrontBasePath = STOREFRONT_BASE_PATH
 const currentPath = window.location.pathname.replace(/\/+$/, '')
+const currentReturnPath = storefrontReturnPath(window.location, storefrontBasePath)
 const showPublicLanding = currentPath === storefrontBasePath
 const launchUrl = `${storefrontBasePath}/app`
 const storeHomeUrl = shopifyStoreDomain ? `https://${shopifyStoreDomain}/` : 'https://shop.maliev.com/'
 const locale = ref(resolveInitialLocale())
-const signInUrl = computed(() => buildCustomerLoginUrl(currentPath || storefrontBasePath))
+const signInUrl = computed(() => buildCustomerLoginUrl({
+  returnPath: currentReturnPath,
+  storeHomeUrl,
+  fallbackPath: storefrontBasePath,
+}))
 const connectorSuccess = ref('')
 const creditDialog = ref(null)
 const loginDialog = ref(null)
@@ -463,14 +469,6 @@ onMounted(() => {
     // The credit panel shows the authorization error.
   })
 })
-
-function buildCustomerLoginUrl(returnPath) {
-  const normalizedReturnPath = returnPath?.startsWith('/') ? returnPath : storefrontBasePath
-  const loginUrl = new URL('/account/login', storeHomeUrl)
-  loginUrl.searchParams.set('return_to', normalizedReturnPath)
-  loginUrl.searchParams.set('return_url', normalizedReturnPath)
-  return loginUrl.toString()
-}
 
 function resolveInitialLocale() {
   const queryLocale = new URLSearchParams(window.location.search).get('lang')
