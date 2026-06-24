@@ -11,6 +11,34 @@ export function getGeometryFaceCount(geometry) {
     : Math.floor(geometry.attributes.position.count / 3)
 }
 
+// Decide each split part's preview face budget from a SHARED assembly budget.
+//
+// The old approach divided the budget equally (budget / partCount). Splits are
+// never uniform — long curved bands carry thousands of faces while corner
+// scraps carry a handful — so equal division starved the big parts below their
+// own face count and `sampleTriangles` tore them into holey shells, even when
+// the whole assembly fit the budget many times over. That is the "broken mesh"
+// the preview showed while the exported (manifold) parts were perfectly intact.
+//
+// Rules:
+//  - If the whole assembly fits the budget, every part keeps full resolution
+//    (no decimation at all → the preview matches what prints).
+//  - Otherwise spread the budget proportionally to each part's face count, so a
+//    large part is reduced gently and a small part is never over-allocated.
+export function allocatePreviewBudget(faceCounts, totalBudget) {
+  if (!Array.isArray(faceCounts) || faceCounts.length === 0) return []
+  const budget = Math.max(12, Number(totalBudget) || 0)
+  const counts = faceCounts.map((n) => Math.max(0, Math.floor(Number(n) || 0)))
+  const total = counts.reduce((sum, n) => sum + n, 0)
+
+  if (total <= budget) return counts
+
+  return counts.map((faces) => {
+    if (faces === 0) return 0
+    return Math.max(12, Math.floor((budget * faces) / total))
+  })
+}
+
 export function createPreviewGeometry(geometry, options = {}) {
   if (!geometry?.attributes?.position) {
     return {
