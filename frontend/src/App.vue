@@ -649,7 +649,7 @@ async function exportAfterCredit(format, buildFn) {
   if (key && exportedAuthByKey.value.has(key)) {
     exportingPackage.value = true
     try {
-      const { blob, filename } = await buildFn({ authorization: exportedAuthByKey.value.get(key) })
+      const { blob, filename } = await buildFn({ authorization: exportedAuthByKey.value.get(key), locale: locale.value })
       saveBlob(blob, filename)
     } finally {
       exportingPackage.value = false
@@ -696,6 +696,7 @@ async function exportAfterCredit(format, buildFn) {
     const { blob, filename } = await buildFn({
       authorization,
       transaction,
+      locale: locale.value,
       preparedExportable: prepared.exportable,
       preparedFailed: prepared.failed,
     })

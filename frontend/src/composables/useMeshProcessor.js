@@ -208,6 +208,7 @@ export function useMeshProcessor(options = {}) {
         appUrl: import.meta.env.VITE_MESH_SPLITTER_PUBLIC_URL || 'https://shop.maliev.com/tools/mesh-splitter',
         sourceGeometry: meshGeometry.value,
         sourceFilename: meshInfo.value?.filename,
+        locale: options.locale,
         exportAuthorization: options.authorization,
         preparedExportable: options.preparedExportable,
         preparedFailed: options.preparedFailed,

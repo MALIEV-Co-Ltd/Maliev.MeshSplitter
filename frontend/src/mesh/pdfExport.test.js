@@ -60,6 +60,8 @@ vi.mock('jspdf', () => {
         fill: vi.fn(),
         addImage: vi.fn(),
         addPage: vi.fn(),
+        addFileToVFS: vi.fn(),
+        addFont: vi.fn(),
         output: vi.fn(() => new ArrayBuffer(16)),
       }
       pdfInstances.push(instance)
@@ -208,5 +210,34 @@ describe('exportPdf', () => {
     // The two note lines straddle the icon center symmetrically.
     const iconCenterY = iconCircles[0][1]
     expect((noteLineA[2] + noteLineB[2]) / 2).toBeCloseTo(iconCenterY, 5)
+  })
+
+  it('embeds the NotoSansThai font and renders Thai copy when locale is th', async () => {
+    await exportPdf(makeChunks(), [256, 256, 250], {
+      sourceFilename: 'persian-cat-500mm.stl',
+      locale: 'th',
+    })
+    const pdf = pdfInstances[0]
+    // The Thai font is embedded under both styles so bold never falls back to
+    // helvetica (which would render Thai as blank boxes).
+    expect(pdf.addFileToVFS).toHaveBeenCalledWith('NotoSansThai.ttf', expect.any(String))
+    expect(pdf.addFont).toHaveBeenCalledWith('NotoSansThai.ttf', 'NotoSansThai', 'normal')
+    expect(pdf.addFont).toHaveBeenCalledWith('NotoSansThai.ttf', 'NotoSansThai', 'bold')
+    expect(pdf.setFont).toHaveBeenCalledWith('NotoSansThai', expect.any(String))
+
+    const textPayloads = pdf.text.mock.calls.flatMap((call) => Array.isArray(call[0]) ? call[0] : [call[0]]).join(' ')
+    expect(textPayloads).toContain('คู่มือการประกอบแบบภาพ') // Visual Assembly Guide
+    expect(textPayloads).toContain('ไฟล์ต้นฉบับ') // Source file
+    // Latin part labels are preserved verbatim.
+    expect(textPayloads).toContain('P01-X0Y0Z0')
+  })
+
+  it('keeps English copy and the helvetica font when locale is omitted', async () => {
+    await exportPdf(makeChunks(), [256, 256, 250], { sourceFilename: 'part.stl' })
+    const pdf = pdfInstances[0]
+    expect(pdf.addFont).not.toHaveBeenCalled()
+    expect(pdf.setFont).toHaveBeenCalledWith('helvetica', expect.any(String))
+    const textPayloads = pdf.text.mock.calls.flatMap((call) => Array.isArray(call[0]) ? call[0] : [call[0]]).join(' ')
+    expect(textPayloads).toContain('Visual Assembly Guide')
   })
 })
