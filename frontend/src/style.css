@@ -1137,50 +1137,88 @@
     font-weight: 600;
   }
 
+  /* Pricing cards in the buy-credits dialog mirror the landing page's
+     pricing-card design: a responsive grid of vertical cards. */
   .credit-pack-list {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .credit-pack-card {
+    border: 1px solid var(--steel-200);
+    border-radius: var(--radius-lg);
     display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-
-  .credit-pack {
-    align-items: center;
-    border: 1px solid var(--steel-200);
-    border-radius: var(--radius-md);
-    display: flex;
-    justify-content: space-between;
-    padding: 12px;
+    gap: 4px;
+    padding: 14px;
     text-decoration: none;
-    transition: border-color 120ms var(--ease-standard), background 120ms var(--ease-standard);
+    transition: border-color 120ms var(--ease-standard), background 120ms var(--ease-standard), box-shadow 120ms var(--ease-standard);
   }
 
-  .credit-pack:hover {
+  .credit-pack-card:hover {
     background: var(--signal-50);
     border-color: var(--signal-300);
+    box-shadow: var(--shadow-sm);
   }
 
-  .credit-pack__info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .credit-pack__name {
-    color: oklch(var(--primary));
-    font-size: 13px;
+  .credit-pack-card__eyebrow {
+    color: var(--steel-500);
+    font-size: 11px;
     font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
-  .credit-pack__credits {
+  .credit-pack-card__credits {
+    color: oklch(var(--primary));
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .credit-pack-card__price {
+    align-items: baseline;
+    color: var(--signal-600);
+    display: flex;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 600;
+    gap: 6px;
+  }
+
+  .credit-pack-card__price small {
+    color: var(--steel-400);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .credit-pack-card__summary {
     color: var(--steel-500);
     font-size: 12px;
+    margin-top: 2px;
   }
 
-  .credit-pack__price {
-    color: var(--signal-600);
-    font-family: var(--font-mono);
-    font-size: 15px;
+  .credit-pack-card__cta {
+    background: oklch(var(--signal));
+    border-radius: var(--radius-sm);
+    color: oklch(var(--signal-foreground));
+    font-size: 12px;
     font-weight: 600;
+    margin-top: 8px;
+    padding: 7px 10px;
+    text-align: center;
+  }
+
+  .credit-chip--action {
+    background: none;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .credit-chip--action:hover {
+    border-color: var(--signal-300);
+    color: oklch(var(--primary));
   }
 
   .credit-modal__currency-note {
