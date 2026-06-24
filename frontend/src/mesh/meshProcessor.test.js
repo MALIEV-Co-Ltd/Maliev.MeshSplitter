@@ -330,15 +330,18 @@ describe('export validation', () => {
       exportAuthorization,
       requireExportAuthorization: true,
       sourceFilename: 'cube.stl',
+      sourceGeometry: new THREE.BoxGeometry(20, 20, 20),
     })
     const JSZip = (await import('jszip')).default
     const zip = await JSZip.loadAsync(packageBlob)
     const files = Object.keys(zip.files)
 
-    expect(files.some((f) => f.endsWith('.pdf'))).toBe(true)
-    expect(files.some((f) => f.endsWith('.stl'))).toBe(true)
-    expect(files.some((f) => f.includes('mesh-splitter-assembly.pdf'))).toBe(true)
+    // Layout: assembly PDF + license at the zip root, parts under parts/, the
+    // whole source mesh under original/.
+    expect(files).toContain('mesh-splitter-assembly.pdf')
     expect(files).toContain('mesh-splitter-license.json')
+    expect(files.some((f) => f.startsWith('parts/') && f.endsWith('.stl'))).toBe(true)
+    expect(files).toContain('original/cube.stl')
 
     const license = JSON.parse(await zip.file('mesh-splitter-license.json').async('string'))
     expect(license).toMatchObject({
@@ -348,7 +351,7 @@ describe('export validation', () => {
       sourceFilename: 'cube.stl',
     })
 
-    const stlName = files.find((f) => f.endsWith('.stl'))
+    const stlName = files.find((f) => f.startsWith('parts/') && f.endsWith('.stl'))
     const stlBytes = await zip.file(stlName).async('uint8array')
     const header = new TextDecoder().decode(stlBytes.slice(0, 80))
     const view = new DataView(stlBytes.buffer, stlBytes.byteOffset, stlBytes.byteLength)

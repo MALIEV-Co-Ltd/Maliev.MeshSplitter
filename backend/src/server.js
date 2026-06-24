@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { CreditLedger, InsufficientCreditsError } from './creditLedger.js'
-import { serializePricing } from './pricing.js'
+import { serializePricing, FREE_GENERATIONS_PER_MONTH } from './pricing.js'
 import { applyPaidOrderCredits } from './shopifyOrders.js'
 import {
   createOAuthState,
@@ -40,6 +40,44 @@ export function createServer(options = {}) {
   const exportAuthSecret = options.exportAuthSecret || process.env.EXPORT_AUTH_SECRET || sessionSecret || shopifyApiSecret || shopifyAppProxySecret
   const frontendDistDir = options.frontendDistDir || process.env.FRONTEND_DIST_DIR || defaultFrontendDistDir()
 
+  // Staff free-credit policy: customers whose Shopify email is on a staff domain
+  // (e.g. maliev.com) get a larger monthly free allowance. The app proxy never
+  // sends the email, so we look it up by customer id via the Admin API using a
+  // custom-app token, and cache the resolved limit per customer to avoid an API
+  // call on every request.
+  const staffEmailDomains = normalizeDomains(
+    options.staffEmailDomains
+      ?? (process.env.STAFF_EMAIL_DOMAINS || 'maliev.com').split(','),
+  )
+  const staffFreeGenerations = Number(options.staffFreeGenerations ?? process.env.STAFF_FREE_GENERATIONS ?? 100)
+  const shopifyAdminApiToken = options.shopifyAdminApiToken || process.env.SHOPIFY_ADMIN_API_TOKEN
+  const shopifyAdminApiVersion = options.shopifyAdminApiVersion || process.env.SHOPIFY_ADMIN_API_VERSION || '2024-01'
+  const fetchCustomerEmail = options.fetchCustomerEmail
+    || (({ shop, customerId }) => fetchShopifyCustomerEmail({ shop, customerId, token: shopifyAdminApiToken, apiVersion: shopifyAdminApiVersion }))
+  const staffLimitCacheTtlMs = Number(options.staffLimitCacheTtlMs ?? 60 * 60 * 1000)
+  const staffLimitCache = new Map()
+
+  async function resolveFreeLimit(identity) {
+    if (!identity?.customerId) return FREE_GENERATIONS_PER_MONTH
+    if (!staffEmailDomains.length) return FREE_GENERATIONS_PER_MONTH
+
+    const cached = staffLimitCache.get(identity.customerId)
+    if (cached && cached.expiresAt > now().getTime()) return cached.limit
+
+    try {
+      const rawId = String(identity.customerId)
+      const numericId = rawId.startsWith('shopify:') ? rawId.slice('shopify:'.length) : rawId
+      const email = await fetchCustomerEmail({ shop: identity.shop, customerId: numericId })
+      const domain = typeof email === 'string' ? email.split('@')[1]?.toLowerCase() : null
+      const limit = domain && staffEmailDomains.includes(domain) ? staffFreeGenerations : FREE_GENERATIONS_PER_MONTH
+      staffLimitCache.set(identity.customerId, { limit, expiresAt: now().getTime() + staffLimitCacheTtlMs })
+      return limit
+    } catch {
+      // Transient lookup failure: fall back to the default, don't cache, retry next time.
+      return FREE_GENERATIONS_PER_MONTH
+    }
+  }
+
   return createHttpServer(async (request, response) => {
     try {
       await route({
@@ -60,6 +98,7 @@ export function createServer(options = {}) {
         sessionSecret,
         exportAuthSecret,
         frontendDistDir,
+        resolveFreeLimit,
         now,
       })
     } catch (error) {
@@ -104,7 +143,8 @@ async function route(context) {
     if (!identity) {
       return sendJson(response, 200, { authenticated: false, account: null })
     }
-    const account = await ledger.getAccount(identity.customerId)
+    const freeLimit = await context.resolveFreeLimit(identity)
+    const account = await ledger.getAccount(identity.customerId, { freeLimit })
     return sendJson(response, 200, { authenticated: true, account })
   }
 
@@ -141,8 +181,10 @@ async function route(context) {
     const identity = resolveIdentity(context, url)
     const body = await readJson(request)
     const requestType = url.pathname === '/api/exports' ? 'export' : 'generation'
+    const freeLimit = await context.resolveFreeLimit(identity)
     const transaction = await ledger.consumeExport(identity.customerId, {
       idempotencyKey: body.idempotencyKey,
+      freeLimit,
       metadata: {
         ...(body.metadata || {}),
         requestType,
@@ -245,6 +287,33 @@ async function finishShopifyOAuth(context, url) {
     'Set-Cookie': 'mesh_splitter_oauth_state=; Path=/auth/callback; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
   })
   response.end()
+}
+
+function normalizeDomains(domains) {
+  if (!Array.isArray(domains)) return []
+  return domains
+    .map((domain) => String(domain).trim().toLowerCase().replace(/^@/, ''))
+    .filter(Boolean)
+}
+
+// Look up a Shopify customer's email by id via the Admin API. Used only to
+// classify staff (by email domain) for the free-credit allowance. Returns null
+// when not configured or the customer can't be resolved so the caller falls back
+// to the default allowance instead of failing the request.
+async function fetchShopifyCustomerEmail({ shop, customerId, token, apiVersion = '2024-01' }) {
+  if (!token || !shop || !customerId) return null
+  const url = `https://${shop}/admin/api/${apiVersion}/customers/${encodeURIComponent(customerId)}.json`
+  const response = await fetch(url, {
+    headers: {
+      'X-Shopify-Access-Token': token,
+      Accept: 'application/json',
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`Shopify Admin API customer lookup failed with ${response.status}`)
+  }
+  const body = await response.json()
+  return body?.customer?.email || null
 }
 
 async function exchangeShopifyAccessToken({ shop, code, clientId, clientSecret }) {

@@ -57,6 +57,7 @@
       </section>
 
       <section class="col-center">
+        <span class="canvas-version" aria-label="App version">v{{ appVersion }}</span>
         <Card class="preview-card h-full rounded-none border-x border-y-0 shadow-none">
           <CardContent class="p-0 h-full">
             <ThreePreview
@@ -198,6 +199,11 @@ import PublicLanding from './components/PublicLanding.vue'
 import { calculateAutoDivisions } from './mesh/splitPlanning'
 import { exportIdempotencyKey } from './lib/exportIdentity'
 import { buildCustomerLoginUrl, STOREFRONT_BASE_PATH, storefrontReturnPath } from './auth/customerLogin'
+import pkg from '../package.json'
+
+// Shown small in the canvas corner so we can see at a glance which release is
+// live in production. Bundled at build time from the frontend package version.
+const appVersion = pkg.version
 
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks, loading, error, scaleFactor, buildVolume,
@@ -597,7 +603,9 @@ async function onSplit(volume, gridDivisions, connectorConfig) {
 }
 
 function onSelectChunk(index) {
-  selectedChunkIndex.value = index
+  // Clicking the already-selected part again clears isolation and shows the
+  // whole assembly at full opacity again (toggle behaviour).
+  selectedChunkIndex.value = selectedChunkIndex.value === index ? null : index
 }
 
 function productUrl(pack) {

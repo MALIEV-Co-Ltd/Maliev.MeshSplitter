@@ -1,6 +1,11 @@
 import * as THREE from 'three'
 
-const DEFAULT_TARGET_FACES = 150_000
+// Headroom well past any realistic split-total. Splitting a mesh adds cut-cap
+// faces, so a 150k-face model can balloon past a 150k budget once split and
+// then get decimated into a torn preview (the reported persian-cat bug). At 1M
+// the preview stays full-resolution for every real model; only genuinely huge
+// uploads ever decimate, and that path is now hole-free (see decimateByClustering).
+const DEFAULT_TARGET_FACES = 1_000_000
 const DEFAULT_MAX_PIXEL_RATIO = 1.5
 const OPTIMIZED_PIXEL_RATIO = 1
 
@@ -80,8 +85,29 @@ export function createPreviewGeometry(geometry, options = {}) {
     }
   }
 
-  const previewFaces = Math.min(targetFaces, originalFaces)
-  const sampled = sampleTriangles(geometry, previewFaces)
+  const sampled = decimateByClustering(geometry, Math.min(targetFaces, originalFaces))
+  // Welding can, on a pathological mesh, collapse every triangle. Rather than
+  // show an empty preview, fall back to the full-resolution clone.
+  if (!sampled) {
+    const clone = geometry.clone()
+    clone.computeBoundingBox()
+    clone.computeVertexNormals()
+    clone.userData = {
+      ...clone.userData,
+      preview: { optimized: false, originalFaces, previewFaces: originalFaces, ratio: 1 },
+    }
+    return {
+      geometry: clone,
+      optimized: false,
+      originalFaces,
+      previewFaces: originalFaces,
+      originalVertices,
+      previewVertices: clone.attributes.position.count,
+      ratio: 1,
+    }
+  }
+
+  const previewFaces = getGeometryFaceCount(sampled)
   sampled.computeVertexNormals()
   geometry.computeBoundingBox()
   sampled.boundingBox = geometry.boundingBox?.clone() ?? null
@@ -111,35 +137,91 @@ export function resolvePreviewPixelRatio({ optimized = false, devicePixelRatio =
   return optimized ? OPTIMIZED_PIXEL_RATIO : Math.min(dpr, DEFAULT_MAX_PIXEL_RATIO)
 }
 
-function sampleTriangles(geometry, targetFaces) {
+// Hole-free preview decimation by vertex clustering.
+//
+// The preview is never exported — it only has to *look* like the part. The old
+// approach dropped every Nth triangle by index, which literally punched holes
+// in the surface (the reported "torn/stippled" preview). Vertex clustering
+// instead snaps nearby vertices onto a shared grid cell and welds them:
+// triangles shrink and collapse but the surrounding faces re-stitch through the
+// welded vertex, so the surface stays closed. A decimated part still reads as a
+// solid shell rather than a sieve.
+//
+// Returns null when welding collapses the whole mesh (caller keeps full detail).
+function decimateByClustering(geometry, targetFaces) {
   const position = geometry.attributes.position
   const index = geometry.index
   const sourceFaces = getGeometryFaceCount(geometry)
-  const positions = new Float32Array(targetFaces * 9)
-  const normals = geometry.attributes.normal ? new Float32Array(targetFaces * 9) : null
 
-  for (let outFace = 0; outFace < targetFaces; outFace += 1) {
-    const sourceFace = Math.floor((outFace * sourceFaces) / targetFaces)
-    for (let corner = 0; corner < 3; corner += 1) {
-      const sourceVertex = index
-        ? index.getX(sourceFace * 3 + corner)
-        : sourceFace * 3 + corner
-      const out = outFace * 9 + corner * 3
-      positions[out] = position.getX(sourceVertex)
-      positions[out + 1] = position.getY(sourceVertex)
-      positions[out + 2] = position.getZ(sourceVertex)
+  geometry.computeBoundingBox()
+  const bb = geometry.boundingBox
+  const min = bb.min
+  const ex = Math.max(bb.max.x - bb.min.x, 1e-6)
+  const ey = Math.max(bb.max.y - bb.min.y, 1e-6)
+  const ez = Math.max(bb.max.z - bb.min.z, 1e-6)
 
-      if (normals && geometry.attributes.normal) {
-        normals[out] = geometry.attributes.normal.getX(sourceVertex)
-        normals[out + 1] = geometry.attributes.normal.getY(sourceVertex)
-        normals[out + 2] = geometry.attributes.normal.getZ(sourceVertex)
-      }
+  // Resolve the grid from the target vertex count: a closed mesh has roughly two
+  // faces per vertex, and only the cells the surface passes through are ever
+  // occupied, so cells-per-axis follows the cube root of the per-vertex volume.
+  const targetVertices = Math.max(4, Math.floor(targetFaces / 2))
+  const step = Math.cbrt((ex * ey * ez) / targetVertices)
+  const nx = Math.max(1, Math.round(ex / step))
+  const ny = Math.max(1, Math.round(ey / step))
+  const nz = Math.max(1, Math.round(ez / step))
+
+  const cellIndex = (x, y, z) => {
+    const cx = Math.min(nx - 1, Math.max(0, Math.floor(((x - min.x) / ex) * nx)))
+    const cy = Math.min(ny - 1, Math.max(0, Math.floor(((y - min.y) / ey) * ny)))
+    const cz = Math.min(nz - 1, Math.max(0, Math.floor(((z - min.z) / ez) * nz)))
+    return (cx * ny + cy) * nz + cz
+  }
+
+  const cells = new Map() // cellId -> { sx, sy, sz, count, out }
+  const reps = []
+  const vertexRep = (vi) => {
+    const x = position.getX(vi)
+    const y = position.getY(vi)
+    const z = position.getZ(vi)
+    const id = cellIndex(x, y, z)
+    let cell = cells.get(id)
+    if (!cell) {
+      cell = { sx: 0, sy: 0, sz: 0, count: 0, out: reps.length }
+      cells.set(id, cell)
+      reps.push(cell)
     }
+    cell.sx += x
+    cell.sy += y
+    cell.sz += z
+    cell.count += 1
+    return cell.out
+  }
+
+  const tris = []
+  const corner = (face, c) => (index ? index.getX(face * 3 + c) : face * 3 + c)
+  for (let f = 0; f < sourceFaces; f += 1) {
+    const a = vertexRep(corner(f, 0))
+    const b = vertexRep(corner(f, 1))
+    const c = vertexRep(corner(f, 2))
+    if (a === b || b === c || a === c) continue // collapsed into a sliver/point
+    tris.push(a, b, c)
+  }
+
+  if (tris.length === 0) return null
+
+  const repX = reps.map((c) => c.sx / c.count)
+  const repY = reps.map((c) => c.sy / c.count)
+  const repZ = reps.map((c) => c.sz / c.count)
+
+  const out = new Float32Array(tris.length * 3)
+  for (let i = 0; i < tris.length; i += 1) {
+    const r = tris[i]
+    out[i * 3] = repX[r]
+    out[i * 3 + 1] = repY[r]
+    out[i * 3 + 2] = repZ[r]
   }
 
   const preview = new THREE.BufferGeometry()
-  preview.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  if (normals) preview.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+  preview.setAttribute('position', new THREE.BufferAttribute(out, 3))
   preview.computeBoundingBox()
   return preview
 }

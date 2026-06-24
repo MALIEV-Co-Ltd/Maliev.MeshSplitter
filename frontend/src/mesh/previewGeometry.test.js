@@ -7,6 +7,31 @@ import {
   resolvePreviewPixelRatio,
 } from './previewGeometry'
 
+// Fraction of edges used by only one triangle. A closed surface scores ~0; a
+// torn/holey shell (the old striding bug) scores high. Quantizes positions so
+// welded-but-coincident vertices count as the same point.
+function boundaryEdgeRatio(geometry) {
+  const pos = geometry.attributes.position
+  const key = (i) =>
+    `${pos.getX(i).toFixed(2)},${pos.getY(i).toFixed(2)},${pos.getZ(i).toFixed(2)}`
+  const edges = new Map()
+  const faces = getGeometryFaceCount(geometry)
+  for (let f = 0; f < faces; f += 1) {
+    const v = [key(f * 3), key(f * 3 + 1), key(f * 3 + 2)]
+    for (let e = 0; e < 3; e += 1) {
+      const a = v[e]
+      const b = v[(e + 1) % 3]
+      if (a === b) continue
+      const id = a < b ? `${a}|${b}` : `${b}|${a}`
+      edges.set(id, (edges.get(id) || 0) + 1)
+    }
+  }
+  if (edges.size === 0) return 1
+  let boundary = 0
+  for (const count of edges.values()) if (count === 1) boundary += 1
+  return boundary / edges.size
+}
+
 describe('previewGeometry', () => {
   it('creates a decimated preview mesh without modifying the print mesh', () => {
     const source = new THREE.SphereGeometry(40, 64, 32)
@@ -17,11 +42,26 @@ describe('previewGeometry', () => {
 
     expect(result.optimized).toBe(true)
     expect(result.originalFaces).toBe(originalFaces)
-    expect(result.previewFaces).toBeLessThanOrEqual(180)
+    // Clustering welds nearby vertices rather than dropping triangles, so the
+    // output is approximate (never an empty/exact-N shell) but is always a
+    // meaningful reduction and never larger than the source.
+    expect(result.previewFaces).toBeGreaterThan(0)
+    expect(result.previewFaces).toBeLessThan(originalFaces / 2)
     expect(result.geometry).not.toBe(source)
     expect(source.attributes.position.count).toBe(originalVertices)
     expect(getGeometryFaceCount(source)).toBe(originalFaces)
     expect(result.geometry.userData.preview.optimized).toBe(true)
+  })
+
+  it('decimates without tearing the surface into holes', () => {
+    // A torus is closed (watertight): every edge is shared by two triangles.
+    // The old triangle-striding decimator left thousands of open edges (holes);
+    // clustering must keep the decimated shell almost entirely closed.
+    const source = new THREE.TorusGeometry(40, 14, 48, 96)
+    const result = createPreviewGeometry(source, { targetFaces: 600 })
+
+    expect(result.optimized).toBe(true)
+    expect(boundaryEdgeRatio(result.geometry)).toBeLessThan(0.1)
   })
 
   it('keeps small preview meshes full detail while isolating them from export geometry', () => {
