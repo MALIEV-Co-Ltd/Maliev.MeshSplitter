@@ -1077,8 +1077,96 @@ export function validateExportChunks(chunks) {
   return true
 }
 
+// Re-derive a guaranteed-manifold geometry by round-tripping through the
+// authoritative manifold-3d engine (the same one that produces the parts).
+// Returns null when the engine cannot make a closed solid from the input.
+function manifoldCleanGeometry(geometry, manifold) {
+  let solid
+  try {
+    solid = manifold.Manifold.ofMesh(geometryToManifoldMesh(geometry, manifold))
+    if (solid.status() !== 'NoError' || solid.isEmpty()) return null
+    const cleaned = manifoldMeshToGeometry(solid.getMesh())
+    cleaned.computeBoundingBox()
+    return cleaned
+  } catch {
+    return null
+  } finally {
+    solid?.delete?.()
+  }
+}
+
+// Resolve which parts can actually be exported. Parts come out of manifold-3d
+// (manifold by construction), but the cheap watertight heuristic re-checks at
+// coarse precision and can false-flag good parts. For any part the heuristic
+// dislikes we defer to the authoritative engine and attempt an automatic
+// repair; genuinely unrepairable parts are isolated (left out with a notice)
+// rather than failing the whole export. Only an empty survivor set throws, so a
+// single bad part can never block the customer from downloading the rest.
+export async function prepareExportChunks(chunks) {
+  if (!Array.isArray(chunks) || chunks.length === 0) {
+    throw new Error('No split parts are available for export')
+  }
+
+  let manifold = null
+  const exportable = []
+  const failed = []
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]
+    const label = chunk.label || `part ${i + 1}`
+    const info = validateManifold(chunk.geometry)
+    const volume = Math.abs(chunk.volume || info.volume || computeVolume(chunk.geometry))
+
+    if (info.watertight && info.faceCount > 0 && info.vertCount > 0 && volume > 0) {
+      exportable.push(chunk)
+      continue
+    }
+
+    if (!manifold) manifold = await getManifoldModule()
+    let cleaned = manifoldCleanGeometry(chunk.geometry, manifold)
+    if (!cleaned) {
+      cleaned = manifoldCleanGeometry(repairMeshGeometry(chunk.geometry), manifold)
+    }
+
+    if (cleaned) {
+      exportable.push({ ...chunk, geometry: cleaned, wasRepaired: true })
+    } else {
+      failed.push({ label, index: chunk.index })
+    }
+  }
+
+  if (exportable.length === 0) {
+    const error = new Error(
+      'None of the split parts are manifold, even after automatic repair, so the export cannot be produced. Repair the larger holes in your CAD or slicer and try again.',
+    )
+    error.code = 'NO_EXPORTABLE_PARTS'
+    error.failedParts = failed
+    throw error
+  }
+
+  return { exportable, failed }
+}
+
+async function resolvePreparedChunks(chunks, options) {
+  if (options.preparedExportable) {
+    return { exportable: options.preparedExportable, failed: options.preparedFailed || [] }
+  }
+  return prepareExportChunks(chunks)
+}
+
+function describeUnexportableParts(failed) {
+  return [
+    'Some parts could not be made watertight automatically and were left out of this package.',
+    'Repair them in your CAD or slicer before printing:',
+    '',
+    ...failed.map((part) => `  - ${part.label}`),
+    '',
+    'Every other part in this package is watertight and ready to print.',
+    '',
+  ].join('\n')
+}
+
 async function createStlZip(chunks, options = {}) {
-  validateExportChunks(chunks)
   const { STLExporter } = await import('three/addons/exporters/STLExporter.js')
   const exporter = new STLExporter()
   const JSZip = (await import('jszip')).default
@@ -1095,6 +1183,11 @@ async function createStlZip(chunks, options = {}) {
     zip.file(`part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`, stlBuffer)
   })
 
+  const failedParts = options.failedParts || []
+  if (failedParts.length) {
+    zip.file('UNEXPORTABLE-PARTS.txt', describeUnexportableParts(failedParts))
+  }
+
   if (exportReceipt) {
     zip.file('mesh-splitter-license.json', JSON.stringify(exportReceipt, null, 2))
   }
@@ -1102,7 +1195,8 @@ async function createStlZip(chunks, options = {}) {
 }
 
 export async function exportStl(chunks, options = {}) {
-  const zip = await createStlZip(chunks, options)
+  const { exportable, failed } = await resolvePreparedChunks(chunks, options)
+  const zip = await createStlZip(exportable, { ...options, failedParts: failed })
   return zip.generateAsync({ type: 'blob' })
 }
 
@@ -1112,8 +1206,9 @@ export async function exportPackage(chunks, buildVolume, options = {}) {
     throw new Error('Export authorization is required')
   }
 
-  const zip = await createStlZip(chunks, { ...options, exportAuthorization })
-  const pdfData = await exportPdf(chunks, buildVolume, { ...options, exportAuthorization })
+  const { exportable, failed } = await resolvePreparedChunks(chunks, options)
+  const zip = await createStlZip(exportable, { ...options, exportAuthorization, failedParts: failed })
+  const pdfData = await exportPdf(exportable, buildVolume, { ...options, exportAuthorization })
   zip.file('mesh-splitter-assembly.pdf', pdfData)
   return zip.generateAsync({ type: 'blob' })
 }
@@ -1680,7 +1775,6 @@ function addPartsTable(pdf, chunks, startY = 168) {
 }
 
 export async function exportPdf(chunks, buildVolume, options = {}) {
-  validateExportChunks(chunks)
   const { jsPDF } = await import('jspdf')
   const {
     renderWholeMesh,

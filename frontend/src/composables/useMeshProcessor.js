@@ -1,9 +1,11 @@
 import { markRaw, readonly, ref, shallowRef } from 'vue'
 import * as THREE from 'three'
+import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import {
   addConnectorsManifold,
   applyScale,
   exportPackage,
+  prepareExportChunks,
   repairMeshGeometry,
   splitMeshManifold,
   validateManifold,
@@ -63,7 +65,6 @@ export function useMeshProcessor(options = {}) {
     error.value = null
     try {
       const buffer = await file.arrayBuffer()
-      const { STLLoader } = await import('three/addons/loaders/STLLoader.js')
       const loader = new STLLoader()
       const geometry = normalizeForPreview(loader.parse(buffer))
       geometry.computeBoundingBox()
@@ -161,6 +162,23 @@ export function useMeshProcessor(options = {}) {
     }
   }
 
+  // Repair + validate the parts up front, before any credit is charged, so a
+  // customer is never billed for an export that cannot be produced. Returns the
+  // exportable parts and any that had to be isolated. Throws only when nothing
+  // is exportable (caller must charge nothing in that case).
+  async function prepareExport() {
+    loading.value = true
+    error.value = null
+    try {
+      return await prepareExportChunks(chunks.value)
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function buildExportPackage(options = {}) {
     loading.value = true
     error.value = null
@@ -170,6 +188,8 @@ export function useMeshProcessor(options = {}) {
         sourceGeometry: meshGeometry.value,
         sourceFilename: meshInfo.value?.filename,
         exportAuthorization: options.authorization,
+        preparedExportable: options.preparedExportable,
+        preparedFailed: options.preparedFailed,
       })
       const filename = meshInfo.value?.filename
         ? meshInfo.value.filename.replace(/\.stl$/i, '')
@@ -230,6 +250,7 @@ export function useMeshProcessor(options = {}) {
     setScaleFactor,
     split,
     applyConnectors,
+    prepareExport,
     buildExportPackage,
     saveBlob,
     downloadExportPackage,

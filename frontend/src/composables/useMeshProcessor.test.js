@@ -11,6 +11,7 @@ const {
   mockExportPackage,
   mockExportStl,
   mockExportPdf,
+  mockPrepareExportChunks,
   mockStlParse,
 } = vi.hoisted(() => ({
   mockValidateManifold: vi.fn(),
@@ -22,6 +23,7 @@ const {
   mockExportPackage: vi.fn(),
   mockExportStl: vi.fn(),
   mockExportPdf: vi.fn(),
+  mockPrepareExportChunks: vi.fn(),
   mockStlParse: vi.fn(),
 }))
 
@@ -35,6 +37,7 @@ vi.mock('../mesh/meshProcessor', () => ({
   exportPackage: mockExportPackage,
   exportStl: mockExportStl,
   exportPdf: mockExportPdf,
+  prepareExportChunks: mockPrepareExportChunks,
 }))
 
 vi.mock('three/addons/loaders/STLLoader.js', () => ({

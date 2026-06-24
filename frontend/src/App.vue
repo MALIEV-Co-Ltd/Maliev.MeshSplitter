@@ -184,7 +184,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
 import { useCredits } from './composables/useCredits'
-import logoUrl from './assets/logos/maliev-wordmark-black.svg'
+import logoWordmarkBlack from './assets/logos/maliev-wordmark-black.svg'
+import logoWordmarkWhite from './assets/logos/maliev-wordmark-white.svg'
 
 import MeshUploader from './components/MeshUploader.vue'
 import ScaleConfig from './components/ScaleConfig.vue'
@@ -200,7 +201,7 @@ import { buildCustomerLoginUrl, STOREFRONT_BASE_PATH, storefrontReturnPath } fro
 
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks, loading, error, scaleFactor, buildVolume,
-  loadStl, setScaleFactor, split, applyConnectors, buildExportPackage, saveBlob,
+  loadStl, setScaleFactor, split, applyConnectors, prepareExport, buildExportPackage, saveBlob,
 } = useMeshProcessor()
 
 const credits = useCredits()
@@ -531,6 +532,8 @@ function resolveInitialLocale() {
 
 const theme = ref(resolveInitialTheme())
 const isDark = computed(() => theme.value === 'dark')
+// Dark theme swaps to the white wordmark so the logo stays legible on the dark header.
+const logoUrl = computed(() => (isDark.value ? logoWordmarkWhite : logoWordmarkBlack))
 
 function resolveInitialTheme() {
   const stored = window.localStorage?.getItem('meshSplitterTheme')
@@ -653,12 +656,25 @@ async function exportAfterCredit(format, buildFn) {
 
   exportingPackage.value = true
   try {
+    // Repair + validate the parts BEFORE charging. If nothing can be exported,
+    // prepareExport throws (its message is surfaced via the composable error
+    // state) and we return without spending a credit. Repairable/false-positive
+    // parts are healed here; genuinely broken ones are isolated so a single bad
+    // part never blocks the rest of the download.
+    let prepared
+    try {
+      prepared = await prepareExport()
+    } catch {
+      return
+    }
+
     const metadata = {
       filename: meshInfo.value?.filename,
       format,
       divisions: divisions.value,
       buildVolume: lastSplitContext.value?.buildVolume ?? buildVolume.value,
-      chunkCount: chunks.value.length,
+      chunkCount: prepared.exportable.length,
+      isolatedParts: prepared.failed.map((part) => part.label),
     }
     const transaction = await credits.consumeExport({ idempotencyKey: key, metadata })
     const authorization = transaction.authorization
@@ -672,6 +688,8 @@ async function exportAfterCredit(format, buildFn) {
     const { blob, filename } = await buildFn({
       authorization,
       transaction,
+      preparedExportable: prepared.exportable,
+      preparedFailed: prepared.failed,
     })
     await credits.completeExport({
       authorizationToken: authorization?.token,

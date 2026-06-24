@@ -25,6 +25,10 @@ const props = defineProps({
 
 const container = ref(null)
 const selectedOpacity = 0.22
+// Above this part count, per-part labels overlap into an unreadable wall that
+// hides the model (worst on phones), so we show only the selected part's label
+// and let the part list carry the full set. Small assemblies still show all.
+const LABEL_DECLUTTER_THRESHOLD = 12
 
 let renderer, scene, camera, controls, meshGroup, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
@@ -148,15 +152,21 @@ function buildMeshes(chunks) {
     mesh.userData.chunkIndex = chunk.index
     meshGroup.add(mesh)
     box.expandByObject(mesh)
-    labels.push({ text: chunk.label || `P${i + 1}`, position: chunk.centroid || computeGeometryCenter(geom), color })
+    labels.push({ text: chunk.label || `P${i + 1}`, position: chunk.centroid || computeGeometryCenter(geom), color, chunkIndex: chunk.index })
   })
   if (meshGroup.children.length === 0) return
   // Labels sized off the model so they stay readable on large assemblies.
   const labelScale = labelScaleForBox(box)
-  labels.forEach((l) => meshGroup.add(createLabelSprite(l.text, l.position, l.color, labelScale)))
+  labels.forEach((l) => {
+    const sprite = createLabelSprite(l.text, l.position, l.color, labelScale)
+    sprite.userData.isLabel = true
+    sprite.userData.chunkIndex = l.chunkIndex
+    meshGroup.add(sprite)
+  })
   scene.add(meshGroup)
   setGrid(maxBoxExtent(box))
   applyChunkVisibility(props.selectedChunkIndex)
+  applyLabelVisibility(props.selectedChunkIndex)
   fitCamera(box)
   requestRender()
 }
@@ -182,6 +192,21 @@ function applyChunkVisibility(selectedChunkIndex) {
     child.material.depthWrite = isSelected
     child.material.needsUpdate = true
     child.renderOrder = isSelected ? 0 : 1
+  })
+  requestRender()
+}
+
+// Keep the 3D part labels readable: on large assemblies only the selected
+// part's label shows (none until the customer picks a part), so the labels
+// never bury the model. Small assemblies keep every label.
+function applyLabelVisibility(selectedChunkIndex) {
+  if (!meshGroup) return
+  const labelSprites = meshGroup.children.filter((c) => c.userData?.isLabel)
+  const declutter = labelSprites.length > LABEL_DECLUTTER_THRESHOLD
+  labelSprites.forEach((sprite) => {
+    sprite.visible = declutter
+      ? selectedChunkIndex !== null && sprite.userData.chunkIndex === selectedChunkIndex
+      : true
   })
   requestRender()
 }
@@ -460,6 +485,7 @@ watch(() => props.buildVolume, () => {
 
 watch(() => props.selectedChunkIndex, (selectedChunkIndex) => {
   applyChunkVisibility(selectedChunkIndex)
+  applyLabelVisibility(selectedChunkIndex)
 })
 
 watch(() => props.previewInfo?.optimized, () => {

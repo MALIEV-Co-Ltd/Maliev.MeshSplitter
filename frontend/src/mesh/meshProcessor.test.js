@@ -289,15 +289,32 @@ function boxWithMissingTriangle() {
 }
 
 describe('export validation', () => {
-  it('rejects non-manifold chunks before STL export', async () => {
+  it('rejects export only when no part can be made manifold', async () => {
     const badChunk = {
       index: 0,
       label: 'bad',
       geometry: new THREE.PlaneGeometry(10, 10),
     }
 
+    // The sync validator still flags a non-manifold part...
     expect(() => validateExportChunks([badChunk])).toThrow('not manifold')
-    await expect(exportStl([badChunk])).rejects.toThrow('not manifold')
+    // ...but the export pipeline now only fails when *nothing* survives repair.
+    await expect(exportStl([badChunk])).rejects.toThrow(/manifold/i)
+  })
+
+  it('isolates an unrepairable part and still exports the rest', async () => {
+    const good = { index: 0, label: 'GOOD-1', geometry: new THREE.BoxGeometry(20, 20, 20) }
+    const bad = { index: 1, label: 'BAD-1', geometry: new THREE.PlaneGeometry(10, 10) }
+
+    const blob = await exportStl([good, bad])
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(blob)
+    const files = Object.keys(zip.files)
+
+    expect(files.some((f) => f.endsWith('.stl'))).toBe(true)
+    expect(files).toContain('UNEXPORTABLE-PARTS.txt')
+    const notice = await zip.file('UNEXPORTABLE-PARTS.txt').async('string')
+    expect(notice).toContain('BAD-1')
   })
 
   it('exports STL + PDF in a single ZIP package', async () => {
