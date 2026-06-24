@@ -604,6 +604,11 @@ function createConnectorShape(manifold, type, options) {
 // too thin to take one safely), so the face is skipped instead of forced.
 const MIN_CONNECTOR_DEPTH = 0.8
 
+// However thin the local wall measures, a connector must never cut deep enough
+// to leave less than this much solid material between its tip and the part's
+// real exterior surface — printable parts need a minimum structural skin.
+const CONNECTOR_SAFETY_MARGIN_MM = 2
+
 // Largest connector count that physically fits across a shared face span. A
 // requested "connectors per face" is REDUCED (never forced) when the face is
 // too small, so connectors can't overlap/merge on a tiny mating surface.
@@ -628,6 +633,12 @@ export function clampConnectorDepth(requestedDepth, localThickness, factor = 0.4
 // Distance from the shared cut plane to the far wall of a part at a point, by
 // raycasting into the body. Used to size connectors to the LOCAL thickness
 // rather than the (often far larger, for thin/curved parts) bounding box.
+//
+// A miss (no back wall found) is reported as 0, not Infinity: on a watertight
+// mesh a ray cast from inside should always exit through some surface, so a
+// miss means the geometry near this point is too degenerate to trust — and an
+// unmeasurable wall must fail safe (skip the connector), never be treated as
+// having unlimited room.
 function localWallThickness(raycaster, mesh, bbox, point, axis, plane, nudge) {
   const inwardSign = bbox.min.getComponent(axis) + bbox.max.getComponent(axis) < plane * 2 ? -1 : 1
   const direction = new THREE.Vector3()
@@ -637,13 +648,32 @@ function localWallThickness(raycaster, mesh, bbox, point, axis, plane, nudge) {
   origin.addScaledVector(direction, nudge)
   raycaster.set(origin, direction)
   const hits = raycaster.intersectObject(mesh, false)
-  return hits.length ? hits[0].distance : Infinity
+  return hits.length ? hits[0].distance : 0
+}
+
+// A single ray straight along the split axis from the candidate's exact
+// center only measures thickness along one line. The connector's actual peg
+// occupies a footprint around that center, and on curved/organic surfaces the
+// real exterior wall can be much closer near one corner of that footprint
+// than at its center — so thickness is sampled at the center plus the four
+// footprint corners and the worst (minimum) of all of them is used.
+export function localWallThicknessAroundFootprint(raycaster, mesh, bbox, point, axis, otherAxes, plane, nudge, footprintRadius) {
+  let minThickness = localWallThickness(raycaster, mesh, bbox, point, axis, plane, nudge)
+  const offsets = [[1, 1], [1, -1], [-1, 1], [-1, -1]]
+  for (const [su, sv] of offsets) {
+    const corner = point.clone()
+    corner.setComponent(otherAxes[0], point.getComponent(otherAxes[0]) + su * footprintRadius)
+    corner.setComponent(otherAxes[1], point.getComponent(otherAxes[1]) + sv * footprintRadius)
+    minThickness = Math.min(minThickness, localWallThickness(raycaster, mesh, bbox, corner, axis, plane, nudge))
+  }
+  return minThickness
 }
 
 export async function addConnectorsManifold(chunks, config = {}) {
+  const cleanChunks = chunks.filter(c => !c.isKey)
   const type = resolveConnectorType(config.type)
-  if (type === 'none') return chunks
-  if (chunks.length < 2) return chunks
+  if (type === 'none') return cleanChunks
+  if (cleanChunks.length < 2) return cleanChunks
 
   const manifold = await getManifoldModule()
   const depth = Number(config.depth ?? 5)
@@ -661,16 +691,18 @@ export async function addConnectorsManifold(chunks, config = {}) {
     throw new Error('Connector clearance cannot be negative')
   }
 
-  const bboxes = chunks.map((chunk) => {
+  const bboxes = cleanChunks.map((chunk) => {
     chunk.geometry.computeBoundingBox()
     return chunk.geometry.boundingBox.clone()
   })
-  const solids = chunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
-  const connectorCounts = chunks.map((chunk) => Number(chunk.connectorCount || 0))
+  const solids = cleanChunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
+  const connectorCounts = cleanChunks.map((chunk) => Number(chunk.connectorCount || 0))
+  const keyChunks = []
+
   // Raycast meshes (double-sided so back walls register) for local-thickness
   // probing, so connectors are clamped to the part's real wall, not its bbox.
   const raycaster = new THREE.Raycaster()
-  const raycastMeshes = chunks.map((chunk) => {
+  const raycastMeshes = cleanChunks.map((chunk) => {
     const mesh = new THREE.Mesh(chunk.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
     mesh.updateMatrixWorld()
     return mesh
@@ -687,8 +719,8 @@ export async function addConnectorsManifold(chunks, config = {}) {
   const bboxTouchTolerance = Math.max(1e-4, (worldSpan.x + worldSpan.y + worldSpan.z) * 1e-6)
 
   try {
-    for (let i = 0; i < chunks.length; i++) {
-      for (let j = i + 1; j < chunks.length; j++) {
+    for (let i = 0; i < cleanChunks.length; i++) {
+      for (let j = i + 1; j < cleanChunks.length; j++) {
         const bbA = bboxes[i]
         const bbB = bboxes[j]
         if (!bbA.intersectsBox(bbB)) continue
@@ -744,8 +776,8 @@ export async function addConnectorsManifold(chunks, config = {}) {
         if (!connectorFit) continue
 
         const candidates = findSharedCutFaceCandidates(
-          chunks[i].geometry,
-          chunks[j].geometry,
+          cleanChunks[i].geometry,
+          cleanChunks[j].geometry,
           axis,
           center.getComponent(axis),
           interBox,
@@ -767,18 +799,24 @@ export async function addConnectorsManifold(chunks, config = {}) {
         const effectivePerFace = fittedConnectorCount(perFace, extentA - edgeMargin * 2, connectorCross, clearance)
         const positions = distributeConnectorCandidates(candidates, effectivePerFace, otherAxes)
 
-        // Clamp depth to the thinnest local wall across the chosen positions so
+        // Clamp depth to the thinnest local wall across the chosen positions (and
+        // each connector's actual footprint, not just its center point) so
         // neither the peg nor its socket punches through the opposite surface.
         const planeValue = center.getComponent(axis)
         let minWall = Infinity
         for (const pos of positions) {
           minWall = Math.min(
             minWall,
-            localWallThickness(raycaster, raycastMeshes[i], bbA, pos, axis, planeValue, faceTolerance),
-            localWallThickness(raycaster, raycastMeshes[j], bbB, pos, axis, planeValue, faceTolerance),
+            localWallThicknessAroundFootprint(raycaster, raycastMeshes[i], bbA, pos, axis, otherAxes, planeValue, faceTolerance, connectorFit.radius),
+            localWallThicknessAroundFootprint(raycaster, raycastMeshes[j], bbB, pos, axis, otherAxes, planeValue, faceTolerance, connectorFit.radius),
           )
         }
-        const safeDepth = clampConnectorDepth(connectorFit.depth, minWall)
+        // Beyond the existing ratio-based clamp, never leave less than the fixed
+        // safety margin of solid material past the connector's deepest point.
+        const safeDepth = Math.min(
+          clampConnectorDepth(connectorFit.depth, minWall),
+          Math.max(0, minWall - CONNECTOR_SAFETY_MARGIN_MM),
+        )
         if (safeDepth < MIN_CONNECTOR_DEPTH) continue
 
         const shape = createConnectorShape(manifold, type, {
@@ -791,21 +829,37 @@ export async function addConnectorsManifold(chunks, config = {}) {
           const peg = orientConnector(shape.makePeg(), axis).translate([pos.x, pos.y, pos.z])
           const socket = orientConnector(shape.makeSocket(), axis).translate([pos.x, pos.y, pos.z])
 
-          const male = solids[i].add(peg)
-          const female = solids[j].subtract(socket)
+          let partA, partB
+          if (type === 'key') {
+            partA = solids[i].subtract(socket)
+            partB = solids[j].subtract(socket)
+
+            const keyGeometry = manifoldMeshToGeometry(peg.getMesh())
+            keyChunks.push({
+              geometry: keyGeometry,
+              volume: Math.abs(peg.volume()),
+              centroid: pos.clone(),
+              isKey: true,
+              connectorCount: 0
+            })
+          } else {
+            partA = solids[i].add(peg)
+            partB = solids[j].subtract(socket)
+          }
+
           solids[i].delete?.()
           solids[j].delete?.()
           peg.delete?.()
           socket.delete?.()
-          solids[i] = male
-          solids[j] = female
+          solids[i] = partA
+          solids[j] = partB
           connectorCounts[i] += 1
           connectorCounts[j] += 1
         }
       }
     }
 
-    return chunks.map((chunk, index) => {
+    const baseChunks = cleanChunks.map((chunk, index) => {
       const status = solids[index].status()
       if (status !== 'NoError') throw new Error(`Connector operation failed manifold validation (${status})`)
       const geometry = manifoldMeshToGeometry(solids[index].getMesh())
@@ -818,6 +872,16 @@ export async function addConnectorsManifold(chunks, config = {}) {
         manifoldStatus: status,
       }
     })
+
+    if (type === 'key') {
+      const keysWithIndex = keyChunks.map((key, kIndex) => ({
+        ...key,
+        index: baseChunks.length + kIndex,
+        label: `Key`,
+      }))
+      return [...baseChunks, ...keysWithIndex]
+    }
+    return baseChunks
   } finally {
     solids.forEach((solid) => solid.delete?.())
     raycastMeshes.forEach((mesh) => mesh.material.dispose())
@@ -1226,6 +1290,71 @@ function geometryToStlBuffer(exporter, geometry) {
     : stlData.buffer.slice(stlData.byteOffset, stlData.byteOffset + stlData.byteLength)
 }
 
+function mergeGeometries(geometries) {
+  const positions = []
+  geometries.forEach((geometry) => {
+    const source = geometry.index ? geometry.toNonIndexed() : geometry
+    const position = source.attributes.position
+    if (position) {
+      for (let i = 0; i < position.count; i += 1) {
+        positions.push(position.getX(i), position.getY(i), position.getZ(i))
+      }
+    }
+  })
+  const merged = new THREE.BufferGeometry()
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  merged.computeVertexNormals()
+  return merged
+}
+
+function packKeysGeometry(keyGeometry, count, buildVolume, gap = 2) {
+  if (!keyGeometry.boundingBox) keyGeometry.computeBoundingBox()
+  const size = new THREE.Vector3()
+  keyGeometry.boundingBox.getSize(size)
+
+  // Sort dimensions to lay the key flat (w >= d >= t)
+  const dims = [size.x, size.y, size.z].sort((a, b) => b - a)
+  const w = dims[0]
+  const d = dims[1]
+  const t = dims[2]
+
+  const W = buildVolume ? buildVolume[0] : 220
+  const D = buildVolume ? buildVolume[1] : 220
+  const H = buildVolume ? buildVolume[2] : 250
+
+  const maxCols = Math.max(1, Math.floor((W + gap) / (w + gap)))
+  const maxRows = Math.max(1, Math.floor((D + gap) / (d + gap)))
+  const keysPerLayer = maxCols * maxRows
+
+  const geometries = []
+
+  for (let i = 0; i < count; i++) {
+    const layer = Math.floor(i / keysPerLayer)
+    const indexInLayer = i % keysPerLayer
+    const row = Math.floor(indexInLayer / maxCols)
+    const col = indexInLayer % maxCols
+
+    const remainingInLayer = Math.min(count - layer * keysPerLayer, keysPerLayer)
+    const colsInLayer = Math.min(remainingInLayer, maxCols)
+    const rowsInLayer = Math.ceil(remainingInLayer / maxCols)
+
+    const gridW = colsInLayer * (w + gap) - gap
+    const gridD = rowsInLayer * (d + gap) - gap
+
+    const x = -gridW / 2 + col * (w + gap) + w / 2
+    const y = -gridD / 2 + row * (d + gap) + d / 2
+    const z = layer * (t + gap) + t / 2
+
+    const boxGeom = new THREE.BoxGeometry(w, d, t)
+    boxGeom.translate(x, y, z)
+    geometries.push(boxGeom)
+  }
+
+  const merged = mergeGeometries(geometries)
+  geometries.forEach(g => g.dispose())
+  return merged
+}
+
 // Package layout:
 //   parts/      the split, print-ready STL parts
 //   original/   the whole un-split source mesh, for reference / re-splitting
@@ -1237,11 +1366,22 @@ async function createStlZip(chunks, options = {}) {
   const zip = new JSZip()
   const exportReceipt = createExportReceipt(options.exportAuthorization, options)
 
-  chunks.forEach(chunk => {
+  const nonKeyChunks = chunks.filter(c => !c.isKey)
+  const keyChunks = chunks.filter(c => c.isKey)
+
+  nonKeyChunks.forEach(chunk => {
     const stlBuffer = geometryToStlBuffer(exporter, chunk.geometry)
     stampStlHeader(stlBuffer, exportReceipt)
     zip.file(`parts/part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`, stlBuffer)
   })
+
+  if (keyChunks.length > 0) {
+    const packedGeom = packKeysGeometry(keyChunks[0].geometry, keyChunks.length, options.buildVolume, 2)
+    const stlBuffer = geometryToStlBuffer(exporter, packedGeom)
+    stampStlHeader(stlBuffer, exportReceipt)
+    zip.file(`parts/Key-${keyChunks.length}pcs.stl`, stlBuffer)
+    packedGeom.dispose()
+  }
 
   // Include the whole source mesh so the customer always has the original next
   // to its parts (the scaled mesh that was actually split, kept consistent with
@@ -1818,10 +1958,15 @@ function addPartsTable(pdf, chunks, startY = 168) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.line(PDF_PAGE.margin, startY + 3, PDF_PAGE.width - PDF_PAGE.margin, startY + 3)
 
+  const nonKeys = chunks.filter(c => !c.isKey)
+  const keys = chunks.filter(c => c.isKey)
+  const sortedNonKeys = [...nonKeys].sort((a, b) => (a.assemblyOrder ?? a.index) - (b.assemblyOrder ?? b.index))
+
   let y = startY + 11
   let remaining = 0
   setFont(pdf, 8, 'normal', BRAND.ink)
-  for (const chunk of orderedChunks(chunks)) {
+
+  for (const chunk of sortedNonKeys) {
     if (y > 273) {
       remaining += 1
       continue
@@ -1841,6 +1986,30 @@ function addPartsTable(pdf, chunks, startY = 168) {
     })
     y += 8
   }
+
+  if (keys.length > 0) {
+    if (y > 273) {
+      remaining += 1
+    } else {
+      const singleKey = keys[0]
+      const size = partDimensions(singleKey)
+      const singleVolumeCm3 = Math.abs(singleKey.volume || computeVolume(singleKey.geometry)) / 1000
+      const totalVolumeCm3 = singleVolumeCm3 * keys.length
+      x = PDF_PAGE.margin
+      const row = [
+        'Key',
+        `Key x${keys.length}`,
+        `${totalVolumeCm3.toFixed(2)} cm3`,
+        `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)}`,
+      ]
+      row.forEach((cell, i) => {
+        pdf.text(cell, x, y, { maxWidth: widths[i] - 4 })
+        x += widths[i]
+      })
+      y += 8
+    }
+  }
+
   if (remaining > 0) {
     setFont(pdf, 8, 'normal', BRAND.muted)
     pdf.text(`${remaining} additional parts continue on their individual part pages.`, PDF_PAGE.margin, 276)
@@ -1861,7 +2030,9 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
   const pdf = new jsPDF()
   const appUrl = options.appUrl || DEFAULT_APP_URL
   const sourceFilename = options.sourceFilename || 'Uploaded mesh'
-  const ordered = orderedChunks(chunks)
+  const nonKeyChunks = chunks.filter(c => !c.isKey)
+  const keyChunks = chunks.filter(c => c.isKey)
+  const ordered = orderedChunks(chunks).filter(c => !c.isKey)
   const qrImage = await createQrCode(appUrl)
   const pdfContext = { exportAuthorization: options.exportAuthorization }
   let pageNumber = 1
@@ -1891,7 +2062,7 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
     addCoverHero(pdf, qrImage, appUrl)
     addMetric(pdf, 'Source file', sourceFilename, PDF_PAGE.margin, 74, 42)
     addMetric(pdf, 'Build volume', `${buildVolume.join(' x ')} mm`, 70, 74, 43)
-    addMetric(pdf, 'Part count', chunks.length, 117, 74, 32)
+    addMetric(pdf, 'Part count', nonKeyChunks.length, 117, 74, 32)
     addMetric(pdf, 'Units', 'mm', 153, 74, 33)
     addImageFrame(
       pdf,
@@ -1965,6 +2136,40 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
         '1. Keep the part label visible until final assembly.',
         '2. Confirm connector fit before applying adhesive or permanent fasteners.',
         '3. If orientation matters for surface finish, choose the slicer orientation that protects visible faces.',
+      ], PDF_PAGE.margin, 193, { maxWidth: 178 })
+    }
+
+    if (keyChunks.length > 0) {
+      pageNumber += 1
+      const singleKey = keyChunks[0]
+      const size = partDimensions(singleKey)
+      const singleVolumeCm3 = Math.abs(singleKey.volume || computeVolume(singleKey.geometry)) / 1000
+      const totalVolumeCm3 = singleVolumeCm3 * keyChunks.length
+      const isolated = renderPartIsolated(singleKey)
+
+      await addPage(
+        pdf,
+        'Key Section',
+        'Alignment keys are printed separately to align and join the split parts.',
+        appUrl,
+        qrImage,
+        pageNumber,
+        pdfContext,
+      )
+
+      addImageFrame(pdf, isolated, PDF_PAGE.margin, 58, 77, 74, 'Isolated alignment key geometry')
+      addMetric(pdf, 'Key Type', 'Key Joint', PDF_PAGE.margin, 145, 42)
+      addMetric(pdf, 'Dimensions', `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm`, 70, 145, 70)
+      addMetric(pdf, 'Total Qty', `${keyChunks.length} pcs`, 146, 145, 40)
+
+      setFont(pdf, 11, 'bold', BRAND.black)
+      pdf.text('Key Printing & Assembly Guide', PDF_PAGE.margin, 182)
+      setFont(pdf, 9, 'normal', BRAND.ink)
+      pdf.text([
+        `1. A total of ${keyChunks.length} keys are required for this assembly.`,
+        `2. All keys are packed flat in the file "Key-${keyChunks.length}pcs.stl" with a 2mm gap.`,
+        '3. Print the keys using matching material and verify fit before applying adhesive.',
+        '4. Gently clean the internal sockets of the split parts to remove any printing artifacts.',
       ], PDF_PAGE.margin, 193, { maxWidth: 178 })
     }
 

@@ -368,4 +368,29 @@ describe('export validation', () => {
       requireExportAuthorization: true,
     })).rejects.toThrow('Export authorization is required')
   })
+
+  it('groups and packs key connectors in exportPackage', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const cleanChunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+    
+    const chunks = await addConnectorsManifold(cleanChunks, { type: 'Key', keyWidth: 6, keyHeight: 3.5, depth: 8, clearance: 0.2, perFace: 1 })
+    expect(chunks.some(c => c.isKey)).toBe(true)
+    const keyChunks = chunks.filter(c => c.isKey)
+    expect(keyChunks.length).toBeGreaterThan(0)
+
+    const packageBlob = await exportPackage(chunks, [100, 100, 100], {
+      requireExportAuthorization: false,
+      sourceFilename: 'cube.stl',
+      sourceGeometry: new THREE.BoxGeometry(100, 100, 100),
+    })
+
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(packageBlob)
+    const files = Object.keys(zip.files)
+
+    expect(files).toContain(`parts/Key-${keyChunks.length}pcs.stl`)
+    keyChunks.forEach(chunk => {
+      expect(files).not.toContain(`parts/part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`)
+    })
+  })
 })

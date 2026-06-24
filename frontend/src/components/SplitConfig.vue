@@ -69,13 +69,15 @@ const props = defineProps({
 
 const emit = defineEmits(['split'])
 
+// Key is the default: its loose flat key prints with a flat surface against the
+// bed (no overhangs / support material) while still aligning the parts.
 const connectorConfig = ref({
-  type: 'Mortise & Tenon',
+  type: 'Key',
   depth: 5,
   clearance: 0.3,
   perFace: 1,
-  tenonWidth: 6,
-  tenonThickness: 4,
+  keyWidth: 6,
+  keyHeight: 3.5,
 })
 const showConnectorWarning = ref(false)
 const totalParts = computed(() => props.divisions.reduce((a, b) => a * b, 1))

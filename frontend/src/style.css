@@ -28,6 +28,9 @@
 
 @layer base {
   :root {
+    /* Paint native scrollbars and form controls light; :root.dark flips this so
+       they follow the theme instead of staying white in dark mode. */
+    color-scheme: light;
     /* ---- shadcn bridge: oklch channel triples ("L C H"), consumed as
        oklch(var(--x) / <alpha-value>) so Tailwind opacity modifiers
        (bg-primary/20 etc.) keep working. ---- */
@@ -101,6 +104,7 @@
      and flipping the semantic bridge vars re-themes every component at once.
      The PDF/snapshot renderers stay light (print) and are unaffected. ---- */
   :root.dark {
+    color-scheme: dark;
     --background: 0.175 0.012 256;
     --foreground: 0.950 0.005 256;
     --card: 0.220 0.013 256;
@@ -442,16 +446,24 @@
     gap: 10px;
   }
 
-  .mesh-loaded__icon {
+  .mesh-loaded__thumb {
     align-items: center;
     background: var(--steel-100);
+    border: 1px solid var(--steel-200);
     border-radius: var(--radius-sm);
     color: var(--signal-600);
     display: flex;
     flex: none;
-    height: 36px;
+    height: 48px;
     justify-content: center;
-    width: 36px;
+    overflow: hidden;
+    width: 48px;
+  }
+
+  .mesh-loaded__thumb img {
+    height: 100%;
+    object-fit: contain;
+    width: 100%;
   }
 
   .mesh-loaded__info {
@@ -474,26 +486,6 @@
     font-family: var(--font-mono);
     font-size: 10px;
     margin-top: 2px;
-  }
-
-  .mesh-loaded__status {
-    align-items: center;
-    border-radius: var(--radius-sm);
-    display: flex;
-    font-size: 11px;
-    font-weight: 600;
-    gap: 6px;
-    padding: 6px 9px;
-  }
-
-  .mesh-loaded__status.is-ok {
-    background: oklch(var(--positive-surface));
-    color: oklch(var(--positive));
-  }
-
-  .mesh-loaded__status.is-warn {
-    background: oklch(var(--destructive-surface));
-    color: oklch(var(--destructive));
   }
 
   .spec-row {

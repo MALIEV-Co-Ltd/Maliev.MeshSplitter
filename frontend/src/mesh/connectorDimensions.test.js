@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { connectorDimensions, fittedConnectorCount, clampConnectorDepth } from './meshProcessor'
+import * as THREE from 'three'
+import { connectorDimensions, fittedConnectorCount, clampConnectorDepth, localWallThicknessAroundFootprint } from './meshProcessor'
+
+function mergeGeometries(geometries) {
+  const positions = []
+  geometries.forEach((geometry) => {
+    const source = geometry.index ? geometry.toNonIndexed() : geometry
+    const position = source.attributes.position
+    for (let i = 0; i < position.count; i += 1) {
+      positions.push(position.getX(i), position.getY(i), position.getZ(i))
+    }
+  })
+  const merged = new THREE.BufferGeometry()
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  return merged
+}
 
 // The female socket must always be larger than the male peg, or printed parts
 // can't be assembled (the male won't enter the hole).
@@ -61,5 +76,42 @@ describe('clampConnectorDepth', () => {
 
   it('falls back to the requested depth when thickness is unknown', () => {
     expect(clampConnectorDepth(5, Infinity)).toBe(5)
+  })
+})
+
+// The poke-through bug: connectors appeared on the part's OUTER surface because
+// the wall-thickness probe returned Infinity on a raycast miss (treating an
+// unmeasurable wall as having unlimited room). It must instead fail safe to 0
+// so the connector is skipped, and it must sample the connector's whole
+// footprint, not just the single center point.
+describe('localWallThicknessAroundFootprint', () => {
+  function makeBoxMesh(size) {
+    const geometry = new THREE.BoxGeometry(size, size, size)
+    geometry.computeBoundingBox()
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+    mesh.updateMatrixWorld()
+    return { geometry, mesh }
+  }
+
+  it('measures the full local wall when the footprint stays on the face', () => {
+    const { geometry, mesh } = makeBoxMesh(10)
+    const raycaster = new THREE.Raycaster()
+    const point = new THREE.Vector3(-5, 0, 0) // center of the -X face
+    const thickness = localWallThicknessAroundFootprint(
+      raycaster, mesh, geometry.boundingBox, point, 0, [1, 2], -5, 0.01, 1,
+    )
+    expect(thickness).toBeCloseTo(10, 1)
+  })
+
+  it('fails safe to zero when part of the footprint hangs off the body', () => {
+    const { geometry, mesh } = makeBoxMesh(10)
+    const raycaster = new THREE.Raycaster()
+    const point = new THREE.Vector3(-5, 0, 0)
+    // footprintRadius 6 pushes the corner samples to ±6mm, past the 10mm box,
+    // so those rays miss and the helper must report 0, not Infinity.
+    const thickness = localWallThicknessAroundFootprint(
+      raycaster, mesh, geometry.boundingBox, point, 0, [1, 2], -5, 0.01, 6,
+    )
+    expect(thickness).toBe(0)
   })
 })
