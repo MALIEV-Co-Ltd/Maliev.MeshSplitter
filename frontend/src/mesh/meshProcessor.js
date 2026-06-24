@@ -1037,21 +1037,73 @@ function distanceOnAxesSq(a, b, axes) {
   return da * da + db * db
 }
 
+// Picking evenly-spaced INDICES of a sorted-by-U list only spreads connectors
+// out in space when the candidates happen to form a clean line or rectangle.
+// A real cut face through an irregular surface (fur, organic shapes) leaves a
+// lopsided, sparse set of valid candidates, so index-based spacing can select
+// points that are all bunched in the same corner. Farthest-point sampling
+// (greedily adding whichever remaining candidate maximizes its minimum
+// distance to what's already chosen) keeps connectors apart in actual space,
+// which is what gives multiple connectors on one face their alignment value.
 function distributeConnectorCandidates(candidates, count, otherAxes) {
+  if (count <= 0) return []
   if (candidates.length <= count) return candidates
 
-  const selected = []
-  const sorted = [...candidates].sort((a, b) => {
+  const distSq = (a, b) => {
+    const du = a.getComponent(otherAxes[0]) - b.getComponent(otherAxes[0])
+    const dv = a.getComponent(otherAxes[1]) - b.getComponent(otherAxes[1])
+    return du * du + dv * dv
+  }
+
+  if (count === 1) {
+    const centerU = candidates.reduce((sum, p) => sum + p.getComponent(otherAxes[0]), 0) / candidates.length
+    const centerV = candidates.reduce((sum, p) => sum + p.getComponent(otherAxes[1]), 0) / candidates.length
+    const center = new THREE.Vector3()
+    center.setComponent(otherAxes[0], centerU)
+    center.setComponent(otherAxes[1], centerV)
+    return [candidates.reduce((best, p) => (distSq(p, center) < distSq(best, center) ? p : best))]
+  }
+
+  // Seed with the two candidates farthest apart from each other.
+  let seedA = 0
+  let seedB = 1
+  let bestSeedDistSq = -1
+  for (let i = 0; i < candidates.length; i += 1) {
+    for (let j = i + 1; j < candidates.length; j += 1) {
+      const d = distSq(candidates[i], candidates[j])
+      if (d > bestSeedDistSq) {
+        bestSeedDistSq = d
+        seedA = i
+        seedB = j
+      }
+    }
+  }
+
+  const selected = [candidates[seedA], candidates[seedB]]
+  const remaining = candidates.filter((_, idx) => idx !== seedA && idx !== seedB)
+
+  while (selected.length < count && remaining.length > 0) {
+    let bestIndex = 0
+    let bestMinDistSq = -1
+    for (let i = 0; i < remaining.length; i += 1) {
+      let minDistSq = Infinity
+      for (const s of selected) {
+        minDistSq = Math.min(minDistSq, distSq(remaining[i], s))
+      }
+      if (minDistSq > bestMinDistSq) {
+        bestMinDistSq = minDistSq
+        bestIndex = i
+      }
+    }
+    selected.push(remaining[bestIndex])
+    remaining.splice(bestIndex, 1)
+  }
+
+  return selected.sort((a, b) => {
     const primary = a.getComponent(otherAxes[0]) - b.getComponent(otherAxes[0])
     if (Math.abs(primary) > 1e-6) return primary
     return a.getComponent(otherAxes[1]) - b.getComponent(otherAxes[1])
   })
-
-  for (let i = 0; i < count; i += 1) {
-    const index = Math.round(((i + 1) / (count + 1)) * (sorted.length - 1))
-    selected.push(sorted[index])
-  }
-  return selected
 }
 
 function orientConnector(connector, axis) {
