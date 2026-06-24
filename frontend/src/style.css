@@ -1624,6 +1624,26 @@
     margin-top: 0.75rem;
   }
 
+  /* Promo video: square clip centered under the hero, capped so it stays a
+     tasteful feature rather than a full-bleed wall on wide screens. */
+  .promo-video-frame {
+    margin: 2rem auto 0;
+    max-width: 520px;
+    width: 100%;
+  }
+
+  .promo-video {
+    aspect-ratio: 1 / 1;
+    background: oklch(var(--card));
+    border: 1px solid var(--steel-200);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    display: block;
+    height: auto;
+    object-fit: cover;
+    width: 100%;
+  }
+
   .workflow-grid {
     display: grid;
     gap: 14px;
