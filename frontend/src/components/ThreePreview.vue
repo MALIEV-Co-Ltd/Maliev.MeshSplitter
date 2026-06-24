@@ -25,10 +25,6 @@ const props = defineProps({
 
 const container = ref(null)
 const selectedOpacity = 0.22
-// Above this part count, per-part labels overlap into an unreadable wall that
-// hides the model (worst on phones), so we show only the selected part's label
-// and let the part list carry the full set. Small assemblies still show all.
-const LABEL_DECLUTTER_THRESHOLD = 12
 
 let renderer, scene, camera, controls, meshGroup, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
@@ -38,6 +34,12 @@ function sceneBackground() {
 }
 function gridColors() {
   return props.isDark ? { main: 0x3a4760, sub: 0x262e3d } : { main: 0x8fb4e8, sub: 0xe5e9ee }
+}
+// The dark-slate line that reads fine on a white canvas all but disappears
+// against the dark-mode background, so the cut-plane preview needs its own
+// lighter color when the canvas is dark.
+function splitPlaneColor() {
+  return props.isDark ? { color: 0x9fb3d1, opacity: 0.6 } : { color: 0x2f3338, opacity: 0.55 }
 }
 
 function initScene() {
@@ -196,17 +198,14 @@ function applyChunkVisibility(selectedChunkIndex) {
   requestRender()
 }
 
-// Keep the 3D part labels readable: on large assemblies only the selected
-// part's label shows (none until the customer picks a part), so the labels
-// never bury the model. Small assemblies keep every label.
+// Per-part labels bury the model once there's more than a couple of parts,
+// and the part list panel already names every part, so the 3D label only
+// needs to appear for whichever part the customer has isolated.
 function applyLabelVisibility(selectedChunkIndex) {
   if (!meshGroup) return
-  const labelSprites = meshGroup.children.filter((c) => c.userData?.isLabel)
-  const declutter = labelSprites.length > LABEL_DECLUTTER_THRESHOLD
-  labelSprites.forEach((sprite) => {
-    sprite.visible = declutter
-      ? selectedChunkIndex !== null && sprite.userData.chunkIndex === selectedChunkIndex
-      : true
+  meshGroup.children.forEach((sprite) => {
+    if (!sprite.userData?.isLabel) return
+    sprite.visible = selectedChunkIndex !== null && sprite.userData.chunkIndex === selectedChunkIndex
   })
   requestRender()
 }
@@ -358,7 +357,8 @@ function drawGridOverlay(geometry, divisions) {
   const size = new THREE.Vector3().copy(bb.max).sub(bb.min)
 
   gridOverlay = new THREE.Group()
-  const mat = new THREE.LineBasicMaterial({ color: 0x2f3338, transparent: true, opacity: 0.55 })
+  const { color, opacity } = splitPlaneColor()
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity })
 
   function drawPlane(axis, pos) {
     const w = axis === 0 ? 0.01 : size.x
@@ -496,6 +496,9 @@ watch(() => props.previewInfo?.optimized, () => {
 watch(() => props.isDark, () => {
   if (scene) scene.background = new THREE.Color(sceneBackground())
   if (grid) setGrid(lastGridExtent)
+  if (gridOverlay && props.meshGeometry && (!props.chunks || props.chunks.length === 0)) {
+    drawGridOverlay(props.meshGeometry, props.divisions)
+  }
   requestRender()
 })
 </script>

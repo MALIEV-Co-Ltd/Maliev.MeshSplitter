@@ -60,10 +60,15 @@ const localVolume = computed({
 // Build volumes verified against each manufacturer's published spec (single
 // extruder / default mode where a printer reports several). Keep these grounded
 // in real datasheets — a wrong Z silently lets a part exceed the printer.
+//
+// Bambu X1C/X1/A1/P1S/P1P hardware is 256x256x256mm, but Bambu Studio defaults
+// the printable Z to 250mm to protect the filament-cutter mechanism — reaching
+// 256mm requires manually clearing the "excluded bed area" safety setting. We
+// target the out-of-the-box default so split parts fit without that override.
 const presets = [
-  { id: 'bambu-x1c', label: 'Bambu Lab X1C / X1 / A1 | 256 x 256 x 256 mm', value: [256, 256, 256] },
-  { id: 'bambu-p1s', label: 'Bambu Lab P1S | 256 x 256 x 256 mm', value: [256, 256, 256] },
-  { id: 'bambu-p1p', label: 'Bambu Lab P1P | 256 x 256 x 256 mm', value: [256, 256, 256] },
+  { id: 'bambu-x1c', label: 'Bambu Lab X1C / X1 / A1 | 256 x 256 x 250 mm', value: [256, 256, 250] },
+  { id: 'bambu-p1s', label: 'Bambu Lab P1S | 256 x 256 x 250 mm', value: [256, 256, 250] },
+  { id: 'bambu-p1p', label: 'Bambu Lab P1P | 256 x 256 x 250 mm', value: [256, 256, 250] },
   { id: 'bambu-a1-mini', label: 'Bambu Lab A1 mini | 180 x 180 x 180 mm', value: [180, 180, 180] },
   { id: 'prusa-mk4', label: 'Prusa MK4 / MK4S | 250 x 210 x 220 mm', value: [250, 210, 220] },
   { id: 'mk3', label: 'Prusa MK3S+ | 250 x 210 x 210 mm', value: [250, 210, 210] },
