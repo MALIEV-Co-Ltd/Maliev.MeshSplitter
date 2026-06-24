@@ -853,19 +853,34 @@ export async function addConnectorsManifold(chunks, config = {}) {
         }
 
         const faceTolerance = Math.max(bboxTouchTolerance * 20, 1e-3)
-        const connectorFit = fitConnectorToSharedFace(type, {
-          size,
-          size2,
-          thickness,
-          depth,
-          clearance,
-          extentA,
-          extentB,
-          axisDepthA: Math.max(faceTolerance, bbA.max.getComponent(axis) - bbA.min.getComponent(axis)),
-          axisDepthB: Math.max(faceTolerance, bbB.max.getComponent(axis) - bbB.min.getComponent(axis)),
-          faceTolerance,
-        })
-        if (!connectorFit) continue
+        const planeValue = center.getComponent(axis)
+
+        // Plan the connector geometry for this shared face. Keys use the
+        // customer's FIXED dimensions (interchangeable across the whole model);
+        // mortise/dowel adapt their cross-section to the face.
+        let radius // footprint half-extent, drives edge margin + wall sampling
+        let keyPeg = null // { pegX, pegY } when type === 'key'
+        let fit = null // adaptive fit when mortise/dowel
+        if (type === 'key') {
+          keyPeg = planKeyFootprint(axis, extentA, extentB, size2, thickness, clearance, faceTolerance)
+          if (!keyPeg) continue
+          radius = Math.max(size2, thickness) / 2
+        } else {
+          fit = fitConnectorToSharedFace(type, {
+            size,
+            size2,
+            thickness,
+            depth,
+            clearance,
+            extentA,
+            extentB,
+            axisDepthA: Math.max(faceTolerance, bbA.max.getComponent(axis) - bbA.min.getComponent(axis)),
+            axisDepthB: Math.max(faceTolerance, bbB.max.getComponent(axis) - bbB.min.getComponent(axis)),
+            faceTolerance,
+          })
+          if (!fit) continue
+          radius = fit.radius
+        }
 
         const candidates = findSharedCutFaceCandidates(
           cleanChunks[i].geometry,
@@ -874,50 +889,68 @@ export async function addConnectorsManifold(chunks, config = {}) {
           center.getComponent(axis),
           interBox,
           otherAxes,
-          Math.max(connectorFit.radius * 1.75, faceTolerance * 4),
+          Math.max(radius * 1.75, faceTolerance * 4),
           faceTolerance,
-          connectorFit.radius + clearance + faceTolerance,
+          radius + clearance + faceTolerance,
         )
 
         if (candidates.length === 0) {
           continue
         }
 
-        // Reduce the per-face count to what physically fits this mating face.
-        const connectorCross = type === 'dowel'
-          ? connectorFit.radius * 2
-          : Math.max(connectorFit.size2, connectorFit.thickness)
-        const edgeMargin = connectorFit.radius + clearance + faceTolerance
-        const effectivePerFace = fittedConnectorCount(perFace, extentA - edgeMargin * 2, connectorCross, clearance)
-        const positions = distributeConnectorCandidates(candidates, effectivePerFace, otherAxes)
-
-        // Clamp depth to the thinnest local wall across the chosen positions (and
-        // each connector's actual footprint, not just its center point) so
-        // neither the peg nor its socket punches through the opposite surface.
-        const planeValue = center.getComponent(axis)
-        let minWall = Infinity
-        for (const pos of positions) {
-          minWall = Math.min(
-            minWall,
-            localWallThicknessAroundFootprint(raycaster, raycastMeshes[i], bbA, pos, axis, otherAxes, planeValue, faceTolerance, connectorFit.radius),
-            localWallThicknessAroundFootprint(raycaster, raycastMeshes[j], bbB, pos, axis, otherAxes, planeValue, faceTolerance, connectorFit.radius),
+        // Per-position viability is decided BEFORE spacing selection, so a face
+        // that fits N connectors never drops to 0 just because the farthest-apart
+        // points happen to land on thin walls — we select among the survivors.
+        // Keys must keep their full fixed depth (resizing them would break
+        // interchangeability), so a key position is viable only if the wall holds
+        // the full key plus the 2mm skin; mortise/dowel clamp depth per position.
+        const viablePositions = []
+        const depthByPosition = new Map()
+        for (const pos of candidates) {
+          const wall = Math.min(
+            localWallThicknessAroundFootprint(raycaster, raycastMeshes[i], bbA, pos, axis, otherAxes, planeValue, faceTolerance, radius),
+            localWallThicknessAroundFootprint(raycaster, raycastMeshes[j], bbB, pos, axis, otherAxes, planeValue, faceTolerance, radius),
           )
+          if (type === 'key') {
+            if (wall >= depth + CONNECTOR_SAFETY_MARGIN_MM) {
+              viablePositions.push(pos)
+              depthByPosition.set(pos, depth)
+            }
+          } else {
+            const safeDepth = Math.min(
+              clampConnectorDepth(fit.depth, wall),
+              Math.max(0, wall - CONNECTOR_SAFETY_MARGIN_MM),
+            )
+            if (safeDepth >= MIN_CONNECTOR_DEPTH) {
+              viablePositions.push(pos)
+              depthByPosition.set(pos, safeDepth)
+            }
+          }
         }
-        // Beyond the existing ratio-based clamp, never leave less than the fixed
-        // safety margin of solid material past the connector's deepest point.
-        const safeDepth = Math.min(
-          clampConnectorDepth(connectorFit.depth, minWall),
-          Math.max(0, minWall - CONNECTOR_SAFETY_MARGIN_MM),
-        )
-        if (safeDepth < MIN_CONNECTOR_DEPTH) continue
+        if (viablePositions.length === 0) continue
 
-        const shape = createConnectorShape(manifold, type, {
-          size: type === 'dowel' ? connectorFit.size : connectorFit.size2,
-          thickness: connectorFit.thickness,
-          depth: safeDepth,
-          clearance,
-        })
+        // Reduce the per-face count to what physically fits, then space the
+        // selected connectors apart across the viable positions.
+        const connectorCross = type === 'dowel' ? radius * 2 : Math.max(size2, thickness)
+        const edgeMargin = radius + clearance + faceTolerance
+        const effectivePerFace = fittedConnectorCount(perFace, extentA - edgeMargin * 2, connectorCross, clearance)
+        const positions = distributeConnectorCandidates(viablePositions, effectivePerFace, otherAxes)
+
+        // Keys share ONE fixed shape across every placement, so every printed key
+        // is identical and matches every cut slot. Mortise/dowel build a shape per
+        // position because their depth is clamped to that position's wall.
+        const keyShape = type === 'key'
+          ? createConnectorShape(manifold, 'key', { size: keyPeg.pegX, thickness: keyPeg.pegY, depth, clearance })
+          : null
+
         for (const pos of positions) {
+          const placeDepth = depthByPosition.get(pos) ?? depth
+          const shape = keyShape || createConnectorShape(manifold, type, {
+            size: type === 'dowel' ? fit.size : fit.size2,
+            thickness: fit.thickness,
+            depth: placeDepth,
+            clearance,
+          })
           const peg = orientConnector(shape.makePeg(), axis).translate([pos.x, pos.y, pos.z])
           const socket = orientConnector(shape.makeSocket(), axis).translate([pos.x, pos.y, pos.z])
 
@@ -1266,6 +1299,29 @@ function orientConnector(connector, axis) {
   if (axis === 0) return connector.rotate([0, 90, 0])
   if (axis === 1) return connector.rotate([90, 0, 0])
   return connector
+}
+
+// After orientConnector aligns the peg's local z with the split axis, its local
+// x/y land on the two in-plane (face) axes. This returns how a peg of footprint
+// (pegX, pegY) spans [otherAxes0, otherAxes1] for a given split axis.
+function footprintSpan(axis, pegX, pegY) {
+  if (axis === 2) return [pegX, pegY]
+  return [pegY, pegX]
+}
+
+// Keys use the customer's EXACT configured dimensions everywhere (so every
+// exported key is interchangeable and matches every cut slot) — they are never
+// resized per joint. This only decides whether the fixed key fits a given face,
+// trying both in-plane orientations (a physical key can be inserted rotated, so
+// orientation never changes the printed key, only whether it seats). Returns the
+// chosen peg footprint, or null if the key cannot fit the face in any rotation.
+function planKeyFootprint(axis, extentA, extentB, keyWidth, keyHeight, clearance, faceTolerance) {
+  const pad = 2 * (clearance + faceTolerance)
+  for (const [px, py] of [[keyWidth, keyHeight], [keyHeight, keyWidth]]) {
+    const [spanU, spanV] = footprintSpan(axis, px, py)
+    if (spanU + pad <= extentA && spanV + pad <= extentB) return { pegX: px, pegY: py }
+  }
+  return null
 }
 
 export function validateExportChunks(chunks) {
