@@ -7,6 +7,13 @@ export default {
         sans: ['var(--font-sans)'],
         mono: ['var(--font-mono)'],
       },
+      // Tailwind's own preset hardcodes borderColor.DEFAULT to gray-200, so the
+      // bare `border` utility ignores the `colors.border` token below unless
+      // borderColor.DEFAULT is overridden here too — without this, every plain
+      // `border` class stays a fixed light gray and never reacts to dark mode.
+      borderColor: {
+        DEFAULT: 'oklch(var(--border) / <alpha-value>)',
+      },
       colors: {
         border: 'oklch(var(--border) / <alpha-value>)',
         input: 'oklch(var(--input) / <alpha-value>)',
