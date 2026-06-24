@@ -10,7 +10,7 @@ import {
   splitMeshManifold,
   validateManifold,
 } from '../mesh/meshProcessor'
-import { createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
+import { allocatePreviewBudget, createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
 import { renderPartThumbnail, disposeThumbnailRenderer } from '../mesh/thumbnailRenderer'
 
 const COLORS = [
@@ -311,9 +311,18 @@ export function useMeshProcessor(options = {}) {
       return
     }
 
-    const perChunkTarget = Math.max(12, Math.floor(previewTargetFaces / sourceChunks.length))
+    // Share one budget across the whole assembly, weighted by each part's face
+    // count, instead of an equal split. Equal division starved large parts and
+    // tore them into holey shells in the preview even when the full assembly fit
+    // the budget (the reported "broken mesh"); proportional allocation keeps
+    // every part watertight whenever the assembly fits, and reduces fairly when
+    // it does not.
+    const previewTargets = allocatePreviewBudget(
+      sourceChunks.map((chunk) => getGeometryFaceCount(chunk.geometry)),
+      previewTargetFaces,
+    )
     const previews = sourceChunks.map((chunk, i) => {
-      const preview = createPreviewGeometry(chunk.geometry, { targetFaces: perChunkTarget })
+      const preview = createPreviewGeometry(chunk.geometry, { targetFaces: previewTargets[i] })
       return {
         preview,
         chunk: {
