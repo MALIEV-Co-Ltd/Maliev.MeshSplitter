@@ -1211,9 +1211,11 @@
   }
 
   .credit-chip--action {
-    background: none;
+    /* Strip native button chrome but keep every .status-chip property — the
+       earlier `font: inherit` reset the chip to the body font/size, which is
+       the "incorrect typography and font size" reported on the credit chip. */
+    appearance: none;
     cursor: pointer;
-    font: inherit;
   }
 
   .credit-chip--action:hover {

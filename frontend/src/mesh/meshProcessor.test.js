@@ -322,6 +322,71 @@ describe('addConnectorsManifold', () => {
   })
 })
 
+describe('key connector export integrity', () => {
+  const keyConfig = { type: 'Key', keyWidth: 6, keyHeight: 3.5, depth: 5, clearance: 0.3, perFace: 1 }
+
+  async function splitCube(divisions) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    return splitMeshManifold(mesh, [120, 120, 120], divisions)
+  }
+
+  function sortedDims(geometry) {
+    geometry.computeBoundingBox()
+    const s = new THREE.Vector3()
+    geometry.boundingBox.getSize(s)
+    return [s.x, s.y, s.z].sort((a, b) => a - b)
+  }
+
+  // The core bug: keys were placed at adaptive (per-joint) sizes but exported as
+  // identical copies of the first key, so they didn't fit. Now every key is the
+  // SAME fixed size (the customer's configured peg), so the single exported key
+  // matches every cut slot.
+  it('places identical, correctly-sized keys (configured peg, not adaptive)', async () => {
+    const result = await addConnectorsManifold(await splitCube([2, 2, 1]), keyConfig)
+    const keys = result.filter((c) => c.isKey)
+    expect(keys.length).toBeGreaterThan(0)
+
+    const first = sortedDims(keys[0].geometry)
+    keys.forEach((k) => sortedDims(k.geometry).forEach((d, i) => expect(d).toBeCloseTo(first[i], 2)))
+
+    // Configured peg is 6 (width) x 3.5 (thickness) x 10 (depth*2).
+    const expected = [3.5, 6, 10]
+    first.forEach((d, i) => expect(d).toBeCloseTo(expected[i], 1))
+  })
+
+  it('packs exactly N identical keys into the exported STL', async () => {
+    const result = await addConnectorsManifold(await splitCube([2, 2, 1]), keyConfig)
+    const keyCount = result.filter((c) => c.isKey).length
+    expect(keyCount).toBeGreaterThan(0)
+
+    const blob = await exportPackage(result, [120, 120, 120], {
+      requireExportAuthorization: false,
+      sourceFilename: 'cube.stl',
+      sourceGeometry: new THREE.BoxGeometry(100, 100, 100),
+    })
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(blob)
+    const keyFile = zip.file(`parts/Key-${keyCount}pcs.stl`)
+    expect(keyFile).toBeTruthy()
+
+    const buf = await keyFile.async('arraybuffer')
+    const triCount = new DataView(buf).getUint32(80, true)
+    // Each key is a 12-triangle box; the export must contain exactly N of them.
+    expect(triCount).toBe(keyCount * 12)
+  })
+
+  // Regression: increasing connectors-per-face used to REDUCE the total because
+  // the whole pair was skipped when the spread-out points hit thin walls.
+  it('never produces fewer connectors when connectors-per-face increases', async () => {
+    const one = await addConnectorsManifold(await splitCube([2, 2, 1]), { ...keyConfig, perFace: 1 })
+    const two = await addConnectorsManifold(await splitCube([2, 2, 1]), { ...keyConfig, perFace: 2 })
+    const count1 = one.filter((c) => c.isKey).length
+    const count2 = two.filter((c) => c.isKey).length
+    expect(count1).toBeGreaterThan(0)
+    expect(count2).toBeGreaterThanOrEqual(count1)
+  })
+})
+
 function mergeTestGeometries(geometries) {
   const positions = []
   const indices = []
