@@ -27,6 +27,7 @@ const container = ref(null)
 const selectedOpacity = 0.22
 
 let renderer, scene, camera, controls, meshGroup, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
+let ambientLight, keyLight, fillLight
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
 
 function sceneBackground() {
@@ -41,17 +42,28 @@ function gridColors() {
 function splitPlaneColor() {
   return props.isDark ? { color: 0x9fb3d1, opacity: 0.6 } : { color: 0x2f3338, opacity: 0.55 }
 }
+// A white background already bounces plenty of fill light onto the model, so
+// the light-mode rig leans on a stronger key light for shape contrast. A dark
+// background gives none of that bounce, so dark mode compensates with more
+// ambient/fill or the model reads as a flat silhouette.
+function lightingPreset() {
+  return props.isDark
+    ? { ambient: 0.5, key: 1.1, fill: 0.32 }
+    : { ambient: 0.34, key: 1.05, fill: 0.18 }
+}
 
 function initScene() {
   scene = new THREE.Scene()
   scene.background = new THREE.Color(sceneBackground())
-  scene.add(new THREE.AmbientLight(0xffffff, 0.34))
-  const key = new THREE.DirectionalLight(0xffffff, 1.05)
-  key.position.set(1.1, 1.8, 1.35)
-  scene.add(key)
-  const fill = new THREE.DirectionalLight(0xffffff, 0.18)
-  fill.position.set(-1.2, -0.45, 0.8)
-  scene.add(fill)
+  const { ambient, key, fill } = lightingPreset()
+  ambientLight = new THREE.AmbientLight(0xffffff, ambient)
+  scene.add(ambientLight)
+  keyLight = new THREE.DirectionalLight(0xffffff, key)
+  keyLight.position.set(1.1, 1.8, 1.35)
+  scene.add(keyLight)
+  fillLight = new THREE.DirectionalLight(0xffffff, fill)
+  fillLight.position.set(-1.2, -0.45, 0.8)
+  scene.add(fillLight)
 }
 
 // The floor grid is rebuilt to always extend well past whatever is on screen —
@@ -495,6 +507,12 @@ watch(() => props.previewInfo?.optimized, () => {
 
 watch(() => props.isDark, () => {
   if (scene) scene.background = new THREE.Color(sceneBackground())
+  if (ambientLight) {
+    const { ambient, key, fill } = lightingPreset()
+    ambientLight.intensity = ambient
+    keyLight.intensity = key
+    fillLight.intensity = fill
+  }
   if (grid) setGrid(lastGridExtent)
   if (gridOverlay && props.meshGeometry && (!props.chunks || props.chunks.length === 0)) {
     drawGridOverlay(props.meshGeometry, props.divisions)
