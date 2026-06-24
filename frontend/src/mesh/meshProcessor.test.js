@@ -288,6 +288,38 @@ describe('addConnectorsManifold', () => {
     expect(result[1].volume).toBeLessThan(expectedRightVolume)
     result.forEach((chunk) => expect(validateManifold(chunk.geometry).watertight).toBe(true))
   })
+
+  // Regression for "connectors appear on the outside of the mesh": two slabs that
+  // are only 2.5mm thick along the split axis cannot hold a connector without its
+  // tip pushing past the far (exterior) wall and leaving < the 2mm safety skin,
+  // so the connector MUST be skipped, not placed protruding. The part geometry
+  // (and therefore the final printed shape) is left completely unchanged.
+  it('skips connectors on walls too thin to keep the 2mm safety margin', async () => {
+    const left = new THREE.BoxGeometry(2.5, 30, 30).translate(-1.25, 0, 0)
+    const right = new THREE.BoxGeometry(2.5, 30, 30).translate(1.25, 0, 0)
+    const expectedLeftVolume = computeVolume(left)
+    const expectedRightVolume = computeVolume(right)
+    const chunks = [
+      { index: 0, geometry: left, label: 'P00', volume: expectedLeftVolume },
+      { index: 1, geometry: right, label: 'P01', volume: expectedRightVolume },
+    ]
+
+    const result = await addConnectorsManifold(chunks, {
+      type: 'Mortise & Tenon',
+      tenonWidth: 6,
+      tenonThickness: 4,
+      depth: 8,
+      clearance: 0.2,
+      perFace: 1,
+    })
+
+    expect(result).toHaveLength(2)
+    expect(result[0].connectorCount).toBe(0)
+    expect(result[1].connectorCount).toBe(0)
+    // Geometry unchanged → the connector never altered the part's outer shape.
+    expect(result[0].volume).toBeCloseTo(expectedLeftVolume, 1)
+    expect(result[1].volume).toBeCloseTo(expectedRightVolume, 1)
+  })
 })
 
 function mergeTestGeometries(geometries) {
