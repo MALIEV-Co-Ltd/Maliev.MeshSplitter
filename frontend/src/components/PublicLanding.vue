@@ -56,6 +56,26 @@
       </div>
     </section>
 
+    <section class="landing-band video-band" aria-label="Promo video">
+      <div class="section-heading">
+        <p>{{ copy.video.kicker }}</p>
+        <h2>{{ copy.video.title }}</h2>
+      </div>
+      <div class="promo-video-frame">
+        <video
+          ref="promoVideo"
+          class="promo-video"
+          :src="promoVideoUrl"
+          loop
+          muted
+          playsinline
+          controls
+          preload="metadata"
+          aria-label="MeshSplitter promo video"
+        ></video>
+      </div>
+    </section>
+
     <section id="pricing" class="pricing-section" aria-label="Pricing">
       <div class="pricing-shell">
         <div class="pricing-heading">
@@ -154,9 +174,23 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import logoUrl from '../assets/logos/maliev-wordmark-black.svg'
 import heroImageUrl from '../assets/mesh-splitter-hero.webp'
+
+// Square promo video, hosted on Shopify's CDN (too large to bundle in the app).
+const promoVideoUrl = 'https://cdn.shopify.com/videos/c/o/v/98eb9a0da3d54a8cae7010bcf57fdb9e.mp4'
+const promoVideo = ref(null)
+
+// Muted autoplay is only allowed when the element is muted *before* play; Vue's
+// static `muted` attribute doesn't reliably set the property, so force it here.
+// Controls remain so the visitor can pause, scrub, or unmute.
+onMounted(() => {
+  const el = promoVideo.value
+  if (!el) return
+  el.muted = true
+  el.play?.().catch(() => {})
+})
 
 const props = defineProps({
   pricing: { type: Object, required: true },
@@ -182,6 +216,10 @@ const translations = {
       lede: 'Prepare large models for smaller printers. Upload, scale, define build volume, add connectors, review the split, and export a ZIP of labeled STLs with a PDF assembly guide.',
     },
     proof: { free: 'free exports monthly', local: 'credit-gated export', package: 'export package' },
+    video: {
+      kicker: 'See it in action',
+      title: 'Watch one oversized model become a printable, labeled assembly.',
+    },
     pricing: {
       title: 'Start free, then buy export credits only when needed.',
       lede: 'Test the workflow with monthly free exports. Pay only when you download more STL + PDF ZIP packages.',
@@ -224,6 +262,10 @@ const translations = {
       lede: 'เตรียมโมเดลขนาดใหญ่ให้พิมพ์กับเครื่องพิมพ์ขนาดเล็กได้ อัปโหลด ปรับสเกล กำหนดพื้นที่พิมพ์ เพิ่มตัวต่อ ตรวจสอบชิ้นงาน และส่งออก ZIP ที่มี STL พร้อม PDF คู่มือประกอบ',
     },
     proof: { free: 'ส่งออกฟรีทุกเดือน', local: 'ส่งออกผ่านเครดิต', package: 'แพ็กเกจ STL + PDF' },
+    video: {
+      kicker: 'ดูการทำงานจริง',
+      title: 'ดูโมเดลขนาดใหญ่หนึ่งชิ้นกลายเป็นชุดประกอบที่พร้อมพิมพ์และมีป้ายกำกับ',
+    },
     pricing: {
       title: 'เริ่มใช้ฟรี แล้วซื้อเครดิตเมื่อจำเป็นต้องส่งออกเพิ่ม',
       lede: 'ทดลองขั้นตอนการทำงานด้วยสิทธิ์ส่งออกฟรีรายเดือน จ่ายเงินเฉพาะเมื่อดาวน์โหลดแพ็กเกจ STL + PDF เพิ่ม',
