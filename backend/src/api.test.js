@@ -535,6 +535,56 @@ describe('HTTP API', () => {
     expect(body.account.paidCredits).toBe(0)
   })
 
+  it('grants staff (maliev.com) customers the raised free allowance', async () => {
+    const staffServer = createServer({
+      devCustomerBypass: true,
+      shopifyAppProxySecret: 'proxy-secret',
+      shopifyWebhookSecret: 'webhook-secret',
+      appUrl: 'https://mesh.example.com',
+      storefrontUrl: 'https://shop.example.com/tools/mesh-splitter',
+      customerLoginUrl: 'https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter',
+      staffEmailDomains: ['maliev.com'],
+      staffFreeGenerations: 100,
+      // Inject the email lookup so the test never touches the real Admin API.
+      fetchCustomerEmail: async ({ customerId }) =>
+        customerId === 'staff-user' ? 'employee@maliev.com' : 'shopper@gmail.com',
+      now: () => new Date('2026-06-21T12:00:00.000Z'),
+    })
+    await new Promise((resolve) => staffServer.listen(0, resolve))
+    const staffBaseUrl = `http://127.0.0.1:${staffServer.address().port}`
+
+    try {
+      const staffAccount = await fetch(`${staffBaseUrl}/api/account`, {
+        headers: { 'x-mesh-customer-id': 'staff-user' },
+      })
+      const staffBody = await staffAccount.json()
+      expect(staffBody.account).toMatchObject({ freeLimit: 100, freeRemaining: 100 })
+
+      // A normal shopper still gets the default allowance.
+      const shopperAccount = await fetch(`${staffBaseUrl}/api/account`, {
+        headers: { 'x-mesh-customer-id': 'regular-user' },
+      })
+      const shopperBody = await shopperAccount.json()
+      expect(shopperBody.account).toMatchObject({ freeLimit: 3, freeRemaining: 3 })
+
+      // Staff can consume past the normal 3-free limit.
+      let lastBody
+      for (let i = 1; i <= 4; i += 1) {
+        const res = await fetch(`${staffBaseUrl}/api/exports`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-mesh-customer-id': 'staff-user' },
+          body: JSON.stringify({ idempotencyKey: `staff-export-${i}` }),
+        })
+        lastBody = await res.json()
+        expect(res.status).toBe(201)
+        expect(lastBody.transaction.source).toBe('free_monthly')
+      }
+      expect(lastBody.account).toMatchObject({ freeLimit: 100, freeRemaining: 96 })
+    } finally {
+      await new Promise((resolve) => staffServer.close(resolve))
+    }
+  })
+
   it('supports legacy /api/generations path for compatibility', async () => {
     const response = await fetch(`${baseUrl}/api/generations`, {
       method: 'POST',

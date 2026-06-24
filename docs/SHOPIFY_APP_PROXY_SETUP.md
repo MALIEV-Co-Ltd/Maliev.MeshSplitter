@@ -23,6 +23,21 @@ Launch pricing:
 Credits are consumed when the customer starts a split. Paid credits never reset;
 the free monthly allowance resets by UTC month.
 
+### Staff allowance (MALIEV employees)
+
+Logged-in customers whose Shopify account email is on a staff domain
+(`STAFF_EMAIL_DOMAINS`, default `maliev.com`) get a larger monthly free
+allowance (`STAFF_FREE_GENERATIONS`, default 100) instead of the standard 3.
+
+The Shopify app proxy only forwards the numeric `logged_in_customer_id`, never
+the email, so the backend resolves the email by id through the Admin API. Create
+a **custom app** in Shopify admin (Settings → Apps and sales channels → Develop
+apps) with the **`read_customers`** Admin API scope, install it, and set its
+Admin API access token as `SHOPIFY_ADMIN_API_TOKEN`. The resolved allowance is
+cached per customer for an hour to avoid an Admin API call on every request. If
+the token is missing or a lookup fails, the customer simply gets the default
+allowance — staff detection degrades safely, it never blocks an export.
+
 ## Shopify products
 
 Import `shopify/credit-products.csv` into Shopify Products, or create the three
@@ -87,6 +102,9 @@ Required backend environment:
 - `CUSTOMER_LOGIN_URL=https://shop.maliev.com/account/login?return_url=%2Ftools%2Fmesh-splitter%2Fapp`
 - `SESSION_SECRET`
 - `FRONTEND_DIST_DIR`
+- `STAFF_EMAIL_DOMAINS=maliev.com` (optional; staff free-credit domains)
+- `STAFF_FREE_GENERATIONS=100` (optional; staff monthly free allowance)
+- `SHOPIFY_ADMIN_API_TOKEN` (optional; custom-app Admin API token with `read_customers`, required for staff detection)
 
 Required frontend build environment:
 

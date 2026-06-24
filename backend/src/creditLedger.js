@@ -1,5 +1,12 @@
 import { FREE_GENERATIONS_PER_MONTH } from './pricing.js'
 
+// The monthly free allowance is normally the global default, but staff accounts
+// (resolved per-request from the customer's email domain) get a higher limit
+// passed in. A non-positive/missing value always falls back to the default.
+function resolveFreeLimit(freeLimit) {
+  return Number.isInteger(freeLimit) && freeLimit > 0 ? freeLimit : FREE_GENERATIONS_PER_MONTH
+}
+
 export class InsufficientCreditsError extends Error {
   constructor(account) {
     super('No free exports or paid credits remain')
@@ -16,9 +23,9 @@ export class CreditLedger {
     this.now = now
   }
 
-  async getAccount(customerId) {
+  async getAccount(customerId, { freeLimit } = {}) {
     const account = await this.store.getAccount(normalizeCustomerId(customerId), this.#period())
-    return this.#publicAccount(account)
+    return this.#publicAccount(account, freeLimit)
   }
 
   async addCredits(customerId, credits, { source, idempotencyKey }) {
@@ -49,11 +56,11 @@ export class CreditLedger {
     return transaction
   }
 
-  async consumeGeneration(customerId, { idempotencyKey, metadata = {} }) {
-    return this.consumeExport(customerId, { idempotencyKey, metadata })
+  async consumeGeneration(customerId, { idempotencyKey, metadata = {}, freeLimit } = {}) {
+    return this.consumeExport(customerId, { idempotencyKey, metadata, freeLimit })
   }
 
-  async consumeExport(customerId, { idempotencyKey, metadata = {} }) {
+  async consumeExport(customerId, { idempotencyKey, metadata = {}, freeLimit } = {}) {
     if (!idempotencyKey) throw new Error('idempotencyKey is required')
 
     const existing = await this.store.getTransaction(idempotencyKey)
@@ -61,16 +68,17 @@ export class CreditLedger {
 
     const normalizedCustomerId = normalizeCustomerId(customerId)
     const account = await this.store.getAccount(normalizedCustomerId, this.#period())
+    const limit = resolveFreeLimit(freeLimit)
     let source
 
-    if (account.freeUsed < FREE_GENERATIONS_PER_MONTH) {
+    if (account.freeUsed < limit) {
       account.freeUsed += 1
       source = 'free_monthly'
     } else if (account.paidCredits > 0) {
       account.paidCredits -= 1
       source = 'paid_credit'
     } else {
-      throw new InsufficientCreditsError(this.#publicAccount(account))
+      throw new InsufficientCreditsError(this.#publicAccount(account, freeLimit))
     }
 
     account.updatedAt = this.now().toISOString()
@@ -83,7 +91,7 @@ export class CreditLedger {
       source,
       metadata,
       createdAt: this.now().toISOString(),
-      account: this.#publicAccount(account),
+      account: this.#publicAccount(account, freeLimit),
     }
     await this.store.saveTransaction(transaction)
     return transaction
@@ -148,14 +156,15 @@ export class CreditLedger {
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
   }
 
-  #publicAccount(account) {
-    const freeRemaining = Math.max(0, FREE_GENERATIONS_PER_MONTH - account.freeUsed)
+  #publicAccount(account, freeLimit) {
+    const limit = resolveFreeLimit(freeLimit)
+    const freeRemaining = Math.max(0, limit - account.freeUsed)
     return {
       customerId: account.customerId,
       period: account.period,
       freeUsed: account.freeUsed,
       freeRemaining,
-      freeLimit: FREE_GENERATIONS_PER_MONTH,
+      freeLimit: limit,
       paidCredits: account.paidCredits,
       availableGenerations: freeRemaining + account.paidCredits,
       updatedAt: account.updatedAt,

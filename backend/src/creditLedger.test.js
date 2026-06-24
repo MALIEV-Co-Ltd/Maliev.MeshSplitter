@@ -23,6 +23,21 @@ describe('CreditLedger', () => {
     ).rejects.toBeInstanceOf(InsufficientCreditsError)
   })
 
+  it('honours a raised free limit for staff accounts', async () => {
+    // Three exports would exhaust a normal account, but a staff freeLimit of 100
+    // keeps them all on the free allowance.
+    for (let i = 1; i <= 5; i += 1) {
+      const tx = await ledger.consumeExport('staff-1', { idempotencyKey: `staff-gen-${i}`, freeLimit: 100 })
+      expect(tx.source).toBe('free_monthly')
+    }
+
+    await expect(ledger.getAccount('staff-1', { freeLimit: 100 })).resolves.toMatchObject({
+      freeUsed: 5,
+      freeLimit: 100,
+      freeRemaining: 95,
+    })
+  })
+
   it('uses paid credits after the monthly allowance is exhausted', async () => {
     await ledger.addCredits('customer-1', 2, { source: 'manual-test', idempotencyKey: 'grant-1' })
 

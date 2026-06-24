@@ -1166,6 +1166,18 @@ function describeUnexportableParts(failed) {
   ].join('\n')
 }
 
+function geometryToStlBuffer(exporter, geometry) {
+  const mesh = new THREE.Mesh(geometry)
+  const stlData = exporter.parse(mesh, { binary: true })
+  return stlData instanceof ArrayBuffer
+    ? stlData
+    : stlData.buffer.slice(stlData.byteOffset, stlData.byteOffset + stlData.byteLength)
+}
+
+// Package layout:
+//   parts/      the split, print-ready STL parts
+//   original/   the whole un-split source mesh, for reference / re-splitting
+//   <root>      assembly PDF, license receipt, any unexportable-parts notice
 async function createStlZip(chunks, options = {}) {
   const { STLExporter } = await import('three/addons/exporters/STLExporter.js')
   const exporter = new STLExporter()
@@ -1174,14 +1186,17 @@ async function createStlZip(chunks, options = {}) {
   const exportReceipt = createExportReceipt(options.exportAuthorization, options)
 
   chunks.forEach(chunk => {
-    const mesh = new THREE.Mesh(chunk.geometry)
-    const stlData = exporter.parse(mesh, { binary: true })
-    const stlBuffer = stlData instanceof ArrayBuffer
-      ? stlData
-      : stlData.buffer.slice(stlData.byteOffset, stlData.byteOffset + stlData.byteLength)
+    const stlBuffer = geometryToStlBuffer(exporter, chunk.geometry)
     stampStlHeader(stlBuffer, exportReceipt)
-    zip.file(`part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`, stlBuffer)
+    zip.file(`parts/part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`, stlBuffer)
   })
+
+  // Include the whole source mesh so the customer always has the original next
+  // to its parts (the scaled mesh that was actually split, kept consistent with
+  // the parts; left unstamped so it stays a clean reference copy).
+  if (options.sourceGeometry?.attributes?.position) {
+    zip.file(`original/${originalMeshFilename(options.sourceFilename)}`, geometryToStlBuffer(exporter, options.sourceGeometry))
+  }
 
   const failedParts = options.failedParts || []
   if (failedParts.length) {
@@ -1192,6 +1207,12 @@ async function createStlZip(chunks, options = {}) {
     zip.file('mesh-splitter-license.json', JSON.stringify(exportReceipt, null, 2))
   }
   return zip
+}
+
+function originalMeshFilename(sourceFilename) {
+  const base = String(sourceFilename || '').trim().split(/[\\/]/).pop() || ''
+  if (!base) return 'original-mesh.stl'
+  return /\.stl$/i.test(base) ? base : `${base}.stl`
 }
 
 export async function exportStl(chunks, options = {}) {

@@ -20,7 +20,7 @@ const COLORS = [
 ]
 
 export function useMeshProcessor(options = {}) {
-  const previewTargetFaces = Math.max(12, Number(options.previewTargetFaces || 150_000))
+  const previewTargetFaces = Math.max(12, Number(options.previewTargetFaces || 1_000_000))
   const meshInfo = ref(null)
   const sourceGeometry = shallowRef(null)
   const meshGeometry = shallowRef(null)
