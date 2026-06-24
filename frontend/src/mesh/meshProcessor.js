@@ -368,6 +368,96 @@ function chunkLabel(partNumber, ix, iy, iz, bodyIndex = 0, bodyCount = 1) {
   return bodyCount > 1 ? `${base}-B${bodyIndex + 1}` : base
 }
 
+// Two parts are "connected" when their bounding boxes share a face: they touch
+// on one axis (the cut plane) and overlap on the other two. A shared edge or
+// corner (overlap on <2 axes) is not a real structural join. Tolerance bridges
+// the floating-point gap left at a cut plane so true neighbors aren't missed.
+function boxesShareFace(a, b, tolerance) {
+  let overlappingAxes = 0
+  for (const axis of ['x', 'y', 'z']) {
+    const overlap = Math.min(a.max[axis], b.max[axis]) - Math.max(a.min[axis], b.min[axis])
+    if (overlap < -tolerance) return false // a gap on this axis → not touching
+    if (overlap > tolerance) overlappingAxes += 1
+  }
+  return overlappingAxes >= 2
+}
+
+// Raster-scan order (z,y,x) places parts in grid sequence, which can drop a part
+// that doesn't yet touch anything already placed — a "floating" assembly step.
+// This re-sequences parts so each one is added adjacent to the growing assembly:
+// start from the largest part, then repeatedly add the largest remaining part
+// that shares a face with something already placed. Disconnected leftovers fall
+// back to the nearest-centroid part so a step is never truly floating.
+export function orderPartsByConnectivity(chunks) {
+  const parts = chunks.filter((c) => !c.isKey)
+  if (parts.length <= 1) return chunks
+
+  const boxes = parts.map((p) => {
+    if (!p.geometry.boundingBox) p.geometry.computeBoundingBox()
+    return p.geometry.boundingBox
+  })
+  const overall = new THREE.Box3()
+  boxes.forEach((b) => overall.union(b))
+  const span = overall.getSize(new THREE.Vector3()).length()
+  const tolerance = Math.max(1e-3, span * 5e-4)
+
+  const adjacency = parts.map(() => [])
+  for (let i = 0; i < parts.length; i += 1) {
+    for (let j = i + 1; j < parts.length; j += 1) {
+      if (boxesShareFace(boxes[i], boxes[j], tolerance)) {
+        adjacency[i].push(j)
+        adjacency[j].push(i)
+      }
+    }
+  }
+
+  const volumeOf = (i) => Math.abs(Number(parts[i].volume) || 0)
+  const centroidOf = (i) => parts[i].centroid || boxes[i].getCenter(new THREE.Vector3())
+  const placed = new Array(parts.length).fill(false)
+  const sequence = []
+
+  let start = 0
+  for (let i = 1; i < parts.length; i += 1) if (volumeOf(i) > volumeOf(start)) start = i
+
+  while (sequence.length < parts.length) {
+    let next = -1
+    if (sequence.length === 0) {
+      next = start
+    } else {
+      let bestVol = -Infinity
+      for (let k = 0; k < parts.length; k += 1) {
+        if (placed[k]) continue
+        if (!adjacency[k].some((n) => placed[n])) continue
+        if (volumeOf(k) > bestVol) { bestVol = volumeOf(k); next = k }
+      }
+      if (next === -1) {
+        // No unplaced part touches the assembly (disconnected geometry): add the
+        // one whose centroid is closest to any placed part so the guide still
+        // grows outward instead of jumping arbitrarily.
+        let bestDist = Infinity
+        for (let k = 0; k < parts.length; k += 1) {
+          if (placed[k]) continue
+          const ck = centroidOf(k)
+          for (let p = 0; p < parts.length; p += 1) {
+            if (!placed[p]) continue
+            const d = ck.distanceToSquared(centroidOf(p))
+            if (d < bestDist) { bestDist = d; next = k }
+          }
+        }
+        if (next === -1) for (let k = 0; k < parts.length; k += 1) if (!placed[k]) { next = k; break }
+      }
+    }
+    placed[next] = true
+    sequence.push(next)
+  }
+
+  const orderByIndex = new Map()
+  sequence.forEach((partIdx, seq) => orderByIndex.set(parts[partIdx].index, seq + 1))
+  return chunks.map((chunk) =>
+    chunk.isKey ? chunk : { ...chunk, assemblyOrder: orderByIndex.get(chunk.index) ?? chunk.assemblyOrder },
+  )
+}
+
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
   const info = validateManifold(splitGeometry)
@@ -449,7 +539,9 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
     solid.delete?.()
   }
 
-  return chunks
+  // Re-sequence assemblyOrder so the assembly guide builds up connected parts
+  // instead of following raster scan order (which can float a part mid-build).
+  return orderPartsByConnectivity(chunks)
 }
 
 function splitDisconnectedComponents(geometry) {
@@ -1739,14 +1831,40 @@ function containImageBox(x, y, width, height, imageAspect) {
   }
 }
 
-function addMetric(pdf, label, value, x, y, width = 54, height = 18) {
+function addMetric(pdf, label, value, x, y, width = 54, height = 18, options = {}) {
   setRgb(pdf, 'setFillColor', [255, 255, 255])
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 3, 3, 'FD')
   setFont(pdf, 7, 'normal', BRAND.muted)
   pdf.text(label, x + 3, y + 6)
-  setFont(pdf, 10, 'bold', BRAND.black)
-  pdf.text(String(value), x + 3, y + 14, { maxWidth: width - 6 })
+  const maxWidth = width - 6
+  const text = String(value)
+  if (options.singleLine && typeof pdf.getTextWidth === 'function') {
+    // Keep the value on ONE line: shrink the font toward a floor, then hard
+    // truncate with an ellipsis. Without this a long source filename wraps onto
+    // a hidden second line that overruns the box border.
+    let fontSize = options.fontSize || 10
+    setFont(pdf, fontSize, 'bold', BRAND.black)
+    while (fontSize > 6.5 && pdf.getTextWidth(text) > maxWidth) {
+      fontSize -= 0.5
+      setFont(pdf, fontSize, 'bold', BRAND.black)
+    }
+    pdf.text(fitTextToWidth(pdf, text, maxWidth), x + 3, y + 14)
+  } else {
+    setFont(pdf, 10, 'bold', BRAND.black)
+    pdf.text(text, x + 3, y + 14, { maxWidth })
+  }
+}
+
+// Trim a string with a trailing ellipsis until it fits maxWidth at the current
+// font, so it always renders on a single line.
+function fitTextToWidth(pdf, text, maxWidth) {
+  if (pdf.getTextWidth(text) <= maxWidth) return text
+  let head = text
+  while (head.length > 1 && pdf.getTextWidth(`${head}...`) > maxWidth) {
+    head = head.slice(0, -1)
+  }
+  return `${head}...`
 }
 
 function drawPill(pdf, text, x, y, width, height) {
@@ -2060,10 +2178,12 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
       { ...pdfContext, titleBlock: false },
     )
     addCoverHero(pdf, qrImage, appUrl)
-    addMetric(pdf, 'Source file', sourceFilename, PDF_PAGE.margin, 74, 42)
-    addMetric(pdf, 'Build volume', `${buildVolume.join(' x ')} mm`, 70, 74, 43)
-    addMetric(pdf, 'Part count', nonKeyChunks.length, 117, 74, 32)
-    addMetric(pdf, 'Units', 'mm', 153, 74, 33)
+    // Source file gets the most room (filenames are long); Part count only needs
+    // ~5 digits and Units only "mm", so both are kept narrow.
+    addMetric(pdf, 'Source file', sourceFilename, PDF_PAGE.margin, 74, 70, 18, { singleLine: true })
+    addMetric(pdf, 'Build volume', `${buildVolume.join(' x ')} mm`, 98, 74, 44, 18, { singleLine: true })
+    addMetric(pdf, 'Part count', nonKeyChunks.length, 146, 74, 20, 18, { singleLine: true })
+    addMetric(pdf, 'Units', 'mm', 170, 74, 16, 18, { singleLine: true })
     addImageFrame(
       pdf,
       completeImage,
@@ -2185,21 +2305,31 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
         pdfContext,
       )
 
+      const usesKeys = keyChunks.length > 0
       for (let slot = 0; slot < 2; slot++) {
         const stepIndex = i + slot
         if (stepIndex >= ordered.length) break
         const chunk = ordered[stepIndex]
+        const isFirst = stepIndex === 0
         const stepImage = renderAssemblyStep(ordered, stepIndex)
         const y = slot === 0 ? 58 : 169
-        addImageFrame(pdf, stepImage, PDF_PAGE.margin, y, 92, 80, `Step ${stepIndex + 1}: add ${chunk.label}`)
+        const caption = isFirst ? `Step 1: start with ${chunk.label}` : `Step ${stepIndex + 1}: add ${chunk.label}`
+        addImageFrame(pdf, stepImage, PDF_PAGE.margin, y, 92, 80, caption)
         setFont(pdf, 12, 'bold', BRAND.black)
         pdf.text(`Step ${stepIndex + 1}`, 124, y + 12)
         setFont(pdf, 9, 'normal', BRAND.ink)
-        pdf.text([
-          `Place ${chunk.label} in the highlighted position.`,
-          'Check that neighboring faces sit flush.',
-          'Confirm connector alignment before moving to the next part.',
-        ], 124, y + 24, { maxWidth: 62 })
+        // First part is the base (nothing to attach to yet); every later part
+        // joins the existing assembly, and if keys are used the key-insertion
+        // step is called out explicitly.
+        const lines = isFirst
+          ? [`Start with ${chunk.label} as the base part.`, 'Set it on a flat surface in the orientation shown.']
+          : [`Add ${chunk.label} to the assembly in the highlighted position.`, 'Check that the shared faces sit flush.']
+        if (!isFirst) {
+          lines.push(usesKeys
+            ? 'Insert the alignment key(s) into the matching slots, then press the parts together.'
+            : 'Confirm connector alignment before moving to the next part.')
+        }
+        pdf.text(lines, 124, y + 24, { maxWidth: 62 })
       }
     }
   } finally {

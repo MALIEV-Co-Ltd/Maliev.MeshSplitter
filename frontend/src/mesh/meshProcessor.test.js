@@ -6,6 +6,7 @@ import {
   computeVolume,
   exportStl,
   exportPackage,
+  orderPartsByConnectivity,
   repairMeshGeometry,
   splitMeshManifold,
   validateExportChunks,
@@ -116,6 +117,51 @@ describe('splitMeshManifold', () => {
       expect(Math.abs(chunk.volume - baselineVolumes[i])).toBeGreaterThan(0.1)
       expect(validateManifold(chunk.geometry).watertight).toBe(true)
     })
+  })
+})
+
+describe('orderPartsByConnectivity', () => {
+  // Four unit cubes in a row, but supplied in an index order (A, C, B, D) that
+  // raster sequencing would assemble as A then C — and C does not touch A, a
+  // "floating" step. Connectivity ordering must never leave such a gap.
+  function boxPart(index, cx, label) {
+    const geometry = new THREE.BoxGeometry(10, 10, 10).translate(cx, 5, 5)
+    geometry.computeBoundingBox()
+    return { index, label, volume: 1000, centroid: new THREE.Vector3(cx, 5, 5), geometry }
+  }
+
+  function sharesFace(a, b) {
+    let overlapping = 0
+    for (const axis of ['x', 'y', 'z']) {
+      const overlap = Math.min(a.max[axis], b.max[axis]) - Math.max(a.min[axis], b.min[axis])
+      if (overlap < -0.01) return false
+      if (overlap > 0.01) overlapping += 1
+    }
+    return overlapping >= 2
+  }
+
+  it('sequences every part adjacent to one already placed (no floating steps)', () => {
+    const parts = [
+      boxPart(0, 5, 'A'),  // x 0..10
+      boxPart(1, 25, 'C'), // x 20..30 — not adjacent to A
+      boxPart(2, 15, 'B'), // x 10..20 — bridges A and C
+      boxPart(3, 35, 'D'), // x 30..40 — adjacent to C
+    ]
+
+    const ordered = orderPartsByConnectivity(parts)
+    const bySeq = [...ordered].sort((a, b) => a.assemblyOrder - b.assemblyOrder)
+
+    expect(bySeq.map((p) => p.assemblyOrder)).toEqual([1, 2, 3, 4])
+    for (let i = 1; i < bySeq.length; i += 1) {
+      const earlier = bySeq.slice(0, i)
+      const connected = earlier.some((e) => sharesFace(e.geometry.boundingBox, bySeq[i].geometry.boundingBox))
+      expect(connected).toBe(true)
+    }
+  })
+
+  it('leaves a single part (or keys) untouched', () => {
+    const one = [{ index: 0, label: 'P01', volume: 1, geometry: new THREE.BoxGeometry(1, 1, 1) }]
+    expect(orderPartsByConnectivity(one)).toBe(one)
   })
 })
 

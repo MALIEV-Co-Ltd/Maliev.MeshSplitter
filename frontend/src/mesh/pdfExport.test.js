@@ -55,6 +55,7 @@ vi.mock('jspdf', () => {
         circle: vi.fn(),
         line: vi.fn(),
         text: vi.fn(),
+        getTextWidth: vi.fn((t) => String(t).length * 1.5),
         path: vi.fn(),
         fill: vi.fn(),
         addImage: vi.fn(),
