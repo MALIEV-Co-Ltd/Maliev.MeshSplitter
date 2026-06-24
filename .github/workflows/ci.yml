@@ -44,7 +44,7 @@ jobs:
     needs: test-build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
-      contents: read
+      contents: write
       id-token: write
     environment:
       name: production
@@ -72,3 +72,17 @@ jobs:
       - name: Verify production health
         run: |
           curl --fail --silent --show-error https://maliev-mesh-splitter-1036965383273.europe-west1.run.app/health
+
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(jq -r .version package.json)
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping (version wasn't bumped this deploy)."
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --title "$TAG" --generate-notes
