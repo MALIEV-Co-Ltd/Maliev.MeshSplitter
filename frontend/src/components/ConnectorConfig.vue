@@ -105,12 +105,12 @@ const props = defineProps({
   modelValue: {
     type: Object,
     default: () => ({
-      type: 'Mortise & Tenon',
+      type: 'Key',
       depth: 5,
       clearance: 0.3,
       perFace: 1,
-      tenonWidth: 6,
-      tenonThickness: 4,
+      keyWidth: 6,
+      keyHeight: 3.5,
     }),
   },
   labels: {
@@ -215,29 +215,29 @@ const connectorTypes = computed(() => [
     value: 'Dowel',
     title: props.labels.types?.dowel || 'Dowel',
     visual: DowelVisual,
-    referenceUrl: 'https://en.wikipedia.org/wiki/Dowel',
+    referenceUrl: 'https://www.google.com/search?tbm=isch&q=Dowel',
   },
   {
     value: 'Mortise & Tenon',
     title: props.labels.types?.mortise || 'Mortise & Tenon',
     visual: MortiseVisual,
-    referenceUrl: 'https://en.wikipedia.org/wiki/Mortise_and_tenon_joint',
+    referenceUrl: 'https://www.google.com/search?tbm=isch&q=Mortise+and+Tenon',
   },
   {
     value: 'Key',
     title: props.labels.types?.key || 'Key',
     visual: KeyVisual,
-    referenceUrl: 'https://en.wikipedia.org/wiki/Key_joint',
+    referenceUrl: 'https://www.google.com/search?tbm=isch&q=Key+joint',
   },
   {
     value: 'None',
     title: props.labels.types?.none || 'None',
     visual: NoneVisual,
-    referenceUrl: 'https://en.wikipedia.org/wiki/Fit_%28joining%29',
+    referenceUrl: 'https://www.google.com/search?tbm=isch&q=joining+fit',
   },
 ])
 
-const connectorType = ref(props.modelValue?.type || 'Mortise & Tenon')
+const connectorType = ref(props.modelValue?.type || 'Key')
 const isOpen = ref(false)
 const selectedType = computed(() => connectorTypes.value.find((type) => type.value === connectorType.value) || connectorTypes.value.at(-1))
 const isDowelConnector = computed(() => connectorType.value === 'Dowel')

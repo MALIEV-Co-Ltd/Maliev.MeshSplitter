@@ -23,11 +23,11 @@
           <span class="dot"></span>{{ meshInfo?.is_watertight ? uiCopy.watertight : uiCopy.awaitingMesh }}
         </span>
         <span class="status-chip">{{ chunks.length || 0 }} {{ uiCopy.parts }}</span>
-        <span class="status-chip credit-chip" :title="creditChipTitle">
+        <button type="button" class="status-chip credit-chip credit-chip--action" :title="uiCopy.getCredits" @click="showCreditDialog">
           <Loader2Icon v-if="showCreditSpinner" :size="12" :stroke-width="2" class="coin-icon animate-spin" />
           <CoinsIcon v-else :size="12" :stroke-width="1.75" class="coin-icon" />
           {{ creditChipText }}
-        </span>
+        </button>
         <span v-if="previewInfo?.optimized" class="status-chip performance-chip" :title="previewStatusTitle">
           {{ uiCopy.previewOptimized }}
         </span>
@@ -128,12 +128,15 @@
         <p v-if="creditError" class="text-sm text-destructive">{{ creditError }}</p>
 
         <div v-if="creditPricing.creditPacks.length" class="credit-pack-list">
-          <a v-for="pack in creditPricing.creditPacks" :key="pack.sku" :href="productUrl(pack)" class="credit-pack">
-            <span class="credit-pack__info">
-              <span class="credit-pack__name">{{ pack.name }}</span>
-              <span class="credit-pack__credits">{{ pack.credits }} credits</span>
+          <a v-for="pack in creditPricing.creditPacks" :key="pack.sku" :href="productUrl(pack)" class="credit-pack-card">
+            <span class="credit-pack-card__eyebrow">{{ pack.name }}</span>
+            <span class="credit-pack-card__credits">{{ pack.credits }} {{ uiCopy.credits }}</span>
+            <span class="credit-pack-card__price">
+              {{ formatPrice(pack.priceCents, pack.currency) }}
+              <small>{{ pricePerCredit(pack) }} / {{ uiCopy.credits }}</small>
             </span>
-            <span class="credit-pack__price">{{ formatPrice(pack.priceCents, pack.currency) }}</span>
+            <span v-if="pack.bestFor" class="credit-pack-card__summary">{{ pack.bestFor }}</span>
+            <span class="credit-pack-card__cta">{{ uiCopy.buyCredits }}</span>
           </a>
           <p class="credit-modal__currency-note">
             {{ uiCopy.pricesIn }} {{ creditPricing.creditPacks[0].currency }} {{ uiCopy.viaStore }}
@@ -504,6 +507,14 @@ const currentExportKey = computed(() => {
   })
 })
 const exportAlreadyUnlocked = computed(() => Boolean(currentExportKey.value) && exportedAuthByKey.value.has(currentExportKey.value))
+// Total exports this account can still produce (free allowance + paid credits).
+// Only meaningful once we actually have the account's data.
+const availableExports = computed(() => {
+  const acc = creditAccount.value
+  const free = Number(acc.freeRemaining ?? 0)
+  const paid = Number(acc.paidCredits ?? Math.max(0, (acc.availableGenerations ?? 0) - free))
+  return free + paid
+})
 const exportCost = computed(() => {
   const copy = uiCopy.value.exportPanel
   if (exportAlreadyUnlocked.value) return { kind: 'unlocked', label: copy.costUnlocked }
@@ -613,6 +624,11 @@ function productUrl(pack) {
   return `https://${shopifyStoreDomain}/products/${pack.handle}`
 }
 
+function pricePerCredit(pack) {
+  const credits = Number(pack.credits) || 1
+  return formatPrice(Math.round(Number(pack.priceCents) / credits), pack.currency)
+}
+
 function formatPrice(priceCents, currency) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -649,7 +665,7 @@ async function exportAfterCredit(format, buildFn) {
   if (key && exportedAuthByKey.value.has(key)) {
     exportingPackage.value = true
     try {
-      const { blob, filename } = await buildFn({ authorization: exportedAuthByKey.value.get(key) })
+      const { blob, filename } = await buildFn({ authorization: exportedAuthByKey.value.get(key), locale: locale.value })
       saveBlob(blob, filename)
     } finally {
       exportingPackage.value = false
@@ -659,6 +675,13 @@ async function exportAfterCredit(format, buildFn) {
 
   if (exportRequiresLogin.value) {
     showLoginDialog()
+    return
+  }
+
+  // Out of free exports AND paid credits: send the customer to the purchase
+  // dialog instead of attempting a charge that can't succeed.
+  if (hasCreditAccount.value && availableExports.value <= 0) {
+    showCreditDialog()
     return
   }
 
@@ -696,6 +719,7 @@ async function exportAfterCredit(format, buildFn) {
     const { blob, filename } = await buildFn({
       authorization,
       transaction,
+      locale: locale.value,
       preparedExportable: prepared.exportable,
       preparedFailed: prepared.failed,
     })

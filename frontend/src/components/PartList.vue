@@ -5,7 +5,7 @@
         <BoxesIcon />
         {{ labels.title }}
       </div>
-      <span class="pnl-meta">{{ chunks.length }} {{ labels.total }}</span>
+      <span class="pnl-meta">{{ totalPartsCount }} {{ labels.total }}</span>
     </div>
     <div v-if="chunks.length === 0" class="parts-empty">
       <BoxesIcon :size="22" :stroke-width="1.5" class="parts-empty__icon" />
@@ -13,7 +13,24 @@
     </div>
     <div v-else class="parts-scroll">
       <div
-        v-for="chunk in chunks"
+        v-if="keyChunks.length > 0"
+        class="pl-row cursor-pointer"
+        :class="{ 'ring-2': isKeySelected }"
+        @click="selectKeys"
+      >
+        <span class="pl-thumb" :style="{ borderColor: '#ffd700' }">
+          <span class="pl-thumb-dot" :style="{ backgroundColor: '#ffd700' }"></span>
+        </span>
+        <div class="pl-info">
+          <span class="pl-label">Key x{{ keyChunks.length }}</span>
+          <span class="pl-meta">{{ keyMetaLine }}</span>
+          <span class="pl-meta pl-vol">{{ keyVolumeLabel }}</span>
+        </div>
+        <span class="pl-idx">K</span>
+      </div>
+
+      <div
+        v-for="chunk in nonKeyChunks"
         :key="chunk.index"
         class="pl-row cursor-pointer"
         :class="{ 'ring-2': chunk.index === selectedChunkIndex }"
@@ -35,9 +52,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { Boxes as BoxesIcon } from '@lucide/vue'
 
-defineProps({
+const props = defineProps({
   chunks: { type: Array, default: () => [] },
   selectedChunkIndex: { type: Number, default: null },
   labels: {
@@ -49,7 +67,42 @@ defineProps({
     }),
   },
 })
-defineEmits(['select'])
+const emit = defineEmits(['select'])
+
+const nonKeyChunks = computed(() => props.chunks.filter(c => !c.isKey))
+const keyChunks = computed(() => props.chunks.filter(c => c.isKey))
+
+const totalPartsCount = computed(() => {
+  return nonKeyChunks.value.length + (keyChunks.value.length > 0 ? 1 : 0)
+})
+
+const isKeySelected = computed(() => {
+  if (keyChunks.value.length === 0) return false
+  return keyChunks.value.some(k => k.index === props.selectedChunkIndex)
+})
+
+function selectKeys() {
+  if (keyChunks.value.length > 0) {
+    emit('select', keyChunks.value[0].index)
+  }
+}
+
+const keyMetaLine = computed(() => {
+  if (keyChunks.value.length === 0) return ''
+  const firstKey = keyChunks.value[0]
+  const faces = Number(firstKey.faces || 0).toLocaleString()
+  const dims = firstKey.dims
+    ? `${firstKey.dims.x.toFixed(0)} × ${firstKey.dims.y.toFixed(0)} × ${firstKey.dims.z.toFixed(0)} mm`
+    : ''
+  return dims ? `${faces} faces · ${dims}` : `${faces} faces`
+})
+
+const keyVolumeLabel = computed(() => {
+  if (keyChunks.value.length === 0) return ''
+  const singleVol = Number(keyChunks.value[0].volume || 0)
+  const totalVol = singleVol * keyChunks.value.length
+  return `${(totalVol / 1000).toFixed(1)} cm³`
+})
 
 function colorHex(color) {
   if (typeof color !== 'number' || !Number.isFinite(color)) return '#64748b'

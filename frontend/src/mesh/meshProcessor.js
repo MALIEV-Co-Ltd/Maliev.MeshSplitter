@@ -368,6 +368,96 @@ function chunkLabel(partNumber, ix, iy, iz, bodyIndex = 0, bodyCount = 1) {
   return bodyCount > 1 ? `${base}-B${bodyIndex + 1}` : base
 }
 
+// Two parts are "connected" when their bounding boxes share a face: they touch
+// on one axis (the cut plane) and overlap on the other two. A shared edge or
+// corner (overlap on <2 axes) is not a real structural join. Tolerance bridges
+// the floating-point gap left at a cut plane so true neighbors aren't missed.
+function boxesShareFace(a, b, tolerance) {
+  let overlappingAxes = 0
+  for (const axis of ['x', 'y', 'z']) {
+    const overlap = Math.min(a.max[axis], b.max[axis]) - Math.max(a.min[axis], b.min[axis])
+    if (overlap < -tolerance) return false // a gap on this axis → not touching
+    if (overlap > tolerance) overlappingAxes += 1
+  }
+  return overlappingAxes >= 2
+}
+
+// Raster-scan order (z,y,x) places parts in grid sequence, which can drop a part
+// that doesn't yet touch anything already placed — a "floating" assembly step.
+// This re-sequences parts so each one is added adjacent to the growing assembly:
+// start from the largest part, then repeatedly add the largest remaining part
+// that shares a face with something already placed. Disconnected leftovers fall
+// back to the nearest-centroid part so a step is never truly floating.
+export function orderPartsByConnectivity(chunks) {
+  const parts = chunks.filter((c) => !c.isKey)
+  if (parts.length <= 1) return chunks
+
+  const boxes = parts.map((p) => {
+    if (!p.geometry.boundingBox) p.geometry.computeBoundingBox()
+    return p.geometry.boundingBox
+  })
+  const overall = new THREE.Box3()
+  boxes.forEach((b) => overall.union(b))
+  const span = overall.getSize(new THREE.Vector3()).length()
+  const tolerance = Math.max(1e-3, span * 5e-4)
+
+  const adjacency = parts.map(() => [])
+  for (let i = 0; i < parts.length; i += 1) {
+    for (let j = i + 1; j < parts.length; j += 1) {
+      if (boxesShareFace(boxes[i], boxes[j], tolerance)) {
+        adjacency[i].push(j)
+        adjacency[j].push(i)
+      }
+    }
+  }
+
+  const volumeOf = (i) => Math.abs(Number(parts[i].volume) || 0)
+  const centroidOf = (i) => parts[i].centroid || boxes[i].getCenter(new THREE.Vector3())
+  const placed = new Array(parts.length).fill(false)
+  const sequence = []
+
+  let start = 0
+  for (let i = 1; i < parts.length; i += 1) if (volumeOf(i) > volumeOf(start)) start = i
+
+  while (sequence.length < parts.length) {
+    let next = -1
+    if (sequence.length === 0) {
+      next = start
+    } else {
+      let bestVol = -Infinity
+      for (let k = 0; k < parts.length; k += 1) {
+        if (placed[k]) continue
+        if (!adjacency[k].some((n) => placed[n])) continue
+        if (volumeOf(k) > bestVol) { bestVol = volumeOf(k); next = k }
+      }
+      if (next === -1) {
+        // No unplaced part touches the assembly (disconnected geometry): add the
+        // one whose centroid is closest to any placed part so the guide still
+        // grows outward instead of jumping arbitrarily.
+        let bestDist = Infinity
+        for (let k = 0; k < parts.length; k += 1) {
+          if (placed[k]) continue
+          const ck = centroidOf(k)
+          for (let p = 0; p < parts.length; p += 1) {
+            if (!placed[p]) continue
+            const d = ck.distanceToSquared(centroidOf(p))
+            if (d < bestDist) { bestDist = d; next = k }
+          }
+        }
+        if (next === -1) for (let k = 0; k < parts.length; k += 1) if (!placed[k]) { next = k; break }
+      }
+    }
+    placed[next] = true
+    sequence.push(next)
+  }
+
+  const orderByIndex = new Map()
+  sequence.forEach((partIdx, seq) => orderByIndex.set(parts[partIdx].index, seq + 1))
+  return chunks.map((chunk) =>
+    chunk.isKey ? chunk : { ...chunk, assemblyOrder: orderByIndex.get(chunk.index) ?? chunk.assemblyOrder },
+  )
+}
+
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
   const info = validateManifold(splitGeometry)
@@ -449,7 +539,9 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
     solid.delete?.()
   }
 
-  return chunks
+  // Re-sequence assemblyOrder so the assembly guide builds up connected parts
+  // instead of following raster scan order (which can float a part mid-build).
+  return orderPartsByConnectivity(chunks)
 }
 
 function splitDisconnectedComponents(geometry) {
@@ -604,6 +696,11 @@ function createConnectorShape(manifold, type, options) {
 // too thin to take one safely), so the face is skipped instead of forced.
 const MIN_CONNECTOR_DEPTH = 0.8
 
+// However thin the local wall measures, a connector must never cut deep enough
+// to leave less than this much solid material between its tip and the part's
+// real exterior surface — printable parts need a minimum structural skin.
+const CONNECTOR_SAFETY_MARGIN_MM = 2
+
 // Largest connector count that physically fits across a shared face span. A
 // requested "connectors per face" is REDUCED (never forced) when the face is
 // too small, so connectors can't overlap/merge on a tiny mating surface.
@@ -628,6 +725,12 @@ export function clampConnectorDepth(requestedDepth, localThickness, factor = 0.4
 // Distance from the shared cut plane to the far wall of a part at a point, by
 // raycasting into the body. Used to size connectors to the LOCAL thickness
 // rather than the (often far larger, for thin/curved parts) bounding box.
+//
+// A miss (no back wall found) is reported as 0, not Infinity: on a watertight
+// mesh a ray cast from inside should always exit through some surface, so a
+// miss means the geometry near this point is too degenerate to trust — and an
+// unmeasurable wall must fail safe (skip the connector), never be treated as
+// having unlimited room.
 function localWallThickness(raycaster, mesh, bbox, point, axis, plane, nudge) {
   const inwardSign = bbox.min.getComponent(axis) + bbox.max.getComponent(axis) < plane * 2 ? -1 : 1
   const direction = new THREE.Vector3()
@@ -637,13 +740,32 @@ function localWallThickness(raycaster, mesh, bbox, point, axis, plane, nudge) {
   origin.addScaledVector(direction, nudge)
   raycaster.set(origin, direction)
   const hits = raycaster.intersectObject(mesh, false)
-  return hits.length ? hits[0].distance : Infinity
+  return hits.length ? hits[0].distance : 0
+}
+
+// A single ray straight along the split axis from the candidate's exact
+// center only measures thickness along one line. The connector's actual peg
+// occupies a footprint around that center, and on curved/organic surfaces the
+// real exterior wall can be much closer near one corner of that footprint
+// than at its center — so thickness is sampled at the center plus the four
+// footprint corners and the worst (minimum) of all of them is used.
+export function localWallThicknessAroundFootprint(raycaster, mesh, bbox, point, axis, otherAxes, plane, nudge, footprintRadius) {
+  let minThickness = localWallThickness(raycaster, mesh, bbox, point, axis, plane, nudge)
+  const offsets = [[1, 1], [1, -1], [-1, 1], [-1, -1]]
+  for (const [su, sv] of offsets) {
+    const corner = point.clone()
+    corner.setComponent(otherAxes[0], point.getComponent(otherAxes[0]) + su * footprintRadius)
+    corner.setComponent(otherAxes[1], point.getComponent(otherAxes[1]) + sv * footprintRadius)
+    minThickness = Math.min(minThickness, localWallThickness(raycaster, mesh, bbox, corner, axis, plane, nudge))
+  }
+  return minThickness
 }
 
 export async function addConnectorsManifold(chunks, config = {}) {
+  const cleanChunks = chunks.filter(c => !c.isKey)
   const type = resolveConnectorType(config.type)
-  if (type === 'none') return chunks
-  if (chunks.length < 2) return chunks
+  if (type === 'none') return cleanChunks
+  if (cleanChunks.length < 2) return cleanChunks
 
   const manifold = await getManifoldModule()
   const depth = Number(config.depth ?? 5)
@@ -661,16 +783,18 @@ export async function addConnectorsManifold(chunks, config = {}) {
     throw new Error('Connector clearance cannot be negative')
   }
 
-  const bboxes = chunks.map((chunk) => {
+  const bboxes = cleanChunks.map((chunk) => {
     chunk.geometry.computeBoundingBox()
     return chunk.geometry.boundingBox.clone()
   })
-  const solids = chunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
-  const connectorCounts = chunks.map((chunk) => Number(chunk.connectorCount || 0))
+  const solids = cleanChunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
+  const connectorCounts = cleanChunks.map((chunk) => Number(chunk.connectorCount || 0))
+  const keyChunks = []
+
   // Raycast meshes (double-sided so back walls register) for local-thickness
   // probing, so connectors are clamped to the part's real wall, not its bbox.
   const raycaster = new THREE.Raycaster()
-  const raycastMeshes = chunks.map((chunk) => {
+  const raycastMeshes = cleanChunks.map((chunk) => {
     const mesh = new THREE.Mesh(chunk.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
     mesh.updateMatrixWorld()
     return mesh
@@ -687,8 +811,8 @@ export async function addConnectorsManifold(chunks, config = {}) {
   const bboxTouchTolerance = Math.max(1e-4, (worldSpan.x + worldSpan.y + worldSpan.z) * 1e-6)
 
   try {
-    for (let i = 0; i < chunks.length; i++) {
-      for (let j = i + 1; j < chunks.length; j++) {
+    for (let i = 0; i < cleanChunks.length; i++) {
+      for (let j = i + 1; j < cleanChunks.length; j++) {
         const bbA = bboxes[i]
         const bbB = bboxes[j]
         if (!bbA.intersectsBox(bbB)) continue
@@ -744,8 +868,8 @@ export async function addConnectorsManifold(chunks, config = {}) {
         if (!connectorFit) continue
 
         const candidates = findSharedCutFaceCandidates(
-          chunks[i].geometry,
-          chunks[j].geometry,
+          cleanChunks[i].geometry,
+          cleanChunks[j].geometry,
           axis,
           center.getComponent(axis),
           interBox,
@@ -767,18 +891,24 @@ export async function addConnectorsManifold(chunks, config = {}) {
         const effectivePerFace = fittedConnectorCount(perFace, extentA - edgeMargin * 2, connectorCross, clearance)
         const positions = distributeConnectorCandidates(candidates, effectivePerFace, otherAxes)
 
-        // Clamp depth to the thinnest local wall across the chosen positions so
+        // Clamp depth to the thinnest local wall across the chosen positions (and
+        // each connector's actual footprint, not just its center point) so
         // neither the peg nor its socket punches through the opposite surface.
         const planeValue = center.getComponent(axis)
         let minWall = Infinity
         for (const pos of positions) {
           minWall = Math.min(
             minWall,
-            localWallThickness(raycaster, raycastMeshes[i], bbA, pos, axis, planeValue, faceTolerance),
-            localWallThickness(raycaster, raycastMeshes[j], bbB, pos, axis, planeValue, faceTolerance),
+            localWallThicknessAroundFootprint(raycaster, raycastMeshes[i], bbA, pos, axis, otherAxes, planeValue, faceTolerance, connectorFit.radius),
+            localWallThicknessAroundFootprint(raycaster, raycastMeshes[j], bbB, pos, axis, otherAxes, planeValue, faceTolerance, connectorFit.radius),
           )
         }
-        const safeDepth = clampConnectorDepth(connectorFit.depth, minWall)
+        // Beyond the existing ratio-based clamp, never leave less than the fixed
+        // safety margin of solid material past the connector's deepest point.
+        const safeDepth = Math.min(
+          clampConnectorDepth(connectorFit.depth, minWall),
+          Math.max(0, minWall - CONNECTOR_SAFETY_MARGIN_MM),
+        )
         if (safeDepth < MIN_CONNECTOR_DEPTH) continue
 
         const shape = createConnectorShape(manifold, type, {
@@ -791,21 +921,37 @@ export async function addConnectorsManifold(chunks, config = {}) {
           const peg = orientConnector(shape.makePeg(), axis).translate([pos.x, pos.y, pos.z])
           const socket = orientConnector(shape.makeSocket(), axis).translate([pos.x, pos.y, pos.z])
 
-          const male = solids[i].add(peg)
-          const female = solids[j].subtract(socket)
+          let partA, partB
+          if (type === 'key') {
+            partA = solids[i].subtract(socket)
+            partB = solids[j].subtract(socket)
+
+            const keyGeometry = manifoldMeshToGeometry(peg.getMesh())
+            keyChunks.push({
+              geometry: keyGeometry,
+              volume: Math.abs(peg.volume()),
+              centroid: pos.clone(),
+              isKey: true,
+              connectorCount: 0
+            })
+          } else {
+            partA = solids[i].add(peg)
+            partB = solids[j].subtract(socket)
+          }
+
           solids[i].delete?.()
           solids[j].delete?.()
           peg.delete?.()
           socket.delete?.()
-          solids[i] = male
-          solids[j] = female
+          solids[i] = partA
+          solids[j] = partB
           connectorCounts[i] += 1
           connectorCounts[j] += 1
         }
       }
     }
 
-    return chunks.map((chunk, index) => {
+    const baseChunks = cleanChunks.map((chunk, index) => {
       const status = solids[index].status()
       if (status !== 'NoError') throw new Error(`Connector operation failed manifold validation (${status})`)
       const geometry = manifoldMeshToGeometry(solids[index].getMesh())
@@ -818,6 +964,16 @@ export async function addConnectorsManifold(chunks, config = {}) {
         manifoldStatus: status,
       }
     })
+
+    if (type === 'key') {
+      const keysWithIndex = keyChunks.map((key, kIndex) => ({
+        ...key,
+        index: baseChunks.length + kIndex,
+        label: `Key`,
+      }))
+      return [...baseChunks, ...keysWithIndex]
+    }
+    return baseChunks
   } finally {
     solids.forEach((solid) => solid.delete?.())
     raycastMeshes.forEach((mesh) => mesh.material.dispose())
@@ -1226,6 +1382,71 @@ function geometryToStlBuffer(exporter, geometry) {
     : stlData.buffer.slice(stlData.byteOffset, stlData.byteOffset + stlData.byteLength)
 }
 
+function mergeGeometries(geometries) {
+  const positions = []
+  geometries.forEach((geometry) => {
+    const source = geometry.index ? geometry.toNonIndexed() : geometry
+    const position = source.attributes.position
+    if (position) {
+      for (let i = 0; i < position.count; i += 1) {
+        positions.push(position.getX(i), position.getY(i), position.getZ(i))
+      }
+    }
+  })
+  const merged = new THREE.BufferGeometry()
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  merged.computeVertexNormals()
+  return merged
+}
+
+function packKeysGeometry(keyGeometry, count, buildVolume, gap = 2) {
+  if (!keyGeometry.boundingBox) keyGeometry.computeBoundingBox()
+  const size = new THREE.Vector3()
+  keyGeometry.boundingBox.getSize(size)
+
+  // Sort dimensions to lay the key flat (w >= d >= t)
+  const dims = [size.x, size.y, size.z].sort((a, b) => b - a)
+  const w = dims[0]
+  const d = dims[1]
+  const t = dims[2]
+
+  const W = buildVolume ? buildVolume[0] : 220
+  const D = buildVolume ? buildVolume[1] : 220
+  const H = buildVolume ? buildVolume[2] : 250
+
+  const maxCols = Math.max(1, Math.floor((W + gap) / (w + gap)))
+  const maxRows = Math.max(1, Math.floor((D + gap) / (d + gap)))
+  const keysPerLayer = maxCols * maxRows
+
+  const geometries = []
+
+  for (let i = 0; i < count; i++) {
+    const layer = Math.floor(i / keysPerLayer)
+    const indexInLayer = i % keysPerLayer
+    const row = Math.floor(indexInLayer / maxCols)
+    const col = indexInLayer % maxCols
+
+    const remainingInLayer = Math.min(count - layer * keysPerLayer, keysPerLayer)
+    const colsInLayer = Math.min(remainingInLayer, maxCols)
+    const rowsInLayer = Math.ceil(remainingInLayer / maxCols)
+
+    const gridW = colsInLayer * (w + gap) - gap
+    const gridD = rowsInLayer * (d + gap) - gap
+
+    const x = -gridW / 2 + col * (w + gap) + w / 2
+    const y = -gridD / 2 + row * (d + gap) + d / 2
+    const z = layer * (t + gap) + t / 2
+
+    const boxGeom = new THREE.BoxGeometry(w, d, t)
+    boxGeom.translate(x, y, z)
+    geometries.push(boxGeom)
+  }
+
+  const merged = mergeGeometries(geometries)
+  geometries.forEach(g => g.dispose())
+  return merged
+}
+
 // Package layout:
 //   parts/      the split, print-ready STL parts
 //   original/   the whole un-split source mesh, for reference / re-splitting
@@ -1237,11 +1458,22 @@ async function createStlZip(chunks, options = {}) {
   const zip = new JSZip()
   const exportReceipt = createExportReceipt(options.exportAuthorization, options)
 
-  chunks.forEach(chunk => {
+  const nonKeyChunks = chunks.filter(c => !c.isKey)
+  const keyChunks = chunks.filter(c => c.isKey)
+
+  nonKeyChunks.forEach(chunk => {
     const stlBuffer = geometryToStlBuffer(exporter, chunk.geometry)
     stampStlHeader(stlBuffer, exportReceipt)
     zip.file(`parts/part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`, stlBuffer)
   })
+
+  if (keyChunks.length > 0) {
+    const packedGeom = packKeysGeometry(keyChunks[0].geometry, keyChunks.length, options.buildVolume, 2)
+    const stlBuffer = geometryToStlBuffer(exporter, packedGeom)
+    stampStlHeader(stlBuffer, exportReceipt)
+    zip.file(`parts/Key-${keyChunks.length}pcs.stl`, stlBuffer)
+    packedGeom.dispose()
+  }
 
   // Include the whole source mesh so the customer always has the original next
   // to its parts (the scaled mesh that was actually split, kept consistent with
@@ -1361,10 +1593,31 @@ function setRgb(pdf, method, color) {
   pdf[method](color[0], color[1], color[2])
 }
 
+// The active font family + translations for the PDF being built. Helvetica has
+// no Thai glyphs, so a Thai export swaps in the embedded NotoSansThai font and
+// the Thai string table. Set per-export in exportPdf, reset in its finally.
+let pdfFontFamily = 'helvetica'
+let T
+
 function setFont(pdf, size, style = 'normal', color = BRAND.ink) {
-  pdf.setFont('helvetica', style)
+  pdf.setFont(pdfFontFamily, style)
   pdf.setFontSize(size)
   setRgb(pdf, 'setTextColor', color)
+}
+
+// Embed NotoSansThai so Thai text renders instead of blank boxes. Registered
+// under both 'normal' and 'bold' (same file) so a setFont(...,'bold') call never
+// silently falls back to helvetica and produces tofu. Returns the family to use.
+async function registerThaiFont(pdf) {
+  try {
+    const { default: base64 } = await import('../assets/fonts/notoSansThai.base64.js')
+    pdf.addFileToVFS('NotoSansThai.ttf', base64)
+    pdf.addFont('NotoSansThai.ttf', 'NotoSansThai', 'normal')
+    pdf.addFont('NotoSansThai.ttf', 'NotoSansThai', 'bold')
+    return 'NotoSansThai'
+  } catch {
+    return 'helvetica'
+  }
 }
 
 async function addHeader(pdf, title, subtitle, appUrl, qrImage) {
@@ -1570,7 +1823,7 @@ function addImageFrame(pdf, image, x, y, width, height, caption, options = {}) {
     pdf.addImage(image, 'JPEG', contentBox.x, contentBox.y, contentBox.width, contentBox.height)
   } else {
     setFont(pdf, 9, 'normal', BRAND.muted)
-    pdf.text('Preview image unavailable for this export.', x + width / 2, y + height / 2, { align: 'center' })
+    pdf.text(T?.imageUnavailable || 'Preview image unavailable for this export.', x + width / 2, y + height / 2, { align: 'center' })
   }
   if (caption) {
     setFont(pdf, 8, 'normal', BRAND.muted)
@@ -1599,14 +1852,40 @@ function containImageBox(x, y, width, height, imageAspect) {
   }
 }
 
-function addMetric(pdf, label, value, x, y, width = 54, height = 18) {
+function addMetric(pdf, label, value, x, y, width = 54, height = 18, options = {}) {
   setRgb(pdf, 'setFillColor', [255, 255, 255])
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 3, 3, 'FD')
   setFont(pdf, 7, 'normal', BRAND.muted)
   pdf.text(label, x + 3, y + 6)
-  setFont(pdf, 10, 'bold', BRAND.black)
-  pdf.text(String(value), x + 3, y + 14, { maxWidth: width - 6 })
+  const maxWidth = width - 6
+  const text = String(value)
+  if (options.singleLine && typeof pdf.getTextWidth === 'function') {
+    // Keep the value on ONE line: shrink the font toward a floor, then hard
+    // truncate with an ellipsis. Without this a long source filename wraps onto
+    // a hidden second line that overruns the box border.
+    let fontSize = options.fontSize || 10
+    setFont(pdf, fontSize, 'bold', BRAND.black)
+    while (fontSize > 6.5 && pdf.getTextWidth(text) > maxWidth) {
+      fontSize -= 0.5
+      setFont(pdf, fontSize, 'bold', BRAND.black)
+    }
+    pdf.text(fitTextToWidth(pdf, text, maxWidth), x + 3, y + 14)
+  } else {
+    setFont(pdf, 10, 'bold', BRAND.black)
+    pdf.text(text, x + 3, y + 14, { maxWidth })
+  }
+}
+
+// Trim a string with a trailing ellipsis until it fits maxWidth at the current
+// font, so it always renders on a single line.
+function fitTextToWidth(pdf, text, maxWidth) {
+  if (pdf.getTextWidth(text) <= maxWidth) return text
+  let head = text
+  while (head.length > 1 && pdf.getTextWidth(`${head}...`) > maxWidth) {
+    head = head.slice(0, -1)
+  }
+  return `${head}...`
 }
 
 function drawPill(pdf, text, x, y, width, height) {
@@ -1646,14 +1925,11 @@ function addCoverHero(pdf, qrImage, appUrl) {
   pdf.roundedRect(x, y, width, height, 7, 7, 'FD')
 
   setFont(pdf, 6.2, 'bold', [71, 85, 105])
-  pdf.text('PRINT-READY MESH PACKAGE', x + 8, y + 10)
+  pdf.text(T.coverEyebrow, x + 8, y + 10)
   setFont(pdf, 21, 'bold', BRAND.black)
-  pdf.text(['Mesh Splitter', 'Assembly Packet'], x + 8, y + 20)
+  pdf.text(T.coverTitle, x + 8, y + 20)
   setFont(pdf, 7.2, 'normal', BRAND.muted)
-  pdf.text([
-    'Generated by MALIEV Mesh Splitter. Use this packet together with the',
-    'bundled STL files for printing, checking, and assembling the split model.',
-  ], x + 8, y + 36, { maxWidth: 105 })
+  pdf.text(T.coverBody, x + 8, y + 36, { maxWidth: 105 })
   addQrPanel(pdf, qrImage, x + width - 33, y + 8, 24, 31)
 }
 
@@ -1707,17 +1983,179 @@ export const PACKET_TEXT_LAYOUT = [
   { label: 'importantNote', fontSize: 6.1, maxWidth: IMPORTANT_NOTE_CARD_WIDTH - 20, lines: IMPORTANT_NOTE_NOTE },
 ]
 
+// All translatable PDF copy. English reuses the wrap-tuned constants above so
+// the existing layout test still holds; Thai is rendered with the embedded
+// NotoSansThai font. Product names (MALIEV, Mesh Splitter) stay in Latin.
+const PDF_STRINGS = {
+  en: {
+    coverEyebrow: 'PRINT-READY MESH PACKAGE',
+    coverTitle: ['Mesh Splitter', 'Assembly Packet'],
+    coverBody: [
+      'Generated by MALIEV Mesh Splitter. Use this packet together with the',
+      'bundled STL files for printing, checking, and assembling the split model.',
+    ],
+    sourceFile: 'Source file',
+    buildVolume: 'Build volume',
+    partCount: 'Part count',
+    units: 'Units',
+    checklistTitle: 'Print checklist',
+    checklistItems: PACKET_CHECKLIST_ITEMS,
+    assemblyFlowTitle: 'Assembly flow',
+    assemblyFlowSteps: PACKET_ASSEMBLY_STEPS,
+    packageContentsTitle: 'Package contents',
+    packageContentsBody: PACKAGE_CONTENTS_BODY,
+    packageContentsNote: PACKAGE_CONTENTS_NOTE,
+    importantNoteTitle: 'Important note',
+    importantNoteBody: IMPORTANT_NOTE_BODY,
+    importantNoteNote: IMPORTANT_NOTE_NOTE,
+    labeledIndexTitle: 'Labeled Part Index',
+    labeledIndexSubtitle: 'This page shows the full assembly with part labels and the printable part inventory.',
+    assemblyWithLabels: 'Complete assembly with labels',
+    completeAssemblyTitle: 'Complete assembly preview',
+    completeAssemblyBadge: 'Assembled result',
+    completeAssemblyCaption: 'Preview for verification before printing and assembly.',
+    partsTableHeaders: ['Order', 'Label', 'Volume', 'Size X/Y/Z mm'],
+    moreParts: (n) => `${n} additional parts continue on their individual part pages.`,
+    partTitle: (n, label) => `Part ${n}: ${label}`,
+    partSubtitle: 'Review the highlighted position before printing and assembling this part.',
+    partInContext: 'Part highlighted inside assembly',
+    partIsolated: 'Individual part only',
+    label: 'Label',
+    dimensions: 'Dimensions',
+    volume: 'Volume',
+    partNotesTitle: 'Part handling notes',
+    partNotes: [
+      '1. Keep the part label visible until final assembly.',
+      '2. Confirm connector fit before applying adhesive or permanent fasteners.',
+      '3. If orientation matters for surface finish, choose the slicer orientation that protects visible faces.',
+    ],
+    keySectionTitle: 'Key Section',
+    keySectionSubtitle: 'Alignment keys are printed separately to align and join the split parts.',
+    keyIsolatedCaption: 'Isolated alignment key geometry',
+    keyType: 'Key Type',
+    keyTypeValue: 'Key Joint',
+    keyTotalQty: 'Total Qty',
+    keyQty: (n) => `${n} pcs`,
+    keyGuideTitle: 'Key Printing & Assembly Guide',
+    keyGuide: (n) => [
+      `1. A total of ${n} keys are required for this assembly.`,
+      `2. All keys are packed flat in the file "Key-${n}pcs.stl" with a 2mm gap.`,
+      '3. Print the keys using matching material and verify fit before applying adhesive.',
+      '4. Gently clean the internal sockets of the split parts to remove any printing artifacts.',
+    ],
+    assemblyGuideTitle: 'Visual Assembly Guide',
+    assemblyGuideSubtitle: 'Add parts in order. Newly added parts are colored; previously placed parts are grey.',
+    step: (n) => `Step ${n}`,
+    stepCaptionStart: (label) => `Step 1: start with ${label}`,
+    stepCaptionAdd: (n, label) => `Step ${n}: add ${label}`,
+    stepFirst: (label) => [`Start with ${label} as the base part.`, 'Set it on a flat surface in the orientation shown.'],
+    stepAdd: (label) => [`Add ${label} to the assembly in the highlighted position.`, 'Check that the shared faces sit flush.'],
+    stepKeyLine: 'Insert the alignment key(s) into the matching slots, then press the parts together.',
+    stepConnectorLine: 'Confirm connector alignment before moving to the next part.',
+    imageUnavailable: 'Preview image unavailable for this export.',
+  },
+  th: {
+    coverEyebrow: 'แพ็กเกจเมชพร้อมพิมพ์',
+    coverTitle: ['Mesh Splitter', 'ชุดคู่มือการประกอบ'],
+    coverBody: [
+      'สร้างโดย MALIEV Mesh Splitter ใช้เอกสารชุดนี้ร่วมกับ',
+      'ไฟล์ STL ที่แนบมาเพื่อพิมพ์ ตรวจสอบ และประกอบชิ้นงานที่แบ่งแล้ว',
+    ],
+    sourceFile: 'ไฟล์ต้นฉบับ',
+    buildVolume: 'พื้นที่พิมพ์',
+    partCount: 'จำนวนชิ้น',
+    units: 'หน่วย',
+    checklistTitle: 'เช็กลิสต์ก่อนพิมพ์',
+    checklistItems: [
+      ['พิมพ์ไฟล์ STL ทั้งหมดที่แนบมา', 'ตามมาตราส่วนที่กำหนด'],
+      ['เก็บป้ายกำกับไว้จนกว่า', 'จะประกอบเสร็จ'],
+      ['ตรวจหัวฉีด ความสูงเลเยอร์', 'และซัพพอร์ตก่อนพิมพ์'],
+      ['ลองประกอบก่อนใช้กาว', 'หรือตัวยึด'],
+    ],
+    assemblyFlowTitle: 'ลำดับการประกอบ',
+    assemblyFlowSteps: [
+      ['จัดเรียงชิ้นงานตามป้ายกำกับ', 'และตำแหน่งคอนเนกเตอร์'],
+      ['ลองประกอบและยืนยันทิศทาง', 'ด้วยภาพตัวอย่าง'],
+      ['เริ่มจากหน้าสัมผัสที่ใหญ่ที่สุด', 'แล้วขยายออกไป'],
+    ],
+    packageContentsTitle: 'สิ่งที่อยู่ในแพ็กเกจ',
+    packageContentsBody: [
+      'เอกสารชุดนี้เป็นภาพอ้างอิงของแพ็กเกจเมชที่ส่งออก',
+      'เก็บไว้คู่กับไฟล์ STL ที่แบ่งแล้ว เพื่อให้ผู้ใช้ตรวจสอบโมเดล',
+      'จำนวนชิ้น และการตั้งค่าการพิมพ์ได้',
+    ],
+    packageContentsNote: [
+      'สำหรับโมเดลหลายชิ้น ชื่อไฟล์และป้ายกำกับควร',
+      'ตรงกับลำดับการประกอบในเอกสารนี้',
+    ],
+    importantNoteTitle: 'ข้อควรทราบ',
+    importantNoteBody: [
+      'ยืนยันพื้นที่พิมพ์ หน่วย และทิศทางก่อนพิมพ์จริง',
+      'ตรวจมาตราส่วนอีกครั้งหลังซ่อมหรือแบ่งโมเดลใหม่',
+    ],
+    importantNoteNote: [
+      'สแกน QR เพื่อเปิด Mesh Splitter อีกครั้ง',
+      'สำหรับแบ่งหรือสร้างใหม่',
+    ],
+    labeledIndexTitle: 'ดัชนีชิ้นส่วนพร้อมป้ายกำกับ',
+    labeledIndexSubtitle: 'หน้านี้แสดงภาพประกอบทั้งหมดพร้อมป้ายกำกับ และรายการชิ้นส่วนที่ต้องพิมพ์',
+    assemblyWithLabels: 'ภาพประกอบทั้งหมดพร้อมป้ายกำกับ',
+    completeAssemblyTitle: 'ภาพตัวอย่างการประกอบทั้งหมด',
+    completeAssemblyBadge: 'ผลเมื่อประกอบเสร็จ',
+    completeAssemblyCaption: 'ภาพตัวอย่างเพื่อตรวจสอบก่อนพิมพ์และประกอบ',
+    partsTableHeaders: ['ลำดับ', 'ป้ายกำกับ', 'ปริมาตร', 'ขนาด X/Y/Z มม.'],
+    moreParts: (n) => `อีก ${n} ชิ้นแสดงต่อในหน้าชิ้นส่วนรายชิ้น`,
+    partTitle: (n, label) => `ชิ้นที่ ${n}: ${label}`,
+    partSubtitle: 'ตรวจสอบตำแหน่งที่ไฮไลต์ก่อนพิมพ์และประกอบชิ้นนี้',
+    partInContext: 'ไฮไลต์ชิ้นส่วนในภาพประกอบรวม',
+    partIsolated: 'เฉพาะชิ้นส่วนนี้',
+    label: 'ป้ายกำกับ',
+    dimensions: 'ขนาด',
+    volume: 'ปริมาตร',
+    partNotesTitle: 'ข้อแนะนำการจัดการชิ้นส่วน',
+    partNotes: [
+      '1. เก็บป้ายกำกับชิ้นส่วนไว้จนกว่าจะประกอบเสร็จ',
+      '2. ตรวจความพอดีของคอนเนกเตอร์ก่อนใช้กาวหรือตัวยึดถาวร',
+      '3. หากทิศทางมีผลต่อผิวงาน ให้เลือกทิศทางในสไลเซอร์ที่ปกป้องผิวที่มองเห็น',
+    ],
+    keySectionTitle: 'ส่วนของคีย์',
+    keySectionSubtitle: 'คีย์จัดแนวจะพิมพ์แยกเพื่อช่วยจัดแนวและยึดชิ้นส่วนที่แบ่งเข้าด้วยกัน',
+    keyIsolatedCaption: 'รูปทรงคีย์จัดแนวแบบแยกชิ้น',
+    keyType: 'ชนิดคีย์',
+    keyTypeValue: 'ข้อต่อแบบคีย์',
+    keyTotalQty: 'จำนวนรวม',
+    keyQty: (n) => `${n} ชิ้น`,
+    keyGuideTitle: 'คู่มือการพิมพ์และประกอบคีย์',
+    keyGuide: (n) => [
+      `1. งานนี้ต้องใช้คีย์ทั้งหมด ${n} ชิ้น`,
+      `2. คีย์ทั้งหมดถูกจัดวางในไฟล์ "Key-${n}pcs.stl" โดยเว้นระยะ 2 มม.`,
+      '3. พิมพ์คีย์ด้วยวัสดุเดียวกันและตรวจความพอดีก่อนใช้กาว',
+      '4. ทำความสะอาดช่องเสียบภายในของชิ้นส่วนเพื่อขจัดเศษจากการพิมพ์',
+    ],
+    assemblyGuideTitle: 'คู่มือการประกอบแบบภาพ',
+    assemblyGuideSubtitle: 'ประกอบชิ้นส่วนตามลำดับ ชิ้นที่เพิ่งเพิ่มจะเป็นสี ส่วนชิ้นที่ประกอบแล้วจะเป็นสีเทา',
+    step: (n) => `ขั้นที่ ${n}`,
+    stepCaptionStart: (label) => `ขั้นที่ 1: เริ่มด้วย ${label}`,
+    stepCaptionAdd: (n, label) => `ขั้นที่ ${n}: เพิ่ม ${label}`,
+    stepFirst: (label) => [`เริ่มด้วย ${label} เป็นชิ้นฐาน`, 'วางบนพื้นเรียบตามทิศทางที่แสดง'],
+    stepAdd: (label) => [`เพิ่ม ${label} เข้ากับชุดประกอบในตำแหน่งที่ไฮไลต์`, 'ตรวจให้หน้าสัมผัสแนบสนิท'],
+    stepKeyLine: 'เสียบคีย์จัดแนวเข้าในช่องที่ตรงกัน แล้วกดชิ้นส่วนเข้าด้วยกัน',
+    stepConnectorLine: 'ยืนยันการจัดแนวคอนเนกเตอร์ก่อนไปชิ้นถัดไป',
+    imageUnavailable: 'ไม่มีภาพตัวอย่างสำหรับการส่งออกนี้',
+  },
+}
+
 function addChecklistCard(pdf, x, y, width, height) {
   setRgb(pdf, 'setFillColor', [255, 255, 255])
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 4, 4, 'FD')
   setFont(pdf, 9, 'bold', BRAND.black)
-  pdf.text('Print checklist', x + 5, y + 10)
+  pdf.text(T.checklistTitle, x + 5, y + 10)
   // Four two-line items spread across the card body. Start/step are tuned so the
   // final item's second line clears the bottom border instead of touching it.
   let rowY = y + 20
   const rowStep = 11
-  PACKET_CHECKLIST_ITEMS.forEach((item) => {
+  T.checklistItems.forEach((item) => {
     setRgb(pdf, 'setDrawColor', [148, 163, 184])
     pdf.roundedRect(x + 5, rowY - 2.5, 3.2, 3.2, 0.6, 0.6, 'S')
     setFont(pdf, 6.1, 'normal', BRAND.ink)
@@ -1731,8 +2169,8 @@ function addAssemblyFlowCard(pdf, x, y, width, height) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 4, 4, 'FD')
   setFont(pdf, 9, 'bold', BRAND.black)
-  pdf.text('Assembly flow', x + 5, y + 10)
-  const steps = PACKET_ASSEMBLY_STEPS
+  pdf.text(T.assemblyFlowTitle, x + 5, y + 10)
+  const steps = T.assemblyFlowSteps
   let rowY = y + 21
   steps.forEach((step, index) => {
     const circleY = rowY - 1.4
@@ -1807,7 +2245,7 @@ async function createQrCode(appUrl) {
 }
 
 function addPartsTable(pdf, chunks, startY = 168) {
-  const headers = ['Order', 'Label', 'Volume', 'Size X/Y/Z mm']
+  const headers = T.partsTableHeaders
   const widths = [20, 42, 28, 72]
   let x = PDF_PAGE.margin
   setFont(pdf, 8, 'bold', BRAND.black)
@@ -1818,10 +2256,15 @@ function addPartsTable(pdf, chunks, startY = 168) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.line(PDF_PAGE.margin, startY + 3, PDF_PAGE.width - PDF_PAGE.margin, startY + 3)
 
+  const nonKeys = chunks.filter(c => !c.isKey)
+  const keys = chunks.filter(c => c.isKey)
+  const sortedNonKeys = [...nonKeys].sort((a, b) => (a.assemblyOrder ?? a.index) - (b.assemblyOrder ?? b.index))
+
   let y = startY + 11
   let remaining = 0
   setFont(pdf, 8, 'normal', BRAND.ink)
-  for (const chunk of orderedChunks(chunks)) {
+
+  for (const chunk of sortedNonKeys) {
     if (y > 273) {
       remaining += 1
       continue
@@ -1841,9 +2284,33 @@ function addPartsTable(pdf, chunks, startY = 168) {
     })
     y += 8
   }
+
+  if (keys.length > 0) {
+    if (y > 273) {
+      remaining += 1
+    } else {
+      const singleKey = keys[0]
+      const size = partDimensions(singleKey)
+      const singleVolumeCm3 = Math.abs(singleKey.volume || computeVolume(singleKey.geometry)) / 1000
+      const totalVolumeCm3 = singleVolumeCm3 * keys.length
+      x = PDF_PAGE.margin
+      const row = [
+        'Key',
+        `Key x${keys.length}`,
+        `${totalVolumeCm3.toFixed(2)} cm3`,
+        `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)}`,
+      ]
+      row.forEach((cell, i) => {
+        pdf.text(cell, x, y, { maxWidth: widths[i] - 4 })
+        x += widths[i]
+      })
+      y += 8
+    }
+  }
+
   if (remaining > 0) {
     setFont(pdf, 8, 'normal', BRAND.muted)
-    pdf.text(`${remaining} additional parts continue on their individual part pages.`, PDF_PAGE.margin, 276)
+    pdf.text(T.moreParts(remaining), PDF_PAGE.margin, 276)
   }
 }
 
@@ -1859,9 +2326,14 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
   } = await import('./renderSnapshots')
 
   const pdf = new jsPDF()
+  const locale = options.locale === 'th' ? 'th' : 'en'
+  T = PDF_STRINGS[locale]
+  pdfFontFamily = locale === 'th' ? await registerThaiFont(pdf) : 'helvetica'
   const appUrl = options.appUrl || DEFAULT_APP_URL
   const sourceFilename = options.sourceFilename || 'Uploaded mesh'
-  const ordered = orderedChunks(chunks)
+  const nonKeyChunks = chunks.filter(c => !c.isKey)
+  const keyChunks = chunks.filter(c => c.isKey)
+  const ordered = orderedChunks(chunks).filter(c => !c.isKey)
   const qrImage = await createQrCode(appUrl)
   const pdfContext = { exportAuthorization: options.exportAuthorization }
   let pageNumber = 1
@@ -1889,10 +2361,12 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
       { ...pdfContext, titleBlock: false },
     )
     addCoverHero(pdf, qrImage, appUrl)
-    addMetric(pdf, 'Source file', sourceFilename, PDF_PAGE.margin, 74, 42)
-    addMetric(pdf, 'Build volume', `${buildVolume.join(' x ')} mm`, 70, 74, 43)
-    addMetric(pdf, 'Part count', chunks.length, 117, 74, 32)
-    addMetric(pdf, 'Units', 'mm', 153, 74, 33)
+    // Source file gets the most room (filenames are long); Part count only needs
+    // ~5 digits and Units only "mm", so both are kept narrow.
+    addMetric(pdf, T.sourceFile, sourceFilename, PDF_PAGE.margin, 74, 70, 18, { singleLine: true })
+    addMetric(pdf, T.buildVolume, `${buildVolume.join(' x ')} mm`, 98, 74, 44, 18, { singleLine: true })
+    addMetric(pdf, T.partCount, nonKeyChunks.length, 146, 74, 20, 18, { singleLine: true })
+    addMetric(pdf, T.units, 'mm', 170, 74, 16, 18, { singleLine: true })
     addImageFrame(
       pdf,
       completeImage,
@@ -1900,16 +2374,16 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
       99,
       108,
       104,
-      'Preview for verification before printing and assembly.',
-      { title: 'Complete assembly preview', badge: 'Assembled result' },
+      T.completeAssemblyCaption,
+      { title: T.completeAssemblyTitle, badge: T.completeAssemblyBadge },
     )
     addChecklistCard(pdf, 136, 99, CHECKLIST_CARD_WIDTH, 62)
     addAssemblyFlowCard(pdf, 136, 165, ASSEMBLY_FLOW_CARD_WIDTH, 48)
     addInfoCard(
       pdf,
-      'Package contents',
-      PACKAGE_CONTENTS_BODY,
-      PACKAGE_CONTENTS_NOTE,
+      T.packageContentsTitle,
+      T.packageContentsBody,
+      T.packageContentsNote,
       PDF_PAGE.margin,
       218,
       PACKAGE_CONTENTS_CARD_WIDTH,
@@ -1917,9 +2391,9 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
     )
     addInfoCard(
       pdf,
-      'Important note',
-      IMPORTANT_NOTE_BODY,
-      IMPORTANT_NOTE_NOTE,
+      T.importantNoteTitle,
+      T.importantNoteBody,
+      T.importantNoteNote,
       111,
       218,
       IMPORTANT_NOTE_CARD_WIDTH,
@@ -1929,14 +2403,14 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
     pageNumber += 1
     await addPage(
       pdf,
-      'Labeled Part Index',
-      'This page shows the full assembly with part labels and the printable part inventory.',
+      T.labeledIndexTitle,
+      T.labeledIndexSubtitle,
       appUrl,
       qrImage,
       pageNumber,
       pdfContext,
     )
-    addImageFrame(pdf, labeledAssemblyImage, PDF_PAGE.margin, 58, 162, 96, 'Complete assembly with labels')
+    addImageFrame(pdf, labeledAssemblyImage, PDF_PAGE.margin, 58, 162, 96, T.assemblyWithLabels)
     addPartsTable(pdf, chunks, 168)
 
     for (const chunk of ordered) {
@@ -1946,59 +2420,92 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
       const isolated = renderPartIsolated(chunk)
       await addPage(
         pdf,
-        `Part ${chunk.assemblyOrder ?? chunk.index + 1}: ${chunk.label}`,
-        'Review the highlighted position before printing and assembling this part.',
+        T.partTitle(chunk.assemblyOrder ?? chunk.index + 1, chunk.label),
+        T.partSubtitle,
         appUrl,
         qrImage,
         pageNumber,
         pdfContext,
       )
-      addImageFrame(pdf, inContext, PDF_PAGE.margin, 58, 77, 74, 'Part highlighted inside assembly')
-      addImageFrame(pdf, isolated, 109, 58, 77, 74, 'Individual part only')
-      addMetric(pdf, 'Label', chunk.label, PDF_PAGE.margin, 145, 42)
-      addMetric(pdf, 'Dimensions', `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm`, 70, 145, 70)
-      addMetric(pdf, 'Volume', `${(Math.abs(chunk.volume || computeVolume(chunk.geometry)) / 1000).toFixed(2)} cm3`, 146, 145, 40)
+      addImageFrame(pdf, inContext, PDF_PAGE.margin, 58, 77, 74, T.partInContext)
+      addImageFrame(pdf, isolated, 109, 58, 77, 74, T.partIsolated)
+      addMetric(pdf, T.label, chunk.label, PDF_PAGE.margin, 145, 42)
+      addMetric(pdf, T.dimensions, `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm`, 70, 145, 70)
+      addMetric(pdf, T.volume, `${(Math.abs(chunk.volume || computeVolume(chunk.geometry)) / 1000).toFixed(2)} cm3`, 146, 145, 40)
       setFont(pdf, 11, 'bold', BRAND.black)
-      pdf.text('Part handling notes', PDF_PAGE.margin, 182)
+      pdf.text(T.partNotesTitle, PDF_PAGE.margin, 182)
       setFont(pdf, 9, 'normal', BRAND.ink)
-      pdf.text([
-        '1. Keep the part label visible until final assembly.',
-        '2. Confirm connector fit before applying adhesive or permanent fasteners.',
-        '3. If orientation matters for surface finish, choose the slicer orientation that protects visible faces.',
-      ], PDF_PAGE.margin, 193, { maxWidth: 178 })
+      pdf.text(T.partNotes, PDF_PAGE.margin, 193, { maxWidth: 178 })
+    }
+
+    if (keyChunks.length > 0) {
+      pageNumber += 1
+      const singleKey = keyChunks[0]
+      const size = partDimensions(singleKey)
+      const singleVolumeCm3 = Math.abs(singleKey.volume || computeVolume(singleKey.geometry)) / 1000
+      const totalVolumeCm3 = singleVolumeCm3 * keyChunks.length
+      const isolated = renderPartIsolated(singleKey)
+
+      await addPage(
+        pdf,
+        T.keySectionTitle,
+        T.keySectionSubtitle,
+        appUrl,
+        qrImage,
+        pageNumber,
+        pdfContext,
+      )
+
+      addImageFrame(pdf, isolated, PDF_PAGE.margin, 58, 77, 74, T.keyIsolatedCaption)
+      addMetric(pdf, T.keyType, T.keyTypeValue, PDF_PAGE.margin, 145, 42)
+      addMetric(pdf, T.dimensions, `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm`, 70, 145, 70)
+      addMetric(pdf, T.keyTotalQty, T.keyQty(keyChunks.length), 146, 145, 40)
+
+      setFont(pdf, 11, 'bold', BRAND.black)
+      pdf.text(T.keyGuideTitle, PDF_PAGE.margin, 182)
+      setFont(pdf, 9, 'normal', BRAND.ink)
+      pdf.text(T.keyGuide(keyChunks.length), PDF_PAGE.margin, 193, { maxWidth: 178 })
     }
 
     for (let i = 0; i < ordered.length; i += 2) {
       pageNumber += 1
       await addPage(
         pdf,
-        'Visual Assembly Guide',
-        'Add parts in order. Newly added parts are colored; previously placed parts are grey.',
+        T.assemblyGuideTitle,
+        T.assemblyGuideSubtitle,
         appUrl,
         qrImage,
         pageNumber,
         pdfContext,
       )
 
+      const usesKeys = keyChunks.length > 0
       for (let slot = 0; slot < 2; slot++) {
         const stepIndex = i + slot
         if (stepIndex >= ordered.length) break
         const chunk = ordered[stepIndex]
+        const isFirst = stepIndex === 0
         const stepImage = renderAssemblyStep(ordered, stepIndex)
         const y = slot === 0 ? 58 : 169
-        addImageFrame(pdf, stepImage, PDF_PAGE.margin, y, 92, 80, `Step ${stepIndex + 1}: add ${chunk.label}`)
+        const caption = isFirst ? T.stepCaptionStart(chunk.label) : T.stepCaptionAdd(stepIndex + 1, chunk.label)
+        addImageFrame(pdf, stepImage, PDF_PAGE.margin, y, 92, 80, caption)
         setFont(pdf, 12, 'bold', BRAND.black)
-        pdf.text(`Step ${stepIndex + 1}`, 124, y + 12)
+        pdf.text(T.step(stepIndex + 1), 124, y + 12)
         setFont(pdf, 9, 'normal', BRAND.ink)
-        pdf.text([
-          `Place ${chunk.label} in the highlighted position.`,
-          'Check that neighboring faces sit flush.',
-          'Confirm connector alignment before moving to the next part.',
-        ], 124, y + 24, { maxWidth: 62 })
+        // First part is the base (nothing to attach to yet); every later part
+        // joins the existing assembly, and if keys are used the key-insertion
+        // step is called out explicitly.
+        const lines = isFirst ? [...T.stepFirst(chunk.label)] : [...T.stepAdd(chunk.label)]
+        if (!isFirst) {
+          lines.push(usesKeys ? T.stepKeyLine : T.stepConnectorLine)
+        }
+        pdf.text(lines, 124, y + 24, { maxWidth: 62 })
       }
     }
   } finally {
     disposeSnapshotRenderer?.()
+    pdfFontFamily = 'helvetica'
+    T = PDF_STRINGS.en
   }
 
   return pdf.output('arraybuffer')

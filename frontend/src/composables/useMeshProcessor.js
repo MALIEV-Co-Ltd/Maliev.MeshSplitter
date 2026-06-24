@@ -32,7 +32,9 @@ export function useMeshProcessor(options = {}) {
   const loading = ref(false)
   const error = ref(null)
   const scaleFactor = ref(1)
-  const buildVolume = ref([250, 250, 250])
+  // Default to the Bambu Lab X1C printable envelope (256x256x250, the
+  // Bambu-Studio default Z). BuildVolumeConfig auto-selects the matching preset.
+  const buildVolume = ref([256, 256, 250])
 
   function setMeshState(geometry, filename, options = {}) {
     const info = validateManifold(geometry)
@@ -57,7 +59,26 @@ export function useMeshProcessor(options = {}) {
     chunks.value = []
     disposePreviewChunks()
     previewChunks.value = []
+    generateMeshThumbnail()
     return meshInfo.value
+  }
+
+  // A small rendered preview of the whole (pre-split) mesh, shown next to the
+  // filename in the Mesh File panel. Rendered off the decimated preview geometry
+  // and deferred so it never blocks the upload returning. Dropped if the mesh is
+  // replaced before it finishes.
+  function generateMeshThumbnail() {
+    if (typeof window === 'undefined') return
+    const targetInfo = meshInfo.value
+    const geometry = previewMeshGeometry.value || meshGeometry.value
+    if (!geometry) return
+    setTimeout(() => {
+      if (meshInfo.value !== targetInfo) return
+      const thumbnail = renderPartThumbnail(geometry, 0x9fb8d6)
+      if (thumbnail && meshInfo.value === targetInfo) {
+        meshInfo.value = { ...meshInfo.value, thumbnail }
+      }
+    }, 0)
   }
 
   async function loadStl(file) {
@@ -187,6 +208,7 @@ export function useMeshProcessor(options = {}) {
         appUrl: import.meta.env.VITE_MESH_SPLITTER_PUBLIC_URL || 'https://shop.maliev.com/tools/mesh-splitter',
         sourceGeometry: meshGeometry.value,
         sourceFilename: meshInfo.value?.filename,
+        locale: options.locale,
         exportAuthorization: options.authorization,
         preparedExportable: options.preparedExportable,
         preparedFailed: options.preparedFailed,

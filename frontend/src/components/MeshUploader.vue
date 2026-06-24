@@ -36,7 +36,10 @@
 
       <div v-else class="mesh-loaded">
         <div class="mesh-loaded__row">
-          <span class="mesh-loaded__icon"><FileIcon :size="18" :stroke-width="1.75" /></span>
+          <span class="mesh-loaded__thumb">
+            <img v-if="meshInfo.thumbnail" :src="meshInfo.thumbnail" alt="" />
+            <FileIcon v-else :size="20" :stroke-width="1.5" />
+          </span>
           <div class="mesh-loaded__info">
             <span class="mesh-loaded__name" :title="meshInfo.filename">{{ meshInfo.filename }}</span>
             <span class="mesh-loaded__stats">
@@ -44,10 +47,6 @@
               {{ Number(meshInfo.faces || 0).toLocaleString() }} {{ labels.faces }}
             </span>
           </div>
-        </div>
-        <div class="mesh-loaded__status" :class="meshInfo.is_watertight ? 'is-ok' : 'is-warn'">
-          <component :is="meshInfo.is_watertight ? CheckIcon : AlertIcon" :size="13" :stroke-width="2" />
-          {{ meshInfo.is_watertight ? labels.loadedWatertight : labels.loadedNotWatertight }}
         </div>
         <Button variant="outline" size="sm" class="w-full justify-center gap-2" :disabled="loading" @click="fileInput?.click()">
           <UploadIcon :size="14" :stroke-width="1.75" />
@@ -68,7 +67,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { File as FileIcon, Upload as UploadIcon, Check as CheckIcon, AlertTriangle as AlertIcon } from '@lucide/vue'
+import { File as FileIcon, Upload as UploadIcon } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 

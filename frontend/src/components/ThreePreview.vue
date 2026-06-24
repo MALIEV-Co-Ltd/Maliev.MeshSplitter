@@ -24,7 +24,8 @@ const props = defineProps({
 })
 
 const container = ref(null)
-const selectedOpacity = 0.22
+// Non-selected parts fade well back so the isolated part clearly stands out.
+const selectedOpacity = 0.06
 
 let renderer, scene, camera, controls, meshGroup, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
 let ambientLight, keyLight, fillLight
@@ -166,12 +167,15 @@ function buildMeshes(chunks) {
     mesh.userData.chunkIndex = chunk.index
     meshGroup.add(mesh)
     box.expandByObject(mesh)
-    labels.push({ text: chunk.label || `P${i + 1}`, position: chunk.centroid || computeGeometryCenter(geom), color, chunkIndex: chunk.index })
+    labels.push({ text: chunk.label || `P${i + 1}`, position: chunk.centroid || computeGeometryCenter(geom), color, chunkIndex: chunk.index, isKey: Boolean(chunk.isKey) })
   })
   if (meshGroup.children.length === 0) return
-  // Labels sized off the model so they stay readable on large assemblies.
+  // Labels sized off the model so they stay readable on large assemblies. Key
+  // pieces get no floating label — they're tiny and the part list already names
+  // them, so a "Key" tag just clutters the model.
   const labelScale = labelScaleForBox(box)
   labels.forEach((l) => {
+    if (l.isKey) return
     const sprite = createLabelSprite(l.text, l.position, l.color, labelScale)
     sprite.userData.isLabel = true
     sprite.userData.chunkIndex = l.chunkIndex
@@ -195,9 +199,15 @@ function labelScaleForBox(box) {
 function applyChunkVisibility(selectedChunkIndex) {
   if (!meshGroup) return
   const hasSelection = selectedChunkIndex !== null
+  const selectedChunk = hasSelection ? props.chunks.find(c => c.index === selectedChunkIndex) : null
+  const isKeySelected = selectedChunk?.isKey === true
+
   meshGroup.children.forEach((child) => {
     if (!child.isMesh) return
-    const isSelected = !hasSelection || selectedChunkIndex === child.userData.chunkIndex
+    const isSelected = !hasSelection ||
+      (isKeySelected
+        ? props.chunks.find(c => c.index === child.userData.chunkIndex)?.isKey === true
+        : selectedChunkIndex === child.userData.chunkIndex)
     // Selected (or "no selection" = everything) renders as a normal opaque
     // solid; only the non-selected parts fade out, so the active part is
     // never blended/occluded by overlapping transparent geometry.
@@ -215,9 +225,16 @@ function applyChunkVisibility(selectedChunkIndex) {
 // needs to appear for whichever part the customer has isolated.
 function applyLabelVisibility(selectedChunkIndex) {
   if (!meshGroup) return
+  const hasSelection = selectedChunkIndex !== null
+  const selectedChunk = hasSelection ? props.chunks.find(c => c.index === selectedChunkIndex) : null
+  const isKeySelected = selectedChunk?.isKey === true
+
   meshGroup.children.forEach((sprite) => {
     if (!sprite.userData?.isLabel) return
-    sprite.visible = selectedChunkIndex !== null && sprite.userData.chunkIndex === selectedChunkIndex
+    sprite.visible = hasSelection &&
+      (isKeySelected
+        ? props.chunks.find(c => c.index === sprite.userData.chunkIndex)?.isKey === true
+        : sprite.userData.chunkIndex === selectedChunkIndex)
   })
   requestRender()
 }

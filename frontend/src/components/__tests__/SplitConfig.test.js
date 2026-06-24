@@ -27,7 +27,7 @@ describe('SplitConfig', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: false, err: '' }
     })
-    expect(wrapper.text()).toContain('Mortise & Tenon')
+    expect(wrapper.text()).toContain('Key')
     expect(wrapper.text()).toContain('Connectors')
     await wrapper.get('.conn-select-trigger').trigger('click')
     expect(wrapper.text()).toContain('Dowel')
@@ -56,7 +56,7 @@ describe('SplitConfig', () => {
     expect(wrapper.text()).toContain('parts')
   })
 
-  it('emits the default mortise connector without warning', async () => {
+  it('emits the default key connector without warning', async () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: true, err: '', divisions: [2, 2, 1] }
     })
@@ -67,12 +67,12 @@ describe('SplitConfig', () => {
     expect(volume).toEqual([250, 250, 250])
     expect(divisions).toEqual([2, 2, 1])
     expect(connectorConfig).toEqual({
-      type: 'Mortise & Tenon',
+      type: 'Key',
       depth: 5,
       clearance: 0.3,
       perFace: 1,
-      tenonWidth: 6,
-      tenonThickness: 4,
+      keyWidth: 6,
+      keyHeight: 3.5,
     })
     expect(wrapper.text()).not.toContain('No connector selected')
   })

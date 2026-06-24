@@ -9,18 +9,18 @@ describe('ConnectorConfig', () => {
     expect(wrapper.text()).toContain('Dowel')
     expect(wrapper.text()).toContain('Mortise & Tenon')
     expect(wrapper.text()).toContain('Key')
-    expect(wrapper.findAll('a').map((a) => a.attributes('href')).some((href) => href.includes('wikipedia.org'))).toBe(true)
+    expect(wrapper.findAll('a').map((a) => a.attributes('href')).some((href) => href.includes('google.com'))).toBe(true)
   })
 
-  it('emits a Mortise & Tenon config by default', () => {
+  it('emits a Key config by default', () => {
     const wrapper = mount(ConnectorConfig)
     expect(wrapper.emitted('update:modelValue').at(-1)[0]).toEqual({
-      type: 'Mortise & Tenon',
+      type: 'Key',
       depth: 5,
       clearance: 0.3,
       perFace: 1,
-      tenonWidth: 6,
-      tenonThickness: 4,
+      keyWidth: 6,
+      keyHeight: 3.5,
     })
   })
 
