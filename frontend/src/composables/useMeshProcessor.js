@@ -48,6 +48,7 @@ export function useMeshProcessor(options = {}) {
     updating: 'Updating connectors…',
   })
   const error = ref(null)
+  const problemEdges = ref([])
   const repairPreview = ref(null)
   let pendingOriginalGeometry = null
 
@@ -109,6 +110,7 @@ export function useMeshProcessor(options = {}) {
     repairPreview.value = null
     pendingOriginalGeometry = null
     error.value = null
+    problemEdges.value = []
     try {
       const buffer = await file.arrayBuffer()
       progressLabel.value = progressLabels.value.checking
@@ -218,6 +220,7 @@ export function useMeshProcessor(options = {}) {
       generateThumbnails()
     } catch (e) {
       error.value = e.message
+      problemEdges.value = e.boundaryData || []
       throw e
     } finally {
       loading.value = false
@@ -344,6 +347,7 @@ export function useMeshProcessor(options = {}) {
     cleanSplitChunks.value = []
     chunks.value = []
     connectorPositions.value = []
+    problemEdges.value = []
     reapplyingConnectors.value = false
     lastConnectorConfig = null
     loading.value = false
@@ -361,6 +365,7 @@ export function useMeshProcessor(options = {}) {
     chunks: readonly(chunks),
     previewChunks: readonly(previewChunks),
     connectorPositions: readonly(connectorPositions),
+    problemEdges: readonly(problemEdges),
     reapplyingConnectors: readonly(reapplyingConnectors),
     loading: readonly(loading),
     progressLabel: readonly(progressLabel),

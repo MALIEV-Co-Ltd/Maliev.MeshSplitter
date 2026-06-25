@@ -14,6 +14,8 @@ const {
   mockExportStl,
   mockExportPdf,
   mockPrepareExportChunks,
+  mockRepairMeshGeometryRobust,
+  mockComputeProblemEdges,
   mockStlParse,
 } = vi.hoisted(() => ({
   mockValidateManifold: vi.fn(),
@@ -28,6 +30,8 @@ const {
   mockExportStl: vi.fn(),
   mockExportPdf: vi.fn(),
   mockPrepareExportChunks: vi.fn(),
+  mockRepairMeshGeometryRobust: vi.fn(),
+  mockComputeProblemEdges: vi.fn(),
   mockStlParse: vi.fn(),
 }))
 
@@ -45,6 +49,8 @@ vi.mock('../mesh/meshProcessor', () => ({
   exportStl: mockExportStl,
   exportPdf: mockExportPdf,
   prepareExportChunks: mockPrepareExportChunks,
+  repairMeshGeometryRobust: mockRepairMeshGeometry,
+  computeProblemEdges: mockRepairMeshGeometry,
 }))
 
 vi.mock('three/addons/loaders/STLLoader.js', () => ({
@@ -510,6 +516,70 @@ describe('useMeshProcessor', () => {
       )
       expect(mockExportPackage.mock.calls[0][2].sourceGeometry).not.toBe(previewMeshGeometry.value)
       expect(result.filename).toBe('packet-mesh-splitter-package.zip')
+    })
+  })
+
+  describe('problemEdges', () => {
+    function setupLoadedMesh() {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      return useMeshProcessor()
+    }
+
+    it('sets problemEdges when split fails with boundaryData', async () => {
+      mockSplitMeshManifold.mockRejectedValue(
+        Object.assign(new Error('non-manifold'), {
+          boundaryData: [{
+            positions: new Float32Array([0,0,0,1,0,0,1,1,0]),
+            fillIndices: new Uint16Array([0,1,2]),
+            center: [0.5, 0.33, 0],
+          }],
+        })
+      )
+      const { loadStl, split, problemEdges } = setupLoadedMesh()
+      await loadStl(createMockFile('test.stl'))
+      try { await split([100, 100, 100], [2, 2, 1]) } catch { /* expected */ }
+      expect(problemEdges.value.length).toBe(1)
+      expect(problemEdges.value[0].center).toEqual([0.5, 0.33, 0])
+    })
+
+    it('clears problemEdges on loadStl', async () => {
+      mockSplitMeshManifold.mockRejectedValue(
+        Object.assign(new Error('non-manifold'), {
+          boundaryData: [{
+            positions: new Float32Array([0,0,0,1,0,0,1,1,0]),
+            fillIndices: new Uint16Array([0,1,2]),
+            center: [0.5, 0.33, 0],
+          }],
+        })
+      )
+      const { loadStl, split, problemEdges } = setupLoadedMesh()
+      await loadStl(createMockFile('test.stl'))
+      try { await split([100, 100, 100], [2, 2, 1]) } catch { /* expected */ }
+      expect(problemEdges.value.length).toBe(1)
+
+      // Load a new mesh — problemEdges should reset
+      mockStlParse.mockReturnValue(createMockGeometry())
+      await loadStl(createMockFile('test2.stl'))
+      expect(problemEdges.value).toEqual([])
+    })
+
+    it('is not set when split succeeds', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      mockSplitMeshManifold.mockResolvedValue([
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 5) },
+      ])
+      const { loadStl, split, problemEdges } = useMeshProcessor()
+      await loadStl(createMockFile('test.stl'))
+      await split([100, 100, 100], [2, 2, 1])
+      expect(problemEdges.value).toEqual([])
     })
   })
 
