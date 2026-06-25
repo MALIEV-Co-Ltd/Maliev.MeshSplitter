@@ -101,8 +101,8 @@ function setGrid(maxExtent) {
   }
   lastGridExtent = Number(maxExtent) || 0
   const span = Math.max(50, lastGridExtent)
-  const size = Math.ceil((span * 1.6) / 50) * 50
-  const divisions = Math.max(8, Math.round(size / 50))
+  const size = Math.ceil((span * 1.6) / 100) * 100
+  const divisions = Math.max(8, size / 50)
   const colors = gridColors()
   grid = new THREE.GridHelper(size, divisions, colors.main, colors.sub)
   if (props.upAxis === 'Z') grid.rotation.x = -Math.PI / 2
