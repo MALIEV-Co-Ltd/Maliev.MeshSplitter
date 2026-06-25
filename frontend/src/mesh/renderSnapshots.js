@@ -80,6 +80,66 @@ function fitCameraToBox(box) {
   camera.updateProjectionMatrix()
 }
 
+// Frame one highlighted part inside the assembly so it always reads clearly:
+// look from the side the part sticks out toward (assembly centre -> part) so the
+// rest of the body can never hide it, tilt down for a 3/4 angle, aim at the part,
+// and zoom to a fraction of the PART's size — adapting to both the part and the
+// overall model rather than always framing the (growing) whole assembly. Pure and
+// exported so the occlusion-avoidance + zoom geometry is unit-testable without a
+// WebGL context.
+export function computePartCameraView(assemblyBox, partCenter, partRadius, fovDegrees = CAMERA_FOV_DEGREES, aspect = WIDTH / HEIGHT) {
+  const assemblySphere = new THREE.Sphere()
+  assemblyBox.getBoundingSphere(assemblySphere)
+  const assemblyCenter = assemblySphere.center
+  const assemblyRadius = Math.max(assemblySphere.radius, 1)
+  const radius = Math.max(partRadius, 0.5)
+
+  // Outward direction: from the body's centre toward the part. The part then sits
+  // between the camera and the body, so the body can't occlude it.
+  const viewDir = new THREE.Vector3().subVectors(partCenter, assemblyCenter)
+  if (viewDir.lengthSq() < 1e-6) viewDir.set(0.75, 0.62, 0.62) // part ~at centre -> default 3/4
+  viewDir.normalize()
+  if (viewDir.z < 0.4) viewDir.z = 0.4 // always look slightly down (camera up is +Z)
+  if (Math.abs(viewDir.x) < 0.15 && Math.abs(viewDir.y) < 0.15) {
+    // Part directly above/below the centre would give a flat top-down view.
+    viewDir.x = 0.5
+    viewDir.y = 0.35
+  }
+  viewDir.normalize()
+
+  // Zoom to ~2.2x the part so it's clearly visible with a little context, but
+  // never looser than the whole assembly (no point zooming out past the model).
+  const focusRadius = Math.min(radius * 2.2, assemblyRadius * 1.15)
+  const focusBox = new THREE.Box3().setFromCenterAndSize(
+    partCenter,
+    new THREE.Vector3(focusRadius * 2, focusRadius * 2, focusRadius * 2),
+  )
+  const distance = calculatePerspectiveFitDistance(focusBox, fovDegrees, aspect, CAMERA_FIT_MARGIN)
+  return {
+    position: partCenter.clone().addScaledVector(viewDir, distance),
+    target: partCenter.clone(),
+    near: Math.max(0.01, distance / 1000),
+    far: distance + assemblyRadius * 6,
+    distance,
+  }
+}
+
+function aimCameraAtPart(assemblyBox, partCenter, partRadius) {
+  const view = computePartCameraView(assemblyBox, partCenter, partRadius, camera.fov, camera.aspect)
+  camera.position.copy(view.position)
+  camera.near = view.near
+  camera.far = view.far
+  camera.lookAt(view.target)
+  camera.updateProjectionMatrix()
+}
+
+// Bounding sphere of a single mesh, for aiming the camera at a highlighted part.
+function meshSphere(mesh) {
+  const sphere = new THREE.Sphere()
+  new THREE.Box3().setFromObject(mesh).getBoundingSphere(sphere)
+  return sphere
+}
+
 function createMaterial(color, extra = {}) {
   return createCadSurfaceMaterial(color, extra)
 }
@@ -136,7 +196,7 @@ function makeLabelSprite(label, position, color) {
   return sprite
 }
 
-function withClearScene(fn) {
+function withClearScene(fn, fitFn) {
   const r = ensureRenderer()
   if (!r) return null
   ensureScene()
@@ -149,7 +209,7 @@ function withClearScene(fn) {
   try {
     fn(group, box)
     if (group.children.length === 0 || box.isEmpty()) return null
-    fitCameraToBox(box)
+    ;(fitFn || fitCameraToBox)(box)
     r.render(scene, camera)
     // JPEG: jsPDF stores addImage('PNG', ...) uncompressed, which blew a
     // 4-part report up to ~23MB. These are photographic 3D renders, not
@@ -190,6 +250,8 @@ export function renderAssembly(chunks, { labels = false } = {}) {
 
 /** One part highlighted opaque inside the full assembly; the rest fades out. */
 export function renderPartInContext(chunks, selectedIndex) {
+  let selectedCenter = null
+  let selectedRadius = 0
   return withClearScene((group, box) => {
     chunks.forEach((chunk) => {
       if (!chunk.geometry) return
@@ -201,8 +263,13 @@ export function renderPartInContext(chunks, selectedIndex) {
       mesh.renderOrder = isSelected ? 0 : 1
       group.add(mesh)
       box.expandByObject(mesh)
+      if (isSelected) {
+        const sphere = meshSphere(mesh)
+        selectedCenter = sphere.center.clone()
+        selectedRadius = sphere.radius
+      }
     })
-  })
+  }, (box) => (selectedCenter ? aimCameraAtPart(box, selectedCenter, selectedRadius) : fitCameraToBox(box)))
 }
 
 /** A single part, alone, fit tightly in frame. */
@@ -221,6 +288,8 @@ export function renderPartIsolated(chunk) {
  * its real color, and anything after hasn't been placed yet.
  */
 export function renderAssemblyStep(orderedChunks, stepIndex) {
+  let newCenter = null
+  let newRadius = 0
   return withClearScene((group, box) => {
     orderedChunks.forEach((chunk, i) => {
       if (!chunk.geometry || i > stepIndex) return
@@ -229,8 +298,13 @@ export function renderAssemblyStep(orderedChunks, stepIndex) {
       const mesh = new THREE.Mesh(chunk.geometry.clone(), mat)
       group.add(mesh)
       box.expandByObject(mesh)
+      if (isNew) {
+        const sphere = meshSphere(mesh)
+        newCenter = sphere.center.clone()
+        newRadius = sphere.radius
+      }
     })
-  })
+  }, (box) => (newCenter ? aimCameraAtPart(box, newCenter, newRadius) : fitCameraToBox(box)))
 }
 
 export function disposeSnapshotRenderer() {

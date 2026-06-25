@@ -1930,7 +1930,10 @@
   }
 
   .capability-list span {
-    color: oklch(1 0 0 / 0.72);
+    /* On the inverted (--primary) card, secondary text must use the card's
+       foreground — a hardcoded white vanishes in dark mode where --primary
+       flips to near-white. */
+    color: oklch(var(--primary-foreground) / 0.72);
     line-height: 1.5;
   }
 
@@ -1944,8 +1947,15 @@
     margin-bottom: clamp(2rem, 5vw, 4rem);
   }
 
+  /* The shared heading rule colors h2 with --primary, but here the card IS
+     --primary — so the heading must use the card's foreground or it's invisible
+     (same color as its background) in both themes. */
+  .landing-cta h2 {
+    color: oklch(var(--primary-foreground));
+  }
+
   .landing-cta .landing-kicker {
-    color: var(--steel-400);
+    color: oklch(var(--primary-foreground) / 0.66);
   }
 
   .landing-cta .landing-kicker::before {
