@@ -1,4 +1,5 @@
 export const STOREFRONT_BASE_PATH = '/tools/mesh-splitter'
+export const STOREFRONT_APP_PATH = `${STOREFRONT_BASE_PATH}/app`
 
 export function buildCustomerLoginUrl({
   returnPath,
@@ -21,4 +22,15 @@ export function normalizeReturnPath(returnPath, fallbackPath = STOREFRONT_BASE_P
   if (typeof returnPath !== 'string') return fallbackPath
   if (!returnPath.startsWith('/') || returnPath.startsWith('//')) return fallbackPath
   return returnPath
+}
+
+// "Start free" / "Sign in to start" CTAs on the landing page itself must send
+// the customer to the app page after auth, not bounce back to the landing
+// page they clicked from. Only preserve the current path (with its query and
+// hash) when the click happens from inside the app already.
+export function signInReturnPath(location = window.location, { basePath = STOREFRONT_BASE_PATH, appPath = STOREFRONT_APP_PATH } = {}) {
+  const pathname = typeof location?.pathname === 'string' ? location.pathname : basePath
+  const currentPath = pathname.replace(/\/+$/, '')
+  if (currentPath === basePath) return appPath
+  return storefrontReturnPath(location, basePath)
 }
