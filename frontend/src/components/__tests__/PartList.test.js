@@ -51,4 +51,19 @@ describe('PartList', () => {
 
     expect(wrapper.emitted('select')?.[0][0]).toEqual(1)
   })
+
+  it('shows bounding box on its own line and volume with faces on the next', () => {
+    const wrapper = mount(PartList, {
+      props: {
+        chunks: [
+          { index: 0, label: 'P01', volume: 2070400, faces: 29912, dims: { x: 153, y: 154, z: 158 }, color: 0xff0000 },
+        ],
+      },
+    })
+
+    const metaLines = wrapper.findAll('.pl-meta')
+    expect(metaLines[0].text()).toBe('153 × 154 × 158 mm')
+    expect(metaLines[0].text()).not.toContain('faces')
+    expect(metaLines[1].text()).toBe('2070.4 cm³ · 29,912 faces')
+  })
 })

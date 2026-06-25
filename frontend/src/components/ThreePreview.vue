@@ -41,6 +41,7 @@ let dragOffset = new THREE.Vector3()
 let isDragging = false
 const raycaster = new THREE.Raycaster()
 const pointer = new THREE.Vector2()
+let markerAnimId = null
 const CONNECTOR_MARKER_COLORS = {
   dowel: 0x00e5ff,
   mortise: 0xff6b35,
@@ -202,7 +203,6 @@ function buildMeshes(chunks) {
   setGrid(maxBoxExtent(box))
   applyChunkVisibility(props.selectedChunkIndex)
   applyLabelVisibility(props.selectedChunkIndex)
-  fitCamera(box)
   requestRender()
 }
 
@@ -474,6 +474,7 @@ function requestRender() {
 
 function buildConnectorMarkers(positions) {
   if (connectorMarkers) {
+    stopConnectorAnimation()
     scene.remove(connectorMarkers)
     connectorMarkers.children.forEach((c) => {
       c.geometry?.dispose()
@@ -489,17 +490,47 @@ function buildConnectorMarkers(positions) {
     normal.setComponent(entry.axis, entry.plane > 0 ? 1 : -1)
     const markerPos = pos.clone().add(normal.clone().multiplyScalar(1.5))
     const color = CONNECTOR_MARKER_COLORS[entry.type] || 0x00e5ff
+    const baseRadius = Math.max(entry.radius * 0.5, 2)
     const marker = new THREE.Mesh(
-      new THREE.SphereGeometry(Math.max(entry.radius * 0.5, 2), 12, 12),
+      new THREE.SphereGeometry(1, 12, 12),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 }),
     )
     marker.position.copy(markerPos)
+    marker.scale.setScalar(baseRadius)
     marker.userData.connectorId = entry.id
     marker.userData.isConnectorMarker = true
+    marker.userData.baseRadius = baseRadius
     connectorMarkers.add(marker)
   }
   scene.add(connectorMarkers)
-  requestRender()
+  startConnectorAnimation()
+}
+
+function startConnectorAnimation() {
+  if (markerAnimId) return
+  function tick() {
+    if (!connectorMarkers || !scene) {
+      markerAnimId = null
+      return
+    }
+    const phase = Date.now() * 0.003
+    connectorMarkers.children.forEach((marker) => {
+      if (!marker.userData.isConnectorMarker) return
+      const pulse = 1 + Math.sin(phase) * 0.15
+      const s = marker.userData.baseRadius * pulse
+      marker.scale.setScalar(s)
+    })
+    renderScene()
+    markerAnimId = requestAnimationFrame(tick)
+  }
+  markerAnimId = requestAnimationFrame(tick)
+}
+
+function stopConnectorAnimation() {
+  if (markerAnimId) {
+    cancelAnimationFrame(markerAnimId)
+    markerAnimId = null
+  }
 }
 
 function getPointerNDC(event) {
@@ -626,6 +657,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   isUnmounting = true
+  stopConnectorAnimation()
   window.removeEventListener('resize', onResize)
   renderer.domElement.removeEventListener('pointerdown', onPointerDown)
   window.removeEventListener('pointermove', onPointerMove)
