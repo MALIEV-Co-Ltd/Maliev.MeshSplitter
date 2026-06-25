@@ -836,6 +836,15 @@ watch(() => props.problemEdges, (edges) => {
   if (!edges || edges.length === 0) return
   problemEdgeOverlay = new THREE.Group()
   for (const hole of edges) {
+    if (hole.type === 'nonManifold') {
+      const lineGeom = new THREE.BufferGeometry()
+      lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
+      const lineMat = new THREE.LineBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.9, depthTest: false })
+      const line = new THREE.LineSegments(lineGeom, lineMat)
+      line.renderOrder = 998
+      problemEdgeOverlay.add(line)
+      continue
+    }
     const lineGeom = new THREE.BufferGeometry()
     lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
     const lineMat = new THREE.LineBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.9, depthTest: false })
@@ -843,14 +852,16 @@ watch(() => props.problemEdges, (edges) => {
     line.renderOrder = 998
     problemEdgeOverlay.add(line)
 
-    const fillGeom = new THREE.BufferGeometry()
-    fillGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
-    fillGeom.setIndex(new THREE.BufferAttribute(hole.fillIndices, 1))
-    fillGeom.computeVertexNormals()
-    const fillMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 })
-    const fill = new THREE.Mesh(fillGeom, fillMat)
-    fill.renderOrder = 997
-    problemEdgeOverlay.add(fill)
+    if (hole.fillIndices && hole.fillIndices.length > 0) {
+      const fillGeom = new THREE.BufferGeometry()
+      fillGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
+      fillGeom.setIndex(new THREE.BufferAttribute(hole.fillIndices, 1))
+      fillGeom.computeVertexNormals()
+      const fillMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 })
+      const fill = new THREE.Mesh(fillGeom, fillMat)
+      fill.renderOrder = 997
+      problemEdgeOverlay.add(fill)
+    }
   }
   scene.add(problemEdgeOverlay)
   requestRender()

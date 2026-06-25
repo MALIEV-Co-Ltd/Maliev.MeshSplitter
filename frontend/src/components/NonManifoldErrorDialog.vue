@@ -8,13 +8,17 @@
       </header>
 
       <div class="nmf-dialog__stats">
-        <div class="nmf-dialog__stat">
+        <div v-if="boundaryHoles > 0" class="nmf-dialog__stat">
           <span class="nmf-dialog__stat-num">{{ boundaryHoles.toLocaleString() }}</span>
           <span class="nmf-dialog__stat-label">{{ labels.holes || 'boundary holes' }}</span>
         </div>
-        <div class="nmf-dialog__stat">
+        <div v-if="boundaryEdges > 0" class="nmf-dialog__stat">
           <span class="nmf-dialog__stat-num">{{ boundaryEdges.toLocaleString() }}</span>
           <span class="nmf-dialog__stat-label">{{ labels.edges || 'boundary edges' }}</span>
+        </div>
+        <div v-if="nonManifoldEdges > 0" class="nmf-dialog__stat">
+          <span class="nmf-dialog__stat-num">{{ nonManifoldEdges.toLocaleString() }}</span>
+          <span class="nmf-dialog__stat-label">{{ labels.nonManifold || 'non-manifold edges' }}</span>
         </div>
       </div>
 
@@ -38,6 +42,7 @@ import { Button } from '@/components/ui/button'
 const props = defineProps({
   boundaryHoles: { type: Number, default: 0 },
   boundaryEdges: { type: Number, default: 0 },
+  nonManifoldEdges: { type: Number, default: 0 },
   labels: { type: Object, default: () => ({}) },
 })
 

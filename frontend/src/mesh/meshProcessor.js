@@ -289,10 +289,39 @@ function findBoundaryLoops(geometry) {
   return loops
 }
 
+function findNonManifoldEdges(geometry) {
+  const index = geometry.index
+  if (!index) return []
+
+  const edgeMap = new Map()
+  const addEdge = (a, b) => {
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`
+    const edge = edgeMap.get(key) || { a, b, count: 0 }
+    edge.count += 1
+    edgeMap.set(key, edge)
+  }
+
+  for (let i = 0; i < index.count; i += 3) {
+    const a = index.getX(i)
+    const b = index.getX(i + 1)
+    const c = index.getX(i + 2)
+    addEdge(a, b)
+    addEdge(b, c)
+    addEdge(c, a)
+  }
+
+  const result = []
+  edgeMap.forEach((edge) => {
+    if (edge.count >= 3) result.push({ a: edge.a, b: edge.b, count: edge.count })
+  })
+  return result
+}
+
 export function computeProblemEdges(geometry) {
   const welded = weldGeometry(geometry, 1e-4)
   const loops = findBoundaryLoops(welded)
-  if (loops.length === 0) return []
+  const nonManifoldEdges = findNonManifoldEdges(welded)
+  if (loops.length === 0 && nonManifoldEdges.length === 0) return []
 
   const pos = welded.attributes.position
 
@@ -353,9 +382,21 @@ export function computeProblemEdges(geometry) {
     center[2] /= loop.length
 
     results.push({
+      type: 'hole',
       positions: new Float32Array(loopPositions),
       fillIndices: new Uint16Array(triangles.flat()),
       center,
+    })
+  }
+
+  for (const edge of nonManifoldEdges) {
+    const pa = getPos(edge.a)
+    const pb = getPos(edge.b)
+    results.push({
+      type: 'nonManifold',
+      positions: new Float32Array([pa[0], pa[1], pa[2], pb[0], pb[1], pb[2]]),
+      fillIndices: new Uint16Array(0),
+      center: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2],
     })
   }
 

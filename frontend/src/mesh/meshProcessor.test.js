@@ -643,6 +643,26 @@ describe('computeProblemEdges', () => {
     expect(result[0].fillIndices.length).toBeGreaterThan(0)
   })
 
+  it('detects non-manifold edges (count>=3) with type nonManifold', () => {
+    // Two boxes sharing a single edge → that edge has count=4
+    const box1 = new THREE.BoxGeometry(10, 10, 10)
+    const box2 = new THREE.BoxGeometry(10, 10, 10).translate(10, 0, 0)
+    const merged = new THREE.BufferGeometry()
+    const pos1 = box1.attributes.position.array
+    const pos2 = box2.attributes.position.array
+    const idx1 = box1.index.array
+    const idx2 = box2.index.array
+    const offset = pos1.length / 3
+    merged.setAttribute('position', new THREE.Float32BufferAttribute([...pos1, ...pos2], 3))
+    merged.setIndex(new THREE.BufferAttribute(new Uint16Array([...idx1, ...idx2.map(i => i + offset)]), 1))
+    merged.computeVertexNormals()
+    const result = computeProblemEdges(merged)
+    const nmfEdges = result.filter(e => e.type === 'nonManifold')
+    expect(nmfEdges.length).toBeGreaterThan(0)
+    expect(nmfEdges[0].positions.length).toBe(6)
+    expect(nmfEdges[0].fillIndices.length).toBe(0)
+  })
+
   it('includes boundaryData on error when splitMeshManifold cannot repair', async () => {
     // A severely non-manifold mesh that cannot be repaired
     const geom = new THREE.BoxGeometry(10, 10, 10).toNonIndexed()

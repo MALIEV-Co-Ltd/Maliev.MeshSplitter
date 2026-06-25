@@ -198,6 +198,7 @@
       v-if="problemEdges.length > 0"
       :boundary-holes="boundaryHoles"
       :boundary-edges="boundaryEdges"
+      :non-manifold-edges="nonManifoldEdgeCount"
       :labels="uiCopy.errorDialog"
       @view-problem="frameToProblemEdges"
       @dismiss="dismissProblemEdges"
@@ -268,8 +269,9 @@ const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
 const showLabels = ref(true)
 const threePreviewRef = ref(null)
-const boundaryHoles = computed(() => problemEdges.value.length)
-const boundaryEdges = computed(() => problemEdges.value.reduce((sum, h) => sum + h.positions.length / 3, 0))
+const boundaryHoles = computed(() => problemEdges.value.filter(e => e.type !== 'nonManifold').length)
+const boundaryEdges = computed(() => problemEdges.value.filter(e => e.type !== 'nonManifold').reduce((sum, h) => sum + h.positions.length / 3, 0))
+const nonManifoldEdgeCount = computed(() => problemEdges.value.filter(e => e.type === 'nonManifold').length)
 // The split inputs that produced the current chunks. The build volume can be
 // edited after a split without re-splitting, so the value used for billing must
 // be captured at split time, not read live.
@@ -346,6 +348,7 @@ const appTranslations = {
       body: 'The model has holes or gaps that could not be repaired automatically. Review the highlighted areas in the 3D view.',
       holes: 'boundary holes',
       edges: 'boundary edges',
+      nonManifold: 'non-manifold edges',
       dismiss: 'Dismiss',
       viewProblem: 'View on model',
     },
@@ -488,6 +491,7 @@ const appTranslations = {
       body: 'โมเดลมีรูหรือช่องว่างที่ไม่สามารถซ่อมโดยอัตโนมัติ ตรวจสอบพื้นที่ที่ไฮไลต์ในมุมมอง 3D',
       holes: 'รูขอบ',
       edges: 'ขอบรอยต่อ',
+      nonManifold: 'ขอบที่ไม่ปิดผิว',
       dismiss: 'ปิด',
       viewProblem: 'ดูบนโมเดล',
     },
