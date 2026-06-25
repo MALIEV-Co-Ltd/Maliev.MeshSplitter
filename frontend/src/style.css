@@ -1333,6 +1333,41 @@
     margin-left: auto;
   }
 
+  /* Theme + language toggles grouped tightly so they read as one control
+     cluster, separated from the credit chip and the primary CTA. */
+  .lnd-toggles {
+    align-items: center;
+    display: flex;
+    gap: 4px;
+  }
+
+  .lnd-icon-btn {
+    align-items: center;
+    appearance: none;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--steel-600);
+    cursor: pointer;
+    display: inline-flex;
+    height: 32px;
+    justify-content: center;
+    min-width: 32px;
+    padding: 0 6px;
+    transition: background 120ms var(--ease-standard), color 120ms var(--ease-standard);
+  }
+
+  .lnd-icon-btn--text {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .lnd-icon-btn:hover {
+    background: var(--steel-100);
+    color: oklch(var(--primary));
+  }
+
   .lnd-credit-chip {
     align-items: center;
     background: var(--steel-100);
@@ -2023,26 +2058,37 @@
       justify-content: center;
     }
 
+    /* Row 1: the toggle cluster + the credit chip / sign-in fill the width.
+       Row 2: the primary "Launch" CTA spans full width on its own line. */
     .lnd-header-right {
-      display: grid;
+      display: flex;
+      flex-wrap: wrap;
       gap: 8px;
-      grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
       margin-left: 0;
       width: 100%;
     }
 
-    .lnd-header-right .lnd-credit-chip {
-      grid-column: 2 / span 2;
+    .lnd-header-right .lnd-toggles {
+      flex: none;
+    }
+
+    .lnd-header-right .lnd-credit-chip,
+    .lnd-header-right .lnd-btn-outline {
+      flex: 1;
       justify-content: center;
       min-width: 0;
+    }
+
+    .lnd-header-right .lnd-btn-ink {
+      flex-basis: 100%;
     }
 
     .lnd-btn {
       justify-content: center;
       min-width: 0;
-      padding: 0 8px;
+      padding: 0 12px;
       text-align: center;
-      white-space: normal;
+      white-space: nowrap;
     }
 
     .landing-hero {
