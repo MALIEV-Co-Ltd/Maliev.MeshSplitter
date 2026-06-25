@@ -63,6 +63,7 @@
         <Card class="preview-card h-full rounded-none border-x border-y-0 shadow-none">
           <CardContent class="p-0 h-full">
             <ThreePreview
+              ref="threePreviewRef"
               :preview-info="previewInfo"
               :mesh-info="meshInfo"
               :mesh-geometry="previewMeshGeometry || meshGeometry"
@@ -75,6 +76,7 @@
               :connector-positions="connectorPositions"
               :reapplying-connectors="reapplyingConnectors"
               :show-labels="showLabels"
+              :problem-edges="problemEdges"
               @connector-drag-start="onConnectorDragStart"
               @connector-drag-end="onConnectorDragEnd"
             />
@@ -192,6 +194,14 @@
       </div>
     </dialog>
     <RepairConfirmDialog v-if="repairPreview" :preview="repairPreview" :labels="uiCopy.repairDialog" @confirm="acceptRepair" @cancel="rejectRepair" />
+    <NonManifoldErrorDialog
+      v-if="problemEdges.length > 0"
+      :boundary-holes="boundaryHoles"
+      :boundary-edges="boundaryEdges"
+      :labels="uiCopy.errorDialog"
+      @view-problem="frameToProblemEdges"
+      @dismiss="dismissProblemEdges"
+    />
   </main>
 </template>
 
@@ -213,6 +223,7 @@ import RepairConfirmDialog from './components/RepairConfirmDialog.vue'
 import ThreePreview from './components/ThreePreview.vue'
 import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
+import NonManifoldErrorDialog from './components/NonManifoldErrorDialog.vue'
 import PublicLanding from './components/PublicLanding.vue'
 import { calculateAutoDivisions } from './mesh/splitPlanning'
 import { exportIdempotencyKey } from './lib/exportIdentity'
@@ -225,7 +236,7 @@ const appVersion = pkg.version
 
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
-  connectorPositions, reapplyingConnectors,
+  connectorPositions, reapplyingConnectors, problemEdges,
   loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, rejectRepair, error, scaleFactor, buildVolume,
   loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
   prepareExport, buildExportPackage, saveBlob,
@@ -256,6 +267,9 @@ const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
 const showLabels = ref(true)
+const threePreviewRef = ref(null)
+const boundaryHoles = computed(() => problemEdges.value.length)
+const boundaryEdges = computed(() => problemEdges.value.reduce((sum, h) => sum + h.positions.length / 3, 0))
 // The split inputs that produced the current chunks. The build volume can be
 // edited after a split without re-splitting, so the value used for billing must
 // be captured at split time, not read live.
@@ -326,6 +340,14 @@ const appTranslations = {
       verts: 'verts',
       keepOriginal: 'Keep original',
       useRepaired: 'Use repaired mesh',
+    },
+    errorDialog: {
+      title: 'Cannot split mesh',
+      body: 'The model has holes or gaps that could not be repaired automatically. Review the highlighted areas in the 3D view.',
+      holes: 'boundary holes',
+      edges: 'boundary edges',
+      dismiss: 'Dismiss',
+      viewProblem: 'View on model',
     },
     uploader: {
       title: 'Mesh file',
@@ -460,6 +482,14 @@ const appTranslations = {
       verts: 'จุด',
       keepOriginal: 'ใช้ต้นฉบับ',
       useRepaired: 'ใช้เมชที่ซ่อมแล้ว',
+    },
+    errorDialog: {
+      title: 'ไม่สามารถตัดโมเดลได้',
+      body: 'โมเดลมีรูหรือช่องว่างที่ไม่สามารถซ่อมโดยอัตโนมัติ ตรวจสอบพื้นที่ที่ไฮไลต์ในมุมมอง 3D',
+      holes: 'รูขอบ',
+      edges: 'ขอบรอยต่อ',
+      dismiss: 'ปิด',
+      viewProblem: 'ดูบนโมเดล',
     },
     uploader: {
       title: 'ไฟล์เมช',
@@ -705,6 +735,14 @@ function onConnectorDragStart(id) {
 
 function onConnectorDragEnd(id, position) {
   updateConnectorPosition(id, position)
+}
+
+function frameToProblemEdges() {
+  threePreviewRef.value?.frameToProblem()
+}
+function dismissProblemEdges() {
+  problemEdges.value = []
+  error.value = null
 }
 
 function productUrl(pack) {
