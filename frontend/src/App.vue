@@ -101,7 +101,7 @@
           <span class="split-spinner" />
           {{ progressLabel || uiCopy.working }}
         </div>
-        <button v-if="chunks.length > 0" class="canvas-label-toggle" :class="{ active: showLabels }" :aria-label="uiCopy.toggleLabels" :title="uiCopy.toggleLabels" @click="showLabels = !showLabels"><TagsIcon :size="13" :stroke-width="1.75" /></button>
+        <button v-if="chunks.length > 0" class="canvas-label-toggle" :class="{ active: showLabels }" :aria-label="uiCopy.toggleLabels" :title="uiCopy.toggleLabels" @click="showLabels = !showLabels"><TagsIcon :size="13" :stroke-width="1.75" /> Labels</button>
       </section>
 
       <section class="col-right">

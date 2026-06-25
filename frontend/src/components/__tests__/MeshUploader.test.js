@@ -44,7 +44,7 @@ describe('MeshUploader', () => {
     const wrapper = mount(MeshUploader, {
       props: { meshInfo: null, loading: true, error: '' }
     })
-    expect(wrapper.text()).toContain('Uploading')
+    expect(wrapper.text()).toContain('Loading')
   })
 
   it('shows error message', () => {
