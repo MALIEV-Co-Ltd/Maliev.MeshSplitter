@@ -188,6 +188,15 @@ function clearScene() {
     disposeGroup(problemEdgeOverlay)
     problemEdgeOverlay = null
   }
+  if (connectorMarkers) {
+    stopConnectorAnimation()
+    scene.remove(connectorMarkers)
+    connectorMarkers.children.forEach((c) => {
+      c.geometry?.dispose()
+      c.material?.dispose()
+    })
+    connectorMarkers = null
+  }
   requestRender()
 }
 
