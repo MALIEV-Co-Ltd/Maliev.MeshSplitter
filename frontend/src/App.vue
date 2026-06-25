@@ -203,7 +203,7 @@ import ExportPanel from './components/ExportPanel.vue'
 import PublicLanding from './components/PublicLanding.vue'
 import { calculateAutoDivisions } from './mesh/splitPlanning'
 import { exportIdempotencyKey } from './lib/exportIdentity'
-import { buildCustomerLoginUrl, STOREFRONT_BASE_PATH, storefrontReturnPath } from './auth/customerLogin'
+import { buildCustomerLoginUrl, STOREFRONT_BASE_PATH, signInReturnPath } from './auth/customerLogin'
 import pkg from '../package.json'
 
 // Shown small in the canvas corner so we can see at a glance which release is
@@ -224,9 +224,9 @@ const hasCreditAccount = credits.hasAccountData
 const shopifyStoreDomain = import.meta.env.VITE_SHOPIFY_STORE_DOMAIN || ''
 const storefrontBasePath = STOREFRONT_BASE_PATH
 const currentPath = window.location.pathname.replace(/\/+$/, '')
-const currentReturnPath = storefrontReturnPath(window.location, storefrontBasePath)
 const showPublicLanding = currentPath === storefrontBasePath
 const launchUrl = `${storefrontBasePath}/app`
+const currentReturnPath = signInReturnPath(window.location, { basePath: storefrontBasePath, appPath: launchUrl })
 const storeHomeUrl = shopifyStoreDomain ? `https://${shopifyStoreDomain}/` : 'https://shop.maliev.com/'
 const locale = ref(resolveInitialLocale())
 const signInUrl = computed(() => buildCustomerLoginUrl({
