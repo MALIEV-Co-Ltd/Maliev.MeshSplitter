@@ -56,7 +56,7 @@
 
       <p v-if="loading && !meshInfo" class="mt-3 text-sm text-signal flex items-center gap-2">
         <span class="mesh-uploader__spinner"></span>
-        {{ labels.uploading }}
+        {{ progressLabel || labels.uploading }}
       </p>
       <p v-if="localError && !loading" class="mt-3 text-sm text-destructive">{{ localError }}</p>
       <p v-if="error && !loading" class="mt-3 text-sm text-destructive">{{ error }}</p>
@@ -77,6 +77,7 @@ import { Button } from '@/components/ui/button'
 const props = defineProps({
   meshInfo: { type: Object, default: null },
   loading: { type: Boolean, default: false },
+  progressLabel: { type: String, default: '' },
   error: { type: String, default: '' },
   labels: {
     type: Object,
@@ -88,6 +89,7 @@ const props = defineProps({
       uploadTitle: 'Upload an STL file',
       uploadHint: 'Drag & drop an STL file or click to browse',
       uploading: 'Loading...',
+      fileTooLarge: 'File is too large. Maximum size is 200 MB.',
       selectStl: 'Please select an .stl file',
       nonWatertightWarning: 'Mesh is not watertight - splitting may produce unexpected results.',
       replace: 'Replace file',
@@ -120,6 +122,10 @@ const localError = ref('')
 function handleFile(file) {
   if (!file.name.toLowerCase().endsWith('.stl')) {
     localError.value = props.labels.selectStl
+    return
+  }
+  if (file.size > 200 * 1024 * 1024) {
+    localError.value = props.labels.fileTooLarge
     return
   }
   localError.value = ''

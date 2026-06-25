@@ -38,6 +38,9 @@ export function useMeshProcessor(options = {}) {
   const loading = ref(false)
   const progressLabel = ref('')
   const progressLabels = ref({
+    loading: 'Loading file…',
+    checking: 'Checking mesh…',
+    repairing: 'Repairing mesh…',
     splitting: 'Splitting mesh…',
     processing: 'Processing chunks…',
     analyzing: 'Analyzing connectors…',
@@ -101,9 +104,11 @@ export function useMeshProcessor(options = {}) {
 
   async function loadStl(file) {
     loading.value = true
+    progressLabel.value = progressLabels.value.loading
     error.value = null
     try {
       const buffer = await file.arrayBuffer()
+      progressLabel.value = progressLabels.value.checking
       const loader = new STLLoader()
       const geometry = normalizeForPreview(loader.parse(buffer))
       geometry.computeBoundingBox()
@@ -112,13 +117,14 @@ export function useMeshProcessor(options = {}) {
       let wasRepaired = false
       const initialInfo = validateManifold(workingGeometry)
       if (!initialInfo.watertight) {
+        progressLabel.value = progressLabels.value.repairing
         const repaired = repairMeshGeometry(workingGeometry)
+        progressLabel.value = progressLabels.value.checking
         if (validateManifold(repaired).watertight) {
           workingGeometry = repaired
           wasRepaired = true
         }
       }
-
       sourceGeometry.value = markRaw(workingGeometry)
       scaleFactor.value = 1
 

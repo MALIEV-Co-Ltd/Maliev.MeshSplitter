@@ -49,7 +49,7 @@
     </header>
     <div class="workspace-grid">
       <section class="col-left">
-        <MeshUploader :mesh-info="meshInfo" :loading="loading" :error="error" :labels="uiCopy.uploader" @upload="onUpload" />
+        <MeshUploader :mesh-info="meshInfo" :loading="loading" :progress-label="progressLabel" :error="error" :labels="uiCopy.uploader" @upload="onUpload" />
         <PartList
           :chunks="chunks"
           :selected-chunk-index="selectedChunkIndex"
@@ -297,6 +297,9 @@ const appTranslations = {
     toggleLabels: 'Toggle part labels',
     working: 'Working…',
     progress: {
+      loading: 'Loading file…',
+      checking: 'Checking mesh…',
+      repairing: 'Repairing mesh…',
       splitting: 'Splitting mesh…',
       processing: 'Processing chunks…',
       analyzing: 'Analyzing connectors…',
@@ -320,6 +323,7 @@ const appTranslations = {
       uploadTitle: 'Upload an STL file',
       uploadHint: 'Drag & drop an STL file or click to browse',
       uploading: 'Loading...',
+      fileTooLarge: 'File is too large. Maximum size is 200 MB.',
       selectStl: 'Please select an .stl file',
       nonWatertightWarning: 'Mesh is not watertight. Mesh Splitter will try automatic repair before splitting.',
       replace: 'Replace file',
@@ -418,6 +422,9 @@ const appTranslations = {
     toggleLabels: 'ซ่อน/แสดงป้ายชื่อชิ้นงาน',
     working: 'กำลังทำงาน…',
     progress: {
+      loading: 'กำลังโหลดไฟล์…',
+      checking: 'กำลังตรวจสอบเมช…',
+      repairing: 'กำลังซ่อมเมช…',
       splitting: 'กำลังแยกเมช…',
       processing: 'กำลังประมวลผลชิ้นงาน…',
       analyzing: 'กำลังวิเคราะห์ตำแหน่งตัวต่อ…',
@@ -441,6 +448,7 @@ const appTranslations = {
       uploadTitle: 'อัปโหลดไฟล์ STL',
       uploadHint: 'ลากไฟล์ STL มาวาง หรือคลิกเพื่อเลือกไฟล์',
       uploading: 'กำลังโหลด...',
+      fileTooLarge: 'ไฟล์ใหญ่เกินไป ขนาดสูงสุด 200 MB',
       selectStl: 'กรุณาเลือกไฟล์ .stl',
       nonWatertightWarning: 'เมชไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
       replace: 'เปลี่ยนไฟล์',
