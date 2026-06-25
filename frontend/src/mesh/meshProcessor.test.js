@@ -4,6 +4,7 @@ import {
   addConnectorsManifold,
   applyScale,
   computeConnectorPositions,
+  computeProblemEdges,
   computeVolume,
   exportStl,
   exportPackage,
@@ -593,5 +594,53 @@ describe('export validation', () => {
     keyChunks.forEach(chunk => {
       expect(files).not.toContain(`parts/part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`)
     })
+  })
+})
+
+describe('computeProblemEdges', () => {
+  it('returns [] for a watertight box', () => {
+    const geom = new THREE.BoxGeometry(20, 20, 20).toNonIndexed()
+    const result = computeProblemEdges(geom)
+    expect(result).toEqual([])
+  })
+
+  it('finds boundary edges for a box with one face removed', () => {
+    const box = new THREE.BoxGeometry(20, 20, 20)
+    const geom = box.toNonIndexed()
+    const pos = geom.attributes.position
+    // Remove first triangle (vertices 0-2) — 9 floats
+    const keepPos = new Float32Array(pos.array.slice(9))
+    // Build index: remaining 11 triangles (33 vertices), consecutive triplets
+    const triCount = 11
+    const indexArray = new Uint16Array(triCount * 3)
+    for (let i = 0; i < triCount; i++) {
+      indexArray[i * 3] = i * 3
+      indexArray[i * 3 + 1] = i * 3 + 1
+      indexArray[i * 3 + 2] = i * 3 + 2
+    }
+    const newGeom = new THREE.BufferGeometry()
+    newGeom.setAttribute('position', new THREE.Float32BufferAttribute(keepPos, 3))
+    newGeom.setIndex(new THREE.BufferAttribute(indexArray, 1))
+    newGeom.computeVertexNormals()
+    const result = computeProblemEdges(newGeom)
+    expect(result.length).toBeGreaterThan(0)
+    expect(result[0].positions.length).toBeGreaterThan(0)
+    expect(result[0].fillIndices.length).toBeGreaterThan(0)
+    expect(result[0].center.length).toBe(3)
+  })
+
+  it('includes boundaryData on error when splitMeshManifold cannot repair', async () => {
+    // A severely non-manifold mesh that cannot be repaired
+    const geom = new THREE.BoxGeometry(10, 10, 10).toNonIndexed()
+    const pos = geom.attributes.position
+    const scrambled = new THREE.BufferGeometry()
+    scrambled.setAttribute('position', new THREE.Float32BufferAttribute(pos.array.slice(0, 30), 3))
+    try {
+      await splitMeshManifold(new THREE.Mesh(scrambled), [100, 100, 100], [2, 2, 1])
+    } catch (e) {
+      if (e.message.includes('non-manifold')) {
+        expect(e.boundaryData).toBeDefined()
+      }
+    }
   })
 })

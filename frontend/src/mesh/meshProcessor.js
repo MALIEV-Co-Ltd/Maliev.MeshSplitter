@@ -289,6 +289,87 @@ function findBoundaryLoops(geometry) {
   return loops
 }
 
+export function computeProblemEdges(geometry) {
+  const loops = findBoundaryLoops(geometry)
+  if (loops.length === 0) return []
+
+  const pos = geometry.attributes.position
+
+  function getPos(vertexIdx) {
+    return [
+      pos.getX(vertexIdx),
+      pos.getY(vertexIdx),
+      pos.getZ(vertexIdx),
+    ]
+  }
+
+  const results = []
+
+  for (const loop of loops) {
+    const loopPositions = []
+    for (const vi of loop) {
+      const p = getPos(vi)
+      loopPositions.push(p[0], p[1], p[2])
+    }
+
+    // Compute best-fit plane normal via Newell method
+    const normal = new THREE.Vector3()
+    const n = loop.length
+    for (let i = 0; i < n; i++) {
+      const a = getPos(loop[i])
+      const b = getPos(loop[(i + 1) % n])
+      normal.x += (a[1] - b[1]) * (a[2] + b[2])
+      normal.y += (a[2] - b[2]) * (a[0] + b[0])
+      normal.z += (a[0] - b[0]) * (a[1] + b[1])
+    }
+    normal.normalize()
+
+    // Build orthonormal basis from normal
+    const ref = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)
+    const u = new THREE.Vector3().crossVectors(normal, ref).normalize()
+    const v = new THREE.Vector3().crossVectors(normal, u).normalize()
+
+    // Project loop vertices to 2D
+    const contour2D = []
+    const loop3D = loop.map(vi => new THREE.Vector3().fromArray(getPos(vi)))
+    for (const p of loop3D) {
+      contour2D.push(new THREE.Vector2(p.dot(u), p.dot(v)))
+    }
+
+    // Triangulate the contour
+    const triangles = THREE.ShapeUtils.triangulateShape(contour2D, [])
+
+    // Map triangles back to 3D
+    const fillPositions = []
+    for (const tri of triangles) {
+      for (let k = 0; k < 3; k++) {
+        const idx = tri[k]
+        fillPositions.push(loop3D[idx].x, loop3D[idx].y, loop3D[idx].z)
+      }
+    }
+
+    // Compute center (average of loop vertices)
+    const center = [0, 0, 0]
+    for (const vi of loop) {
+      const p = getPos(vi)
+      center[0] += p[0]
+      center[1] += p[1]
+      center[2] += p[2]
+    }
+    center[0] /= loop.length
+    center[1] /= loop.length
+    center[2] /= loop.length
+
+    results.push({
+      positions: new Float32Array(loopPositions),
+      fillIndices: new Uint16Array(triangles.flat()),
+      center,
+    })
+  }
+
+  return results
+}
+
 export function applyScale(geometry, scaleFactor) {
   const factor = Number(scaleFactor)
   if (!Number.isFinite(factor) || factor <= 0) {
@@ -483,7 +564,11 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   if (!info.watertight) {
     const repaired = await repairMeshGeometryRobust(splitGeometry)
     if (!repaired) {
-      throw new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.')
+      const boundaryData = computeProblemEdges(splitGeometry)
+      throw Object.assign(
+        new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'),
+        { boundaryData }
+      )
     }
     splitGeometry = repaired
   }
