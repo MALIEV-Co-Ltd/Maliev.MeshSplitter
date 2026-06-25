@@ -1630,7 +1630,7 @@ const BRAND = {
 }
 
 const DEFAULT_APP_URL = 'https://shop.maliev.com/tools/mesh-splitter'
-const SNAPSHOT_IMAGE_ASPECT = 4 / 3
+const SNAPSHOT_IMAGE_ASPECT = 1 // square: matches the square snapshot canvas
 const PDF_LOGO = {
   x: PDF_PAGE.margin,
   y: 9,
