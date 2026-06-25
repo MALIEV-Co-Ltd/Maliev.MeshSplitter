@@ -397,7 +397,7 @@ const appTranslations = {
     buyCredits: 'ซื้อเครดิต',
     toggleTheme: 'สลับธีมสว่าง / มืด',
     watertight: 'ปิดผิวสมบูรณ์',
-    awaitingMesh: 'รอเมช',
+    awaitingMesh: 'รอไฟล์',
     parts: 'ชิ้น',
     free: 'ฟรี',
     credits: 'เครดิต',
