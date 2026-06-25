@@ -2,7 +2,7 @@
   <main class="landing-shell">
     <header class="lnd-header">
       <a class="lnd-logo" :href="homeUrl" aria-label="Go to MALIEV shop">
-        <img :src="logoUrl" alt="MALIEV" />
+        <img :src="logoSrc" alt="MALIEV" />
       </a>
       <nav class="lnd-nav">
         <a href="#">{{ copy.nav.home }}</a>
@@ -11,7 +11,13 @@
         <a href="#pricing">{{ copy.nav.pricing }}</a>
       </nav>
       <div class="lnd-header-right">
-        <button class="language-toggle" type="button" @click="emit('toggle-locale')">{{ localeLabel }}</button>
+        <div class="lnd-toggles">
+          <button class="lnd-icon-btn" type="button" :aria-label="copy.actions.toggleTheme" @click="emit('toggle-theme')">
+            <SunIcon v-if="isDark" :size="16" :stroke-width="1.75" />
+            <MoonIcon v-else :size="16" :stroke-width="1.75" />
+          </button>
+          <button class="lnd-icon-btn lnd-icon-btn--text" type="button" @click="emit('toggle-locale')">{{ localeLabel }}</button>
+        </div>
         <span v-if="hasAccountData" class="lnd-credit-chip">
           {{ account.freeRemaining }} {{ copy.credit.free }} &middot; {{ account.paidCredits }} {{ copy.credit.credits }}
         </span>
@@ -175,7 +181,9 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import logoUrl from '../assets/logos/maliev-wordmark-black.svg'
+import { Sun as SunIcon, Moon as MoonIcon } from '@lucide/vue'
+import logoBlack from '../assets/logos/maliev-wordmark-black.svg'
+import logoWhite from '../assets/logos/maliev-wordmark-white.svg'
 import heroImageUrl from '../assets/mesh-splitter-hero.webp'
 
 // Square promo video, hosted on Shopify's CDN (too large to bundle in the app).
@@ -202,13 +210,17 @@ const props = defineProps({
   launchUrl: { type: String, required: true },
   signInUrl: { type: String, default: '/account/login' },
   locale: { type: String, default: 'en' },
+  isDark: { type: Boolean, default: false },
 })
-const emit = defineEmits(['toggle-locale'])
+const emit = defineEmits(['toggle-locale', 'toggle-theme'])
+
+// The dark wordmark vanishes on the dark-mode header, so swap to the white one.
+const logoSrc = computed(() => (props.isDark ? logoWhite : logoBlack))
 
 const translations = {
   en: {
     nav: { home: 'Home', capabilities: 'Capabilities', workflow: 'How it works', pricing: 'Pricing' },
-    actions: { signIn: 'Sign in', signInStart: 'Sign in to start', launch: 'Launch MeshSplitter', viewPricing: 'View pricing', buyCredits: 'Buy credits' },
+    actions: { signIn: 'Sign in', signInStart: 'Sign in to start', launch: 'Launch MeshSplitter', viewPricing: 'View pricing', buyCredits: 'Buy credits', toggleTheme: 'Toggle light / dark theme' },
     credit: { free: 'free', credits: 'credits', loading: 'Credits loading', freeLabel: 'Free' },
     hero: {
       kicker: 'MALIEV MeshSplitter',
@@ -254,7 +266,7 @@ const translations = {
   },
   th: {
     nav: { home: 'หน้าแรก', capabilities: 'ความสามารถ', workflow: 'วิธีใช้งาน', pricing: 'ราคา' },
-    actions: { signIn: 'เข้าสู่ระบบ', signInStart: 'เข้าสู่ระบบเพื่อเริ่ม', launch: 'เปิด MeshSplitter', viewPricing: 'ดูราคา', buyCredits: 'ซื้อเครดิต' },
+    actions: { signIn: 'เข้าสู่ระบบ', signInStart: 'เข้าสู่ระบบเพื่อเริ่ม', launch: 'เปิด MeshSplitter', viewPricing: 'ดูราคา', buyCredits: 'ซื้อเครดิต', toggleTheme: 'สลับธีมสว่าง / มืด' },
     credit: { free: 'ฟรี', credits: 'เครดิต', loading: 'กำลังโหลดเครดิต', freeLabel: 'ฟรี' },
     hero: {
       kicker: 'MALIEV MeshSplitter',

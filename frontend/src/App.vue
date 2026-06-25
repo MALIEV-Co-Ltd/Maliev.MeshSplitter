@@ -10,7 +10,9 @@
     :launch-url="launchUrl"
     :sign-in-url="signInUrl"
     :locale="locale"
+    :is-dark="isDark"
     @toggle-locale="toggleLocale"
+    @toggle-theme="toggleTheme"
   />
   <main v-else class="app-shell">
     <header class="app-header">
@@ -555,7 +557,9 @@ const logoUrl = computed(() => (isDark.value ? logoWordmarkWhite : logoWordmarkB
 function resolveInitialTheme() {
   const stored = window.localStorage?.getItem('meshSplitterTheme')
   if (stored === 'light' || stored === 'dark') return stored
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  // Default to light (rather than following the OS) so first-time visitors —
+  // especially on the marketing landing page — never land on dark by surprise.
+  return 'light'
 }
 
 function toggleTheme() {
