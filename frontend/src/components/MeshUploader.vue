@@ -60,10 +60,6 @@
       </p>
       <p v-if="localError && !loading" class="mt-3 text-sm text-destructive">{{ localError }}</p>
       <p v-if="error && !loading" class="mt-3 text-sm text-destructive">{{ error }}</p>
-
-      <p v-if="meshInfo && !meshInfo.is_watertight" class="mt-2 text-xs font-medium text-destructive">
-        {{ labels.nonWatertightWarning }}
-      </p>
     </div>
   </div>
 </template>
@@ -91,7 +87,6 @@ const props = defineProps({
       uploading: 'Loading...',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
       selectStl: 'Please select an .stl file',
-      nonWatertightWarning: 'Mesh is not watertight. Mesh Splitter will try automatic repair before splitting.',
       replace: 'Replace file',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',
