@@ -1320,6 +1320,7 @@
     font-size: 14px;
     font-weight: 500;
     text-decoration: none;
+    white-space: nowrap;
   }
 
   .lnd-nav a:hover {
@@ -1392,12 +1393,23 @@
     align-items: center;
     border-radius: var(--radius-sm);
     display: inline-flex;
+    flex: none;
     font-size: 13px;
     font-weight: 600;
     height: 32px;
     padding: 0 14px;
     text-decoration: none;
     transition: background 120ms var(--ease-standard);
+    white-space: nowrap;
+  }
+
+  /* The nav links only fit alongside the logo + controls on wide screens; below
+     this they crowd the buttons into wrapping, so hide them (the same links live
+     in the page sections). */
+  @media (max-width: 1000px) {
+    .lnd-nav {
+      display: none;
+    }
   }
 
   .lnd-btn-outline {
