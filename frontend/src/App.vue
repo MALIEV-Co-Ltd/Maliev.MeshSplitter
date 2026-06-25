@@ -49,7 +49,7 @@
     </header>
     <div class="workspace-grid">
       <section class="col-left">
-        <MeshUploader :mesh-info="meshInfo" :loading="loading" :error="error" :labels="uiCopy.uploader" @upload="onUpload" />
+        <MeshUploader :mesh-info="meshInfo" :loading="loading" :progress-label="progressLabel" :error="visibleError" :labels="uiCopy.uploader" @upload="onUpload" />
         <PartList
           :chunks="chunks"
           :selected-chunk-index="selectedChunkIndex"
@@ -63,6 +63,7 @@
         <Card class="preview-card h-full rounded-none border-x border-y-0 shadow-none">
           <CardContent class="p-0 h-full">
             <ThreePreview
+              ref="threePreviewRef"
               :preview-info="previewInfo"
               :mesh-info="meshInfo"
               :mesh-geometry="previewMeshGeometry || meshGeometry"
@@ -72,6 +73,12 @@
               :up-axis="upAxis"
               :is-dark="isDark"
               :selected-chunk-index="selectedChunkIndex"
+              :connector-positions="connectorPositions"
+              :reapplying-connectors="reapplyingConnectors"
+              :show-labels="showLabels"
+              :problem-edges="problemEdges"
+              @connector-drag-start="onConnectorDragStart"
+              @connector-drag-end="onConnectorDragEnd"
             />
           </CardContent>
         </Card>
@@ -91,14 +98,29 @@
         </div>
         <div class="canvas-label">{{ uiCopy.preview }}{{ previewDims ? ` · ${previewDims}` : '' }} · {{ uiCopy.scale.toUpperCase() }} {{ scaleFactor.toFixed(3) }}&times;{{ previewInfo?.optimized ? ` · ${uiCopy.previewOptimized}` : '' }}</div>
         <div class="canvas-hint">{{ uiCopy.canvasHint }}</div>
+        <div v-if="connectorPositions.length > 0 && selectedPartIndex != null" class="canvas-drag-tip">{{ uiCopy.connectorDragTip }}</div>
+        <div v-if="reapplyingConnectors" class="canvas-processing" aria-label="Processing">
+          <span class="canvas-spinner" />
+          {{ progressLabel || uiCopy.working }}
+        </div>
+        <button v-if="chunks.length > 0" class="canvas-label-toggle" :class="{ active: showLabels }" :aria-label="uiCopy.toggleLabels" :title="uiCopy.toggleLabels" @click="showLabels = !showLabels"><TagsIcon :size="13" :stroke-width="1.75" /> Labels</button>
+        <NonManifoldErrorDialog
+          v-if="problemEdges.length > 0"
+          :boundary-holes="boundaryHoles"
+          :boundary-edges="boundaryEdges"
+          :non-manifold-edges="nonManifoldEdgeCount"
+          :labels="uiCopy.errorDialog"
+          @view-problem="frameToProblemEdges"
+          @dismiss="dismissProblemEdges"
+        />
       </section>
 
       <section class="col-right">
         <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
         <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
-        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
+        <SplitConfig :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
         <ExportPanel
-          :has-chunks="chunks.length > 0"
+          :has-chunks="chunks.length > 0 && canSplitMesh"
           :loading="loading || exportingPackage"
           :cost="exportCost"
           :labels="uiCopy.exportPanel"
@@ -135,7 +157,7 @@
             <span class="credit-pack-card__credits">{{ pack.credits }} {{ uiCopy.credits }}</span>
             <span class="credit-pack-card__price">
               {{ formatPrice(pack.priceCents, pack.currency) }}
-              <small>{{ pricePerCredit(pack) }} / {{ uiCopy.credits }}</small>
+              <small>{{ pricePerCredit(pack) }} / {{ uiCopy.exportUnit }}</small>
             </span>
             <span v-if="pack.bestFor" class="credit-pack-card__summary">{{ pack.bestFor }}</span>
             <span class="credit-pack-card__cta">{{ uiCopy.buyCredits }}</span>
@@ -180,12 +202,13 @@
         </div>
       </div>
     </dialog>
+    <RepairConfirmDialog v-if="repairPreview" :preview="repairPreview" :labels="uiCopy.repairDialog" @confirm="acceptRepair" @cancel="rejectRepair" />
   </main>
 </template>
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon } from '@lucide/vue'
+import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon, Tags as TagsIcon } from '@lucide/vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
@@ -197,9 +220,11 @@ import MeshUploader from './components/MeshUploader.vue'
 import ScaleConfig from './components/ScaleConfig.vue'
 import BuildVolumeConfig from './components/BuildVolumeConfig.vue'
 import SplitConfig from './components/SplitConfig.vue'
+import RepairConfirmDialog from './components/RepairConfirmDialog.vue'
 import ThreePreview from './components/ThreePreview.vue'
 import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
+import NonManifoldErrorDialog from './components/NonManifoldErrorDialog.vue'
 import PublicLanding from './components/PublicLanding.vue'
 import { calculateAutoDivisions } from './mesh/splitPlanning'
 import { exportIdempotencyKey } from './lib/exportIdentity'
@@ -211,8 +236,11 @@ import pkg from '../package.json'
 const appVersion = pkg.version
 
 const {
-  meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks, loading, error, scaleFactor, buildVolume,
-  loadStl, setScaleFactor, split, applyConnectors, prepareExport, buildExportPackage, saveBlob,
+  meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
+  connectorPositions, reapplyingConnectors, problemEdges,
+  loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, rejectRepair, error, scaleFactor, buildVolume,
+  loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
+  prepareExport, buildExportPackage, saveBlob, clearProblemEdges,
 } = useMeshProcessor()
 
 const credits = useCredits()
@@ -239,6 +267,11 @@ const loginDialog = ref(null)
 const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
+const showLabels = ref(true)
+const threePreviewRef = ref(null)
+const boundaryHoles = computed(() => problemEdges.value.filter(e => e.type !== 'nonManifold').length)
+const boundaryEdges = computed(() => problemEdges.value.filter(e => e.type !== 'nonManifold').reduce((sum, h) => sum + h.positions.length / 3, 0))
+const nonManifoldEdgeCount = computed(() => problemEdges.value.filter(e => e.type === 'nonManifold').length)
 // The split inputs that produced the current chunks. The build volume can be
 // edited after a split without re-splitting, so the value used for billing must
 // be captured at split time, not read live.
@@ -250,6 +283,12 @@ const exportedAuthByKey = ref(new Map())
 const exportingPackage = ref(false)
 const scaleInput = ref(1)
 const selectedChunkIndex = ref(null)
+const selectedPartIndex = computed(() => {
+  const idx = selectedChunkIndex.value
+  if (idx == null) return null
+  const chunk = chunks.value[idx]
+  return chunk && !chunk.isKey ? idx : null
+})
 const appTranslations = {
   en: {
     buyCredits: 'Buy credits',
@@ -272,14 +311,47 @@ const appTranslations = {
     previewFaces: 'preview faces',
     printFaces: 'print faces',
     canvasHint: 'DRAG TO ROTATE · SCROLL TO ZOOM',
+    connectorDragTip: 'Drag to reposition connector',
+    toggleLabels: 'Toggle part labels',
+    working: 'Working…',
+    progress: {
+      loading: 'Loading file…',
+      checking: 'Checking mesh…',
+      repairing: 'Repairing mesh…',
+      splitting: 'Splitting mesh…',
+      processing: 'Processing chunks…',
+      analyzing: 'Analyzing connectors…',
+      adding: 'Adding connectors…',
+      updating: 'Updating connectors…',
+    },
     close: 'Close',
     getCredits: 'Get extra credits',
     creditSub: 'Purchase a pack to split and export more parts.',
     freeThisMonth: 'Free this month',
     pricesIn: 'Prices in',
     viaStore: 'via the MALIEV Shopify store.',
+    exportUnit: 'export',
     creditPacksLoading: 'Credit packs load when connected to the MALIEV store.',
     connectorsApplied: 'Connectors applied',
+    repairDialog: {
+      title: 'Mesh repair required',
+      body: 'The mesh is not watertight and has been automatically repaired. Review the result below.',
+      before: 'Before repair',
+      after: 'After repair',
+      faces: 'faces',
+      verts: 'verts',
+      keepOriginal: 'Keep original',
+      useRepaired: 'Use repaired mesh',
+    },
+    errorDialog: {
+      title: 'Cannot split mesh',
+      body: 'The model has holes or gaps that could not be repaired automatically. Review the highlighted areas in the 3D view.',
+      holes: 'boundary holes',
+      edges: 'boundary edges',
+      nonManifold: 'non-manifold edges',
+      dismiss: 'Dismiss',
+      viewProblem: 'View on model',
+    },
     uploader: {
       title: 'Mesh file',
       watertight: 'Watertight',
@@ -287,9 +359,9 @@ const appTranslations = {
       dropFile: 'Drop file here',
       uploadTitle: 'Upload an STL file',
       uploadHint: 'Drag & drop an STL file or click to browse',
-      uploading: 'Uploading...',
+      uploading: 'Loading...',
+      fileTooLarge: 'File is too large. Maximum size is 200 MB.',
       selectStl: 'Please select an .stl file',
-      nonWatertightWarning: 'Mesh is not watertight. Mesh Splitter will try automatic repair before splitting.',
       replace: 'Replace file',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',
@@ -365,7 +437,7 @@ const appTranslations = {
     buyCredits: 'ซื้อเครดิต',
     toggleTheme: 'สลับธีมสว่าง / มืด',
     watertight: 'ปิดผิวสมบูรณ์',
-    awaitingMesh: 'รอเมช',
+    awaitingMesh: 'รอไฟล์',
     parts: 'ชิ้น',
     free: 'ฟรี',
     credits: 'เครดิต',
@@ -382,14 +454,47 @@ const appTranslations = {
     previewFaces: 'หน้าในพรีวิว',
     printFaces: 'หน้าไฟล์จริง',
     canvasHint: 'ลากเพื่อหมุน · เลื่อนเพื่อซูม',
+    connectorDragTip: 'ลากเพื่อเลื่อนตำแหน่งตัวต่อ',
+    toggleLabels: 'ซ่อน/แสดงป้ายชื่อชิ้นงาน',
+    working: 'กำลังทำงาน…',
+    progress: {
+      loading: 'กำลังโหลดไฟล์…',
+      checking: 'กำลังตรวจสอบเมช…',
+      repairing: 'กำลังซ่อมเมช…',
+      splitting: 'กำลังแยกเมช…',
+      processing: 'กำลังประมวลผลชิ้นงาน…',
+      analyzing: 'กำลังวิเคราะห์ตำแหน่งตัวต่อ…',
+      adding: 'กำลังเพิ่มตัวต่อ…',
+      updating: 'กำลังอัปเดตตัวต่อ…',
+    },
     close: 'ปิด',
     getCredits: 'ซื้อเครดิตเพิ่ม',
     creditSub: 'ซื้อแพ็กเครดิตเพื่อแยกและส่งออกชิ้นงานเพิ่ม',
     freeThisMonth: 'ฟรีเดือนนี้',
     pricesIn: 'ราคาเป็น',
     viaStore: 'ผ่านร้าน MALIEV Shopify',
+    exportUnit: 'การส่งออก',
     creditPacksLoading: 'แพ็กเครดิตจะโหลดเมื่อเชื่อมต่อร้าน MALIEV',
     connectorsApplied: 'เพิ่มตัวต่อเรียบร้อย',
+    repairDialog: {
+      title: 'จำเป็นต้องซ่อมเมช',
+      body: 'เมชไม่ปิดผิว ระบบได้ซ่อมอัตโนมัติแล้ว ตรวจสอบผลลัพธ์ด้านล่าง',
+      before: 'ก่อนซ่อม',
+      after: 'หลังซ่อม',
+      faces: 'หน้า',
+      verts: 'จุด',
+      keepOriginal: 'ใช้ต้นฉบับ',
+      useRepaired: 'ใช้เมชที่ซ่อมแล้ว',
+    },
+    errorDialog: {
+      title: 'ไม่สามารถตัดโมเดลได้',
+      body: 'โมเดลมีรูหรือช่องว่างที่ไม่สามารถซ่อมโดยอัตโนมัติ ตรวจสอบพื้นที่ที่ไฮไลต์ในมุมมอง 3D',
+      holes: 'รูขอบ',
+      edges: 'ขอบรอยต่อ',
+      nonManifold: 'ขอบที่ไม่ปิดผิว',
+      dismiss: 'ปิด',
+      viewProblem: 'ดูบนโมเดล',
+    },
     uploader: {
       title: 'ไฟล์เมช',
       watertight: 'ปิดผิวสมบูรณ์',
@@ -397,9 +502,10 @@ const appTranslations = {
       dropFile: 'วางไฟล์ที่นี่',
       uploadTitle: 'อัปโหลดไฟล์ STL',
       uploadHint: 'ลากไฟล์ STL มาวาง หรือคลิกเพื่อเลือกไฟล์',
-      uploading: 'กำลังอัปโหลด...',
+      uploading: 'กำลังโหลด...',
+      fileTooLarge: 'ไฟล์ใหญ่เกินไป ขนาดสูงสุด 200 MB',
       selectStl: 'กรุณาเลือกไฟล์ .stl',
-      nonWatertightWarning: 'เมชไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
+      nonWatertightWarning: 'เมซไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
       replace: 'เปลี่ยนไฟล์',
       loadedWatertight: 'โหลดเมชแบบปิดผิวสมบูรณ์แล้ว',
       loadedNotWatertight: 'โหลดเมชแล้ว · ผิวไม่ปิดสมบูรณ์',
@@ -473,7 +579,11 @@ const appTranslations = {
   },
 }
 const uiCopy = computed(() => appTranslations[locale.value] || appTranslations.en)
-const visibleError = computed(() => error.value || (hasCreditAccount.value ? creditError.value : '') || '')
+const visibleError = computed(() => problemEdges.value.length > 0 ? '' : (error.value || (hasCreditAccount.value ? creditError.value : '') || ''))
+// A loaded mesh is splittable only once it is watertight. Load already attempts
+// automatic repair, so a mesh that is still non-watertight is non-repairable —
+// splitting it would just fail, so Split (and therefore Export) stay disabled.
+const canSplitMesh = computed(() => !!meshInfo.value && !!meshInfo.value.is_watertight)
 const showCreditSpinner = computed(() => creditLoading.value && !hasCreditAccount.value)
 const creditChipText = computed(() => {
   if (showCreditSpinner.value) return uiCopy.value.credits
@@ -576,6 +686,10 @@ function toggleLocale() {
   window.localStorage?.setItem('meshSplitterLocale', locale.value)
 }
 
+watch(locale, () => {
+  setProgressLabels(uiCopy.value.progress)
+}, { immediate: true })
+
 watch(meshInfo, (info) => {
   if (info && info.bounds) {
     divisions.value = calculateAutoDivisions(info.bounds, buildVolume.value)
@@ -600,6 +714,7 @@ function onScaleApply(value) {
 
 async function onSplit(volume, gridDivisions, connectorConfig) {
   splitAuthorizing.value = true
+  await new Promise(r => setTimeout(r, 0))
   try {
     await split(volume, gridDivisions)
     selectedChunkIndex.value = null
@@ -621,6 +736,20 @@ function onSelectChunk(index) {
   // Clicking the already-selected part again clears isolation and shows the
   // whole assembly at full opacity again (toggle behaviour).
   selectedChunkIndex.value = selectedChunkIndex.value === index ? null : index
+}
+
+function onConnectorDragStart(id) {
+}
+
+function onConnectorDragEnd(id, position) {
+  updateConnectorPosition(id, position)
+}
+
+function frameToProblemEdges() {
+  threePreviewRef.value?.frameToProblem()
+}
+function dismissProblemEdges() {
+  clearProblemEdges()
 }
 
 function productUrl(pack) {

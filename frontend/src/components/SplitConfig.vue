@@ -29,8 +29,9 @@
           </Button>
         </div>
       </div>
-      <Button class="w-full justify-center" :disabled="!ok || loading" @click="onSplit">
-        {{ loading ? labels.working : labels.splitMesh }}
+      <Button class="split-btn w-full justify-center" :disabled="!ok || loading" @click="onSplit">
+        <span v-if="loading" class="split-spinner" />
+        {{ loading ? (progressLabel || labels.working) : labels.splitMesh }}
       </Button>
     </div>
   </div>
@@ -48,6 +49,7 @@ const props = defineProps({
   err: { type: String, default: '' },
   divisions: { type: Array, default: () => [2, 2, 1] },
   loading: { type: Boolean, default: false },
+  progressLabel: { type: String, default: '' },
   labels: {
     type: Object,
     default: () => ({

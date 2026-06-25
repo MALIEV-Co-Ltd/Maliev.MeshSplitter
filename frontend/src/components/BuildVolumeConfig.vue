@@ -7,16 +7,62 @@
       </div>
     </div>
     <div class="pnl-body space-y-2">
-      <select
-        id="build-volume-preset"
-        v-model="selectedPresetId"
-        class="bv-select flex h-8 w-full rounded-sm border border-input bg-background px-2.5 font-mono text-xs text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        <option value="custom">{{ labels.customManual }}</option>
-        <option v-for="preset in presets" :key="preset.id" :value="preset.id">
-          {{ preset.label }}
-        </option>
-      </select>
+      <div ref="selectRoot" class="bv-select">
+        <button
+          id="build-volume-preset"
+          type="button"
+          class="bv-select-trigger"
+          aria-haspopup="listbox"
+          :aria-expanded="isOpen"
+          @click="isOpen = !isOpen"
+        >
+          <span class="bv-option-text">
+            <span class="bv-option-name">{{ selectedPreset ? selectedPreset.name : labels.customManual }}</span>
+            <span v-if="selectedPreset" class="bv-option-volume">{{ volumeText(selectedPreset.value) }}</span>
+          </span>
+          <ChevronDownIcon :size="14" :stroke-width="1.75" :class="{ 'rotate-180': isOpen }" />
+        </button>
+
+        <div v-if="isOpen" class="bv-select-menu" role="listbox">
+          <div class="bv-search-wrap">
+            <SearchIcon :size="14" class="bv-search-icon" />
+            <input
+              ref="searchInput"
+              type="text"
+              class="bv-search-input"
+              :placeholder="labels.searchPlaceholder"
+              v-model="searchQuery"
+              @click.stop
+            />
+          </div>
+          <div class="bv-search-results">
+            <button
+              type="button"
+              class="bv-option"
+              role="option"
+              :aria-selected="selectedPresetId === 'custom'"
+              @click="selectPreset('custom')"
+            >
+              <span class="bv-option-name">{{ labels.customManual }}</span>
+            </button>
+            <button
+              v-for="preset in filteredPresets"
+              :key="preset.id"
+              type="button"
+              class="bv-option"
+              role="option"
+              :aria-selected="selectedPresetId === preset.id"
+              @click="selectPreset(preset.id)"
+            >
+              <span class="bv-option-name">{{ preset.name }}</span>
+              <span class="bv-option-volume">{{ volumeText(preset.value) }}</span>
+            </button>
+            <div v-if="filteredPresets.length === 0 && searchQuery" class="bv-no-results">
+              {{ labels.noResults }}
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="grid grid-cols-3 gap-1.5">
         <div v-for="(axis, i) in ['X', 'Y', 'Z']" :key="axis" class="bv-field">
           <label :for="`build-volume-${axis}`">{{ axis }} (mm)</label>
@@ -36,8 +82,9 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { Box as BoxIcon } from '@lucide/vue'
+import { computed, ref, watch, nextTick } from 'vue'
+import { onClickOutside } from '@vueuse/core'
+import { Box as BoxIcon, ChevronDown as ChevronDownIcon, Search as SearchIcon } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 
 const props = defineProps({
@@ -47,6 +94,8 @@ const props = defineProps({
     default: () => ({
       title: 'Build volume',
       customManual: 'Custom (manual)',
+      searchPlaceholder: 'Search printers…',
+      noResults: 'No printers found',
     }),
   },
 })
@@ -66,30 +115,55 @@ const localVolume = computed({
 // 256mm requires manually clearing the "excluded bed area" safety setting. We
 // target the out-of-the-box default so split parts fit without that override.
 const presets = [
-  { id: 'bambu-x1c', label: 'Bambu Lab X1C / X1 / A1 | 256 x 256 x 250 mm', value: [256, 256, 250] },
-  { id: 'bambu-p1s', label: 'Bambu Lab P1S | 256 x 256 x 250 mm', value: [256, 256, 250] },
-  { id: 'bambu-p1p', label: 'Bambu Lab P1P | 256 x 256 x 250 mm', value: [256, 256, 250] },
-  { id: 'bambu-a1-mini', label: 'Bambu Lab A1 mini | 180 x 180 x 180 mm', value: [180, 180, 180] },
-  { id: 'prusa-mk4', label: 'Prusa MK4 / MK4S | 250 x 210 x 220 mm', value: [250, 210, 220] },
-  { id: 'mk3', label: 'Prusa MK3S+ | 250 x 210 x 210 mm', value: [250, 210, 210] },
-  { id: 'prusa-xl', label: 'Prusa XL | 360 x 360 x 360 mm', value: [360, 360, 360] },
-  { id: 'creality-k1', label: 'Creality K1 / K1C | 220 x 220 x 250 mm', value: [220, 220, 250] },
-  { id: 'k1-max', label: 'Creality K1 Max | 300 x 300 x 300 mm', value: [300, 300, 300] },
-  { id: 'ender-3v3-ke', label: 'Creality Ender-3 V3 KE | 220 x 220 x 240 mm', value: [220, 220, 240] },
-  { id: 'kobra-2-plus', label: 'Anycubic Kobra 2 Plus | 320 x 320 x 400 mm', value: [320, 320, 400] },
-  { id: 'kobra-max', label: 'Anycubic Kobra Max | 400 x 400 x 450 mm', value: [400, 400, 450] },
-  { id: 's3', label: 'Ultimaker S3 | 230 x 190 x 200 mm', value: [230, 190, 200] },
-  { id: 's5', label: 'Ultimaker S5 | 330 x 240 x 300 mm', value: [330, 240, 300] },
-  { id: 's7', label: 'Ultimaker S7 | 330 x 240 x 300 mm', value: [330, 240, 300] },
-  { id: 'raise3d-pro2', label: 'Raise3D Pro2 Plus | 305 x 305 x 605 mm', value: [305, 305, 605] },
-  { id: 'raise3d-pro3', label: 'Raise3D Pro3 | 300 x 300 x 300 mm', value: [300, 300, 300] },
-  { id: 'snapmaker-j1', label: 'Snapmaker J1 / J1s | 300 x 200 x 200 mm', value: [300, 200, 200] },
-  { id: 'form3', label: 'Formlabs Form 3 (Resin) | 145 x 145 x 185 mm', value: [145, 145, 185] },
-  { id: 'form3-plus', label: 'Formlabs Form 3+ (Resin) | 145 x 145 x 193 mm', value: [145, 145, 193] },
+  { id: 'bambu-x1c', name: 'Bambu Lab X1C / X1 / A1', value: [256, 256, 250] },
+  { id: 'bambu-p1s', name: 'Bambu Lab P1S', value: [256, 256, 250] },
+  { id: 'bambu-p1p', name: 'Bambu Lab P1P', value: [256, 256, 250] },
+  { id: 'bambu-a1-mini', name: 'Bambu Lab A1 mini', value: [180, 180, 180] },
+  { id: 'prusa-mk4', name: 'Prusa MK4 / MK4S', value: [250, 210, 220] },
+  { id: 'mk3', name: 'Prusa MK3S+', value: [250, 210, 210] },
+  { id: 'prusa-xl', name: 'Prusa XL', value: [360, 360, 360] },
+  { id: 'creality-k1', name: 'Creality K1 / K1C', value: [220, 220, 250] },
+  { id: 'k1-max', name: 'Creality K1 Max', value: [300, 300, 300] },
+  { id: 'ender-3v3-ke', name: 'Creality Ender-3 V3 KE', value: [220, 220, 240] },
+  { id: 'kobra-2-plus', name: 'Anycubic Kobra 2 Plus', value: [320, 320, 400] },
+  { id: 'kobra-max', name: 'Anycubic Kobra Max', value: [400, 400, 450] },
+  { id: 's3', name: 'Ultimaker S3', value: [230, 190, 200] },
+  { id: 's5', name: 'Ultimaker S5', value: [330, 240, 300] },
+  { id: 's7', name: 'Ultimaker S7', value: [330, 240, 300] },
+  { id: 'raise3d-pro2', name: 'Raise3D Pro2 Plus', value: [305, 305, 605] },
+  { id: 'raise3d-pro3', name: 'Raise3D Pro3', value: [300, 300, 300] },
+  { id: 'snapmaker-j1', name: 'Snapmaker J1 / J1s', value: [300, 200, 200] },
+  { id: 'form3', name: 'Formlabs Form 3 (Resin)', value: [145, 145, 185] },
+  { id: 'form3-plus', name: 'Formlabs Form 3+ (Resin)', value: [145, 145, 193] },
 ]
 
 const selectedPresetId = ref('custom')
+const isOpen = ref(false)
+const selectRoot = ref(null)
+const searchQuery = ref('')
+const searchInput = ref(null)
 const presetMap = Object.fromEntries(presets.map((preset) => [preset.id, preset.value]))
+const selectedPreset = computed(() => presets.find((preset) => preset.id === selectedPresetId.value) || null)
+
+const filteredPresets = computed(() => {
+  if (!searchQuery.value) return presets
+  const q = searchQuery.value.toLowerCase()
+  return presets.filter((p) => p.name.toLowerCase().includes(q))
+})
+
+onClickOutside(selectRoot, () => { isOpen.value = false })
+
+watch(isOpen, async (open) => {
+  if (open) {
+    searchQuery.value = ''
+    await nextTick()
+    searchInput.value?.focus()
+  }
+})
+
+function volumeText(value) {
+  return `${value[0]} × ${value[1]} × ${value[2]} mm`
+}
 
 function syncPresetFromModel(value) {
   const match = presets.find((preset) => preset.value[0] === value[0] && preset.value[1] === value[1] && preset.value[2] === value[2])
@@ -98,11 +172,12 @@ function syncPresetFromModel(value) {
 
 watch(() => props.modelValue, (value) => syncPresetFromModel(value), { immediate: true, deep: true })
 
-watch(selectedPresetId, (id) => {
-  if (id === 'custom') return
+function selectPreset(id) {
+  selectedPresetId.value = id
+  isOpen.value = false
   const selected = presetMap[id]
   if (selected) emit('update:modelValue', [...selected])
-})
+}
 
 function updateAxis(i, val) {
   const next = [...localVolume.value]

@@ -54,13 +54,12 @@
         </Button>
       </div>
 
-      <p v-if="loading" class="mt-3 text-sm text-signal">{{ labels.uploading }}</p>
+      <p v-if="loading && !meshInfo" class="mt-3 text-sm text-signal flex items-center gap-2">
+        <span class="mesh-uploader__spinner"></span>
+        {{ progressLabel || labels.uploading }}
+      </p>
       <p v-if="localError && !loading" class="mt-3 text-sm text-destructive">{{ localError }}</p>
       <p v-if="error && !loading" class="mt-3 text-sm text-destructive">{{ error }}</p>
-
-      <p v-if="meshInfo && !meshInfo.is_watertight" class="mt-2 text-xs font-medium text-destructive">
-        {{ labels.nonWatertightWarning }}
-      </p>
     </div>
   </div>
 </template>
@@ -74,6 +73,7 @@ import { Button } from '@/components/ui/button'
 const props = defineProps({
   meshInfo: { type: Object, default: null },
   loading: { type: Boolean, default: false },
+  progressLabel: { type: String, default: '' },
   error: { type: String, default: '' },
   labels: {
     type: Object,
@@ -84,9 +84,9 @@ const props = defineProps({
       dropFile: 'Drop file here',
       uploadTitle: 'Upload an STL file',
       uploadHint: 'Drag & drop an STL file or click to browse',
-      uploading: 'Uploading...',
+      uploading: 'Loading...',
+      fileTooLarge: 'File is too large. Maximum size is 200 MB.',
       selectStl: 'Please select an .stl file',
-      nonWatertightWarning: 'Mesh is not watertight - splitting may produce unexpected results.',
       replace: 'Replace file',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',
@@ -119,7 +119,26 @@ function handleFile(file) {
     localError.value = props.labels.selectStl
     return
   }
+  if (file.size > 200 * 1024 * 1024) {
+    localError.value = props.labels.fileTooLarge
+    return
+  }
   localError.value = ''
   emit('upload', file)
 }
 </script>
+
+<style scoped>
+.mesh-uploader__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: mesh-uploader-spin 0.6s linear infinite;
+}
+@keyframes mesh-uploader-spin {
+  to { transform: rotate(360deg); }
+}
+</style>

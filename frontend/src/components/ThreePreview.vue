@@ -21,14 +21,40 @@ const props = defineProps({
   selectedChunkIndex: { type: Number, default: null },
   previewInfo: { type: Object, default: null },
   isDark: { type: Boolean, default: false },
+  connectorPositions: { type: Array, default: () => [] },
+  reapplyingConnectors: { type: Boolean, default: false },
+  showLabels: { type: Boolean, default: true },
+  problemEdges: { type: Array, default: () => [] },
 })
+
+const emit = defineEmits(['connector-drag-start', 'connector-drag-end'])
 
 const container = ref(null)
 // Non-selected parts fade well back so the isolated part clearly stands out.
 const selectedOpacity = 0.06
 
-let renderer, scene, camera, controls, meshGroup, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
-let ambientLight, keyLight, fillLight
+let renderer, scene, camera, controls, meshGroup, connectorMarkers, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
+let ambientLight, keyLight, fillLight, rimLight
+let axisLines
+let problemEdgeOverlay = null
+// Bounding sphere of whatever the camera is currently framing. Used to keep the
+// near/far clipping planes sized to the model as the user zooms, so the mesh
+// never disappears at the extremes of the dolly range (which has no min/max).
+let framedSphere = null
+
+// Connector drag state
+let dragConnector = null
+let dragPlane = new THREE.Plane()
+let dragOffset = new THREE.Vector3()
+let isDragging = false
+const raycaster = new THREE.Raycaster()
+const pointer = new THREE.Vector2()
+let markerAnimId = null
+const CONNECTOR_MARKER_COLORS = {
+  dowel: 0x00e5ff,
+  mortise: 0xff6b35,
+  key: 0xffd700,
+}
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
 
 function sceneBackground() {
@@ -49,14 +75,14 @@ function splitPlaneColor() {
 // ambient/fill or the model reads as a flat silhouette.
 function lightingPreset() {
   return props.isDark
-    ? { ambient: 0.5, key: 1.1, fill: 0.32 }
-    : { ambient: 0.34, key: 1.05, fill: 0.18 }
+    ? { ambient: 0.48, key: 1.05, fill: 0.35, rim: 0.45 }
+    : { ambient: 0.32, key: 0.95, fill: 0.28, rim: 0.18 }
 }
 
 function initScene() {
   scene = new THREE.Scene()
   scene.background = new THREE.Color(sceneBackground())
-  const { ambient, key, fill } = lightingPreset()
+  const { ambient, key, fill, rim } = lightingPreset()
   ambientLight = new THREE.AmbientLight(0xffffff, ambient)
   scene.add(ambientLight)
   keyLight = new THREE.DirectionalLight(0xffffff, key)
@@ -65,6 +91,9 @@ function initScene() {
   fillLight = new THREE.DirectionalLight(0xffffff, fill)
   fillLight.position.set(-1.2, -0.45, 0.8)
   scene.add(fillLight)
+  rimLight = new THREE.DirectionalLight(0xffffff, rim)
+  rimLight.position.set(-0.3, 0.6, -1.5)
+  scene.add(rimLight)
 }
 
 // The floor grid is rebuilt to always extend well past whatever is on screen —
@@ -78,13 +107,14 @@ function setGrid(maxExtent) {
   }
   lastGridExtent = Number(maxExtent) || 0
   const span = Math.max(50, lastGridExtent)
-  const size = Math.ceil((span * 1.6) / 50) * 50
-  const divisions = Math.max(8, Math.round(size / 50))
+  const size = Math.ceil((span * 1.6) / 100) * 100
+  const divisions = Math.max(8, size / 50)
   const colors = gridColors()
   grid = new THREE.GridHelper(size, divisions, colors.main, colors.sub)
   if (props.upAxis === 'Z') grid.rotation.x = -Math.PI / 2
   grid.renderOrder = -1
   scene.add(grid)
+  setAxisLines(size * 0.5)
 }
 
 function maxBoxExtent(box) {
@@ -121,7 +151,12 @@ function initCamera() {
 function initControls() {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = false
-  controls.addEventListener('change', requestRender)
+  controls.addEventListener('change', onControlsChange)
+}
+
+function onControlsChange() {
+  updateClippingPlanes()
+  requestRender()
 }
 
 function disposeGroup(group) {
@@ -142,6 +177,14 @@ function disposeGroup(group) {
 function clearScene() {
   disposeGroup(meshGroup)
   meshGroup = null
+  if (axisLines) {
+    scene.remove(axisLines)
+    axisLines.children.forEach((c) => {
+      c.geometry?.dispose()
+      c.material?.dispose()
+    })
+    axisLines = null
+  }
   if (gridOverlay) {
     scene.remove(gridOverlay)
     gridOverlay = null
@@ -150,6 +193,30 @@ function clearScene() {
     disposeGroup(buildVolumeOverlay)
     buildVolumeOverlay = null
   }
+  if (connectorMarkers) {
+    stopConnectorAnimation()
+    scene.remove(connectorMarkers)
+    connectorMarkers.children.forEach((c) => {
+      c.geometry?.dispose()
+      c.material?.dispose()
+    })
+    connectorMarkers = null
+  }
+  requestRender()
+}
+
+function showEmptyScene() {
+  setGrid(0)
+  const dist = 400
+  const direction = props.upAxis === 'Z'
+    ? new THREE.Vector3(0.75, 0.62, 0.62)
+    : new THREE.Vector3(0.7, 0.5, 1)
+  camera.position.copy(direction.normalize().multiplyScalar(dist))
+  camera.lookAt(0, 0, 0)
+  framedSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), dist)
+  updateClippingPlanes()
+  controls.target.set(0, 0, 0)
+  controls.update()
   requestRender()
 }
 
@@ -185,7 +252,6 @@ function buildMeshes(chunks) {
   setGrid(maxBoxExtent(box))
   applyChunkVisibility(props.selectedChunkIndex)
   applyLabelVisibility(props.selectedChunkIndex)
-  fitCamera(box)
   requestRender()
 }
 
@@ -231,7 +297,7 @@ function applyLabelVisibility(selectedChunkIndex) {
 
   meshGroup.children.forEach((sprite) => {
     if (!sprite.userData?.isLabel) return
-    sprite.visible = hasSelection &&
+    sprite.visible = props.showLabels && hasSelection &&
       (isKeySelected
         ? props.chunks.find(c => c.index === sprite.userData.chunkIndex)?.isKey === true
         : sprite.userData.chunkIndex === selectedChunkIndex)
@@ -292,7 +358,7 @@ function showOriginal(geometry, divisions) {
   if (!geometry) return
   meshGroup = new THREE.Group()
   const geom = geometry.clone()
-  const mat = createCadSurfaceMaterial(0x4a90d9)
+  const mat = createCadSurfaceMaterial(0xc0c0c0)
   const mesh = new THREE.Mesh(geom, mat)
   meshGroup.add(mesh)
   const box = new THREE.Box3().expandByObject(mesh)
@@ -434,16 +500,29 @@ function fitCamera(box) {
     : new THREE.Vector3(0.7, 0.5, 1)
 
   camera.position.copy(center).addScaledVector(direction.normalize(), dist)
-  camera.near = Math.max(0.01, dist / 1000)
-  camera.far = dist + radius * 8
-  camera.updateProjectionMatrix()
+  framedSphere = new THREE.Sphere(center.clone(), radius)
+  updateClippingPlanes()
   controls.target.copy(center)
   controls.update()
   requestRender()
 }
 
+// Recompute near/far from the camera's current distance to the framed model so
+// it stays inside the frustum at any zoom level. Called on every controls change
+// because OrbitControls has no dolly limits — without this, zooming out pushes
+// the mesh past a fixed far plane and it vanishes.
+function updateClippingPlanes() {
+  if (!camera || !framedSphere) return
+  const d = camera.position.distanceTo(framedSphere.center)
+  const r = Math.max(framedSphere.radius, 1)
+  camera.near = Math.max(d - r * 2, r * 0.01, 0.01)
+  camera.far = d + r * 4
+  camera.updateProjectionMatrix()
+}
+
 function renderScene() {
-  if (renderer && scene && camera) renderer.render(scene, camera)
+  if (!renderer || !scene || !camera) return
+  renderer.render(scene, camera)
 }
 
 function requestRender() {
@@ -453,6 +532,235 @@ function requestRender() {
     renderFrame = null
     renderScene()
   })
+}
+
+function setAxisLines(extent) {
+  if (axisLines) {
+    scene.remove(axisLines)
+    axisLines.children.forEach((c) => {
+      c.geometry?.dispose()
+      c.material?.dispose()
+    })
+    axisLines = null
+  }
+  if (!extent || extent <= 0) return
+  const half = extent
+  axisLines = new THREE.Group()
+  const redMat = new THREE.LineBasicMaterial({ color: 0xff4444 })
+  const greenMat = new THREE.LineBasicMaterial({ color: 0x44cc44 })
+  const blueMat = new THREE.LineBasicMaterial({ color: 0x4488ff })
+  const xGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-half, 0, 0),
+    new THREE.Vector3(half, 0, 0),
+  ])
+  const yGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, -half, 0),
+    new THREE.Vector3(0, half, 0),
+  ])
+  const zGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, -half),
+    new THREE.Vector3(0, 0, half),
+  ])
+  axisLines.add(new THREE.Line(xGeo, redMat))
+  axisLines.add(new THREE.Line(yGeo, greenMat))
+  axisLines.renderOrder = 0
+  scene.add(axisLines)
+}
+
+function buildConnectorMarkers(positions) {
+  if (connectorMarkers) {
+    stopConnectorAnimation()
+    scene.remove(connectorMarkers)
+    connectorMarkers.children.forEach((c) => {
+      c.geometry?.dispose()
+      c.material?.dispose()
+    })
+    connectorMarkers = null
+  }
+  if (!positions || positions.length === 0) return
+  const selectedChunk = props.selectedChunkIndex != null ? props.chunks.find(c => c.index === props.selectedChunkIndex) : null
+  const isKeySelected = selectedChunk?.isKey === true
+  const filtered = props.selectedChunkIndex != null && !isKeySelected
+    ? positions.filter((e) => e.chunkA === props.selectedChunkIndex || e.chunkB === props.selectedChunkIndex)
+    : []
+  if (filtered.length === 0) return
+  connectorMarkers = new THREE.Group()
+  for (const entry of filtered) {
+    const pos = new THREE.Vector3(entry.position.x, entry.position.y, entry.position.z)
+    const normal = new THREE.Vector3()
+    normal.setComponent(entry.axis, entry.plane > 0 ? 1 : -1)
+    const markerPos = pos.clone().add(normal.clone().multiplyScalar(getMarkerOffset(entry)))
+    const color = CONNECTOR_MARKER_COLORS[entry.type] || 0x00e5ff
+    const baseRadius = Math.max(entry.radius * 0.7, 2.5)
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 12, 12),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, depthTest: false }),
+    )
+    marker.position.copy(markerPos)
+    marker.scale.setScalar(baseRadius)
+    marker.renderOrder = 999
+    marker.userData.connectorId = entry.id
+    marker.userData.isConnectorMarker = true
+    marker.userData.baseRadius = baseRadius
+    marker.userData.originalColor = color
+    marker.userData.lastValidPos = pos.clone()
+    connectorMarkers.add(marker)
+  }
+  scene.add(connectorMarkers)
+  startConnectorAnimation()
+}
+
+function startConnectorAnimation() {
+  if (markerAnimId) return
+  function tick() {
+    if (!connectorMarkers || !scene) {
+      markerAnimId = null
+      return
+    }
+    const phase = Date.now() * 0.003
+    connectorMarkers.children.forEach((marker) => {
+      if (!marker.userData.isConnectorMarker) return
+      const pulse = 1 + Math.sin(phase) * 0.15
+      const s = marker.userData.baseRadius * pulse
+      marker.scale.setScalar(s)
+    })
+    renderScene()
+    markerAnimId = requestAnimationFrame(tick)
+  }
+  markerAnimId = requestAnimationFrame(tick)
+}
+
+function stopConnectorAnimation() {
+  if (markerAnimId != null) {
+    cancelAnimationFrame(markerAnimId)
+    markerAnimId = null
+  }
+}
+
+function getMarkerOffset(entry) {
+  return 1.5
+}
+
+function getPointerNDC(event) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+}
+
+function findConnectorMarker(intersects) {
+  for (const hit of intersects) {
+    if (hit.object.userData?.isConnectorMarker) {
+      return hit.object.userData.connectorId
+    }
+  }
+  return null
+}
+
+function onPointerDown(event) {
+  if (props.reapplyingConnectors) return
+  getPointerNDC(event)
+  raycaster.setFromCamera(pointer, camera)
+  const targets = connectorMarkers ? [connectorMarkers] : []
+  if (!targets.length) return
+  const intersects = raycaster.intersectObjects(targets, true)
+  const connectorId = findConnectorMarker(intersects)
+  if (!connectorId) return
+  const entry = props.connectorPositions.find(e => e.id === connectorId)
+  if (!entry) return
+  const pos = new THREE.Vector3(entry.position.x, entry.position.y, entry.position.z)
+  const normal = new THREE.Vector3()
+  normal.setComponent(entry.axis, 1)
+  dragPlane.setFromNormalAndCoplanarPoint(normal, pos)
+  const planeIntersect = new THREE.Vector3()
+  raycaster.ray.intersectPlane(dragPlane, planeIntersect)
+  if (!planeIntersect) return
+  dragOffset.copy(pos).sub(planeIntersect)
+  dragConnector = entry
+  isDragging = true
+  controls.enabled = false
+  renderer.domElement.style.cursor = 'grabbing'
+  emit('connector-drag-start', entry.id)
+  event.preventDefault()
+}
+
+function onPointerMove(event) {
+  if (!isDragging || !dragConnector) return
+  getPointerNDC(event)
+  raycaster.setFromCamera(pointer, camera)
+  const planeIntersect = new THREE.Vector3()
+  raycaster.ray.intersectPlane(dragPlane, planeIntersect)
+  if (!planeIntersect) return
+  const rawPos = planeIntersect.add(dragOffset)
+  const clampedPos = clampToFaceBounds(rawPos, dragConnector)
+  const marker = connectorMarkers?.children.find(
+    (c) => c.userData.connectorId === dragConnector.id,
+  )
+  if (!marker) return
+  const valid = isConnectorPositionValid(clampedPos, dragConnector)
+  if (!valid) {
+    marker.material.color.setHex(0xff3333)
+    marker.material.opacity = 0.5
+    requestRender()
+    return
+  }
+  const normal = new THREE.Vector3()
+  normal.setComponent(dragConnector.axis, dragConnector.plane > 0 ? 1 : -1)
+  marker.position.copy(clampedPos).add(normal.clone().multiplyScalar(getMarkerOffset(dragConnector)))
+  marker.material.color.setHex(marker.userData.originalColor)
+  marker.material.opacity = 0.85
+  marker.userData.lastValidPos = clampedPos.clone()
+  requestRender()
+}
+
+function onPointerUp(event) {
+  if (!isDragging || !dragConnector) return
+  isDragging = false
+  controls.enabled = true
+  renderer.domElement.style.cursor = ''
+  const entry = dragConnector
+  dragConnector = null
+  const pos = new THREE.Vector3()
+  const marker = connectorMarkers?.children.find(
+    (c) => c.userData.connectorId === entry.id,
+  )
+  if (marker) {
+    const normal = new THREE.Vector3()
+    normal.setComponent(entry.axis, entry.plane > 0 ? 1 : -1)
+    pos.copy(marker.position).sub(normal.clone().multiplyScalar(getMarkerOffset(entry)))
+    marker.material.color.setHex(marker.userData.originalColor)
+    marker.material.opacity = 0.85
+  } else {
+    pos.set(entry.position.x, entry.position.y, entry.position.z)
+  }
+  emit('connector-drag-end', entry.id, { x: pos.x, y: pos.y, z: pos.z })
+}
+
+function clampToFaceBounds(position, entry) {
+  const clamped = position.clone()
+  const { faceBounds, otherAxes } = entry
+  if (faceBounds) {
+    clamped.setComponent(
+      otherAxes[0],
+      THREE.MathUtils.clamp(position.getComponent(otherAxes[0]), faceBounds.minA, faceBounds.maxA),
+    )
+    clamped.setComponent(
+      otherAxes[1],
+      THREE.MathUtils.clamp(position.getComponent(otherAxes[1]), faceBounds.minB, faceBounds.maxB),
+    )
+  }
+  clamped.setComponent(entry.axis, entry.plane)
+  return clamped
+}
+
+function isConnectorPositionValid(position, entry) {
+  const { faceBounds, otherAxes, radius } = entry
+  if (!faceBounds) return true
+  const margin = Math.max(radius * 0.8, 1)
+  const u = position.getComponent(otherAxes[0])
+  const v = position.getComponent(otherAxes[1])
+  if (u - faceBounds.minA < margin || faceBounds.maxA - u < margin) return false
+  if (v - faceBounds.minB < margin || faceBounds.maxB - v < margin) return false
+  return true
 }
 
 function onResize() {
@@ -471,28 +779,46 @@ onMounted(() => {
   initRenderer()
   initCamera()
   initControls()
+  if (!props.meshGeometry) showEmptyScene()
   requestRender()
   window.addEventListener('resize', onResize)
+  renderer.domElement.addEventListener('pointerdown', onPointerDown)
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
 })
 
 onBeforeUnmount(() => {
   isUnmounting = true
+  stopConnectorAnimation()
   window.removeEventListener('resize', onResize)
+  renderer.domElement.removeEventListener('pointerdown', onPointerDown)
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
   controls?.dispose()
   if (renderFrame) cancelAnimationFrame(renderFrame)
   clearScene()
+  if (problemEdgeOverlay) {
+    disposeGroup(problemEdgeOverlay)
+    problemEdgeOverlay = null
+  }
   renderer?.dispose()
 })
 
 watch(() => props.chunks, (val) => {
   if (val?.length > 0) {
     buildMeshes(val)
+    buildConnectorMarkers(props.connectorPositions)
   } else if (props.meshGeometry) {
     showOriginal(props.meshGeometry, props.divisions)
+    buildConnectorMarkers([])
   } else {
     clearScene()
   }
 })
+
+watch(() => props.connectorPositions, (val) => {
+  buildConnectorMarkers(val)
+}, { deep: true })
 
 watch(() => props.meshGeometry, (val) => {
   if (val && (!props.chunks || props.chunks.length === 0)) {
@@ -515,7 +841,51 @@ watch(() => props.buildVolume, () => {
 watch(() => props.selectedChunkIndex, (selectedChunkIndex) => {
   applyChunkVisibility(selectedChunkIndex)
   applyLabelVisibility(selectedChunkIndex)
+  buildConnectorMarkers(props.connectorPositions)
 })
+
+watch(() => props.showLabels, () => {
+  applyLabelVisibility(props.selectedChunkIndex)
+})
+
+watch(() => props.problemEdges, (edges) => {
+  if (problemEdgeOverlay) {
+    disposeGroup(problemEdgeOverlay)
+    problemEdgeOverlay = null
+  }
+  if (!edges || edges.length === 0) return
+  problemEdgeOverlay = new THREE.Group()
+  for (const hole of edges) {
+    if (hole.type === 'nonManifold') {
+      const lineGeom = new THREE.BufferGeometry()
+      lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
+      const lineMat = new THREE.LineBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.9, depthTest: false })
+      const line = new THREE.LineSegments(lineGeom, lineMat)
+      line.renderOrder = 998
+      problemEdgeOverlay.add(line)
+      continue
+    }
+    const lineGeom = new THREE.BufferGeometry()
+    lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.9, depthTest: false })
+    const line = new THREE.LineLoop(lineGeom, lineMat)
+    line.renderOrder = 998
+    problemEdgeOverlay.add(line)
+
+    if (hole.fillIndices && hole.fillIndices.length > 0) {
+      const fillGeom = new THREE.BufferGeometry()
+      fillGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
+      fillGeom.setIndex(new THREE.BufferAttribute(hole.fillIndices, 1))
+      fillGeom.computeVertexNormals()
+      const fillMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 })
+      const fill = new THREE.Mesh(fillGeom, fillMat)
+      fill.renderOrder = 997
+      problemEdgeOverlay.add(fill)
+    }
+  }
+  scene.add(problemEdgeOverlay)
+  requestRender()
+}, { deep: false })
 
 watch(() => props.previewInfo?.optimized, () => {
   applyPixelRatio()
@@ -525,10 +895,11 @@ watch(() => props.previewInfo?.optimized, () => {
 watch(() => props.isDark, () => {
   if (scene) scene.background = new THREE.Color(sceneBackground())
   if (ambientLight) {
-    const { ambient, key, fill } = lightingPreset()
+    const { ambient, key, fill, rim } = lightingPreset()
     ambientLight.intensity = ambient
     keyLight.intensity = key
     fillLight.intensity = fill
+    rimLight.intensity = rim
   }
   if (grid) setGrid(lastGridExtent)
   if (gridOverlay && props.meshGeometry && (!props.chunks || props.chunks.length === 0)) {
@@ -536,4 +907,16 @@ watch(() => props.isDark, () => {
   }
   requestRender()
 })
+
+function frameToProblem() {
+  if (!problemEdgeOverlay || problemEdgeOverlay.children.length === 0) return
+  const box = new THREE.Box3()
+  problemEdgeOverlay.children.forEach((child) => {
+    if (child.geometry) box.expandByObject(child)
+  })
+  if (box.isEmpty()) return
+  fitCamera(box)
+}
+
+defineExpose({ frameToProblem })
 </script>

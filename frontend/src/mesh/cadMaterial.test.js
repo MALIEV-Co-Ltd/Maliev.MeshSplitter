@@ -3,11 +3,12 @@ import * as THREE from 'three'
 import { createCadSurfaceMaterial } from './cadMaterial'
 
 describe('createCadSurfaceMaterial', () => {
-  it('uses flat diffuse CAD shading without specular smoothing', () => {
-    const material = createCadSurfaceMaterial(0xe74c3c)
+  it('uses smooth CAD shading with a matte PBR finish', () => {
+    const material = createCadSurfaceMaterial(0xc0c0c0)
 
-    expect(material).toBeInstanceOf(THREE.MeshLambertMaterial)
-    expect(material.flatShading).toBe(true)
+    expect(material).toBeInstanceOf(THREE.MeshStandardMaterial)
+    expect(material.roughness).toBe(0.55)
+    expect(material.metalness).toBe(0.05)
     expect(material.side).toBe(THREE.DoubleSide)
   })
 

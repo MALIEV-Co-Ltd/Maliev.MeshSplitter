@@ -13,3 +13,4 @@ frontend/test-results/
 .env
 .env.local
 tmp/
+.worktrees/

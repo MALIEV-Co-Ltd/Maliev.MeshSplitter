@@ -2,12 +2,15 @@ import { markRaw, readonly, ref, shallowRef } from 'vue'
 import * as THREE from 'three'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import {
-  addConnectorsManifold,
+  applyConnectorsFromManifest,
   applyScale,
+  computeConnectorPositions,
+  computeProblemEdges,
   exportPackage,
   prepareExportChunks,
-  repairMeshGeometry,
+  repairMeshGeometryRobust,
   splitMeshManifold,
+  validateConnectorPosition,
   validateManifold,
 } from '../mesh/meshProcessor'
 import { allocatePreviewBudget, createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
@@ -27,10 +30,32 @@ export function useMeshProcessor(options = {}) {
   const previewMeshGeometry = shallowRef(null)
   const previewInfo = shallowRef(null)
   const splitChunks = shallowRef([])
+  const cleanSplitChunks = shallowRef([])
   const chunks = shallowRef([])
   const previewChunks = shallowRef([])
+  const connectorPositions = ref([])
+  const reapplyingConnectors = ref(false)
+  let lastConnectorConfig = null
   const loading = ref(false)
+  const progressLabel = ref('')
+  const progressLabels = ref({
+    loading: 'Loading file…',
+    checking: 'Checking mesh…',
+    repairing: 'Repairing mesh…',
+    splitting: 'Splitting mesh…',
+    processing: 'Processing chunks…',
+    analyzing: 'Analyzing connectors…',
+    adding: 'Adding connectors…',
+    updating: 'Updating connectors…',
+  })
   const error = ref(null)
+  const problemEdges = ref([])
+  const repairPreview = ref(null)
+  let pendingOriginalGeometry = null
+
+  function setProgressLabels(labels) {
+    Object.assign(progressLabels.value, { ...progressLabels.value, ...labels })
+  }
   const scaleFactor = ref(1)
   // Default to the Bambu Lab X1C printable envelope (256x256x250, the
   // Bambu-Studio default Z). BuildVolumeConfig auto-selects the matching preset.
@@ -80,12 +105,16 @@ export function useMeshProcessor(options = {}) {
       }
     }, 0)
   }
-
   async function loadStl(file) {
     loading.value = true
+    progressLabel.value = progressLabels.value.loading
+    repairPreview.value = null
+    pendingOriginalGeometry = null
     error.value = null
+    problemEdges.value = []
     try {
       const buffer = await file.arrayBuffer()
+      progressLabel.value = progressLabels.value.checking
       const loader = new STLLoader()
       const geometry = normalizeForPreview(loader.parse(buffer))
       geometry.computeBoundingBox()
@@ -94,10 +123,24 @@ export function useMeshProcessor(options = {}) {
       let wasRepaired = false
       const initialInfo = validateManifold(workingGeometry)
       if (!initialInfo.watertight) {
-        const repaired = repairMeshGeometry(workingGeometry)
-        if (validateManifold(repaired).watertight) {
+        progressLabel.value = progressLabels.value.repairing
+        const repaired = await repairMeshGeometryRobust(workingGeometry)
+        progressLabel.value = progressLabels.value.checking
+        if (repaired) {
+          const repairedInfo = validateManifold(repaired)
+          pendingOriginalGeometry = geometry
+          repairPreview.value = {
+            beforeUrl: renderPartThumbnail(geometry),
+            afterUrl: renderPartThumbnail(repaired),
+            beforeStats: { faces: initialInfo.faceCount, verts: initialInfo.vertCount },
+            afterStats: { faces: repairedInfo.faceCount, verts: repairedInfo.vertCount },
+            filename: file.name,
+          }
           workingGeometry = repaired
           wasRepaired = true
+        } else {
+          problemEdges.value = computeProblemEdges(geometry)
+          error.value = 'Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'
         }
       }
 
@@ -111,6 +154,22 @@ export function useMeshProcessor(options = {}) {
     } finally {
       loading.value = false
     }
+  }
+
+  function acceptRepair() {
+    pendingOriginalGeometry = null
+    repairPreview.value = null
+  }
+
+  function rejectRepair() {
+    if (pendingOriginalGeometry) {
+      const prevInfo = meshInfo.value
+      sourceGeometry.value = markRaw(pendingOriginalGeometry)
+      scaleFactor.value = 1
+      setMeshState(pendingOriginalGeometry.clone(), prevInfo?.filename || 'mesh', { wasRepaired: false })
+      pendingOriginalGeometry = null
+    }
+    repairPreview.value = null
   }
 
   function normalizeForPreview(geometry) {
@@ -146,16 +205,44 @@ export function useMeshProcessor(options = {}) {
 
   async function split(bv, divisions) {
     loading.value = true
+    progressLabel.value = progressLabels.value.splitting
     error.value = null
     try {
       const mesh = new THREE.Mesh(meshGeometry.value)
       const rawChunks = await splitMeshManifold(mesh, bv, divisions)
+      progressLabel.value = progressLabels.value.processing
       splitChunks.value = rawChunks.map((chunk, i) => ({
         ...chunk,
         geometry: markRaw(chunk.geometry),
         color: COLORS[i % COLORS.length],
       }))
+      cleanSplitChunks.value = splitChunks.value
+      connectorPositions.value = []
+      lastConnectorConfig = null
       chunks.value = decorateChunks(splitChunks.value)
+      setPreviewChunks(chunks.value)
+      generateThumbnails()
+    } catch (e) {
+      error.value = e.message
+      problemEdges.value = e.boundaryData || []
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function applyConnectors(config) {
+    loading.value = true
+    progressLabel.value = progressLabels.value.analyzing
+    error.value = null
+    try {
+      const base = splitChunks.value.length > 0 ? splitChunks.value : chunks.value
+      const manifest = await computeConnectorPositions(base, config)
+      progressLabel.value = progressLabels.value.adding
+      const updated = await applyConnectorsFromManifest(base, manifest)
+      connectorPositions.value = manifest
+      lastConnectorConfig = config
+      chunks.value = decorateChunks(updated)
       setPreviewChunks(chunks.value)
       generateThumbnails()
     } catch (e) {
@@ -166,12 +253,23 @@ export function useMeshProcessor(options = {}) {
     }
   }
 
-  async function applyConnectors(config) {
-    loading.value = true
-    error.value = null
+  async function updateConnectorPosition(id, newPosition) {
+    const manifest = connectorPositions.value
+    const entry = manifest.find(e => e.id === id)
+    if (!entry) return
+    const valid = validateConnectorPosition(
+      cleanSplitChunks.value.length > 0 ? cleanSplitChunks.value : chunks.value,
+      entry,
+      newPosition,
+    )
+    if (!valid.valid) return
+    entry.position = { x: newPosition.x, y: newPosition.y, z: newPosition.z }
+    entry.safeDepth = valid.safeDepth
+    reapplyingConnectors.value = true
+    progressLabel.value = progressLabels.value.updating
     try {
-      const base = splitChunks.value.length > 0 ? splitChunks.value : chunks.value
-      const updated = await addConnectorsManifold(base, config)
+      const base = cleanSplitChunks.value.length > 0 ? cleanSplitChunks.value : splitChunks.value
+      const updated = await applyConnectorsFromManifest(base, manifest)
       chunks.value = decorateChunks(updated)
       setPreviewChunks(chunks.value)
       generateThumbnails()
@@ -179,7 +277,7 @@ export function useMeshProcessor(options = {}) {
       error.value = e.message
       throw e
     } finally {
-      loading.value = false
+      reapplyingConnectors.value = false
     }
   }
 
@@ -241,6 +339,14 @@ export function useMeshProcessor(options = {}) {
     saveBlob(blob, filename)
   }
 
+  // Dismiss the non-manifold error overlay without unloading the mesh. The
+  // refs are exposed read-only, so consumers can't clear them directly — they
+  // call this instead.
+  function clearProblemEdges() {
+    problemEdges.value = []
+    error.value = null
+  }
+
   function clearMesh() {
     meshInfo.value = null
     sourceGeometry.value = null
@@ -250,9 +356,15 @@ export function useMeshProcessor(options = {}) {
     setPreviewChunks([])
     previewInfo.value = null
     splitChunks.value = []
+    cleanSplitChunks.value = []
     chunks.value = []
+    connectorPositions.value = []
+    problemEdges.value = []
+    reapplyingConnectors.value = false
+    lastConnectorConfig = null
     loading.value = false
     error.value = null
+    progressLabel.value = ''
     scaleFactor.value = 1
     disposeThumbnailRenderer()
   }
@@ -264,7 +376,15 @@ export function useMeshProcessor(options = {}) {
     previewInfo: readonly(previewInfo),
     chunks: readonly(chunks),
     previewChunks: readonly(previewChunks),
+    connectorPositions: readonly(connectorPositions),
+    problemEdges: readonly(problemEdges),
+    reapplyingConnectors: readonly(reapplyingConnectors),
     loading: readonly(loading),
+    progressLabel: readonly(progressLabel),
+    setProgressLabels,
+    repairPreview: readonly(repairPreview),
+    acceptRepair,
+    rejectRepair,
     error: readonly(error),
     scaleFactor: readonly(scaleFactor),
     buildVolume,
@@ -272,12 +392,14 @@ export function useMeshProcessor(options = {}) {
     setScaleFactor,
     split,
     applyConnectors,
+    updateConnectorPosition,
     prepareExport,
     buildExportPackage,
     saveBlob,
     downloadExportPackage,
     downloadStl: downloadExportPackage,
     downloadPdf: downloadExportPackage,
+    clearProblemEdges,
     clearMesh,
   }
 

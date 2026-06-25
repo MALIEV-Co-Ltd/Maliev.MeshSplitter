@@ -164,6 +164,19 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
   return repaired
 }
 
+// Try Three.js hole-fill first; if that fails, fall back to the authoritative
+// manifold-3d engine for a clean round-trip repair.
+export async function repairMeshGeometryRobust(geometry) {
+  const filled = repairMeshGeometry(geometry)
+  if (validateManifold(filled).watertight) return filled
+
+  const manifold = await getManifoldModule()
+  const cleaned = manifoldCleanGeometry(filled, manifold)
+  if (cleaned && validateManifold(cleaned).watertight) return cleaned
+
+  return null
+}
+
 function triangleNormalFromPositions(positions, a, b, c) {
   const va = new THREE.Vector3(positions[a * 3], positions[a * 3 + 1], positions[a * 3 + 2])
   const vb = new THREE.Vector3(positions[b * 3], positions[b * 3 + 1], positions[b * 3 + 2])
@@ -274,6 +287,120 @@ function findBoundaryLoops(geometry) {
   })
 
   return loops
+}
+
+function findNonManifoldEdges(geometry) {
+  const index = geometry.index
+  if (!index) return []
+
+  const edgeMap = new Map()
+  const addEdge = (a, b) => {
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`
+    const edge = edgeMap.get(key) || { a, b, count: 0 }
+    edge.count += 1
+    edgeMap.set(key, edge)
+  }
+
+  for (let i = 0; i < index.count; i += 3) {
+    const a = index.getX(i)
+    const b = index.getX(i + 1)
+    const c = index.getX(i + 2)
+    addEdge(a, b)
+    addEdge(b, c)
+    addEdge(c, a)
+  }
+
+  const result = []
+  edgeMap.forEach((edge) => {
+    if (edge.count >= 3) result.push({ a: edge.a, b: edge.b, count: edge.count })
+  })
+  return result
+}
+
+export function computeProblemEdges(geometry) {
+  const welded = weldGeometry(geometry, 1e-4)
+  const loops = findBoundaryLoops(welded)
+  const nonManifoldEdges = findNonManifoldEdges(welded)
+  if (loops.length === 0 && nonManifoldEdges.length === 0) return []
+
+  const pos = welded.attributes.position
+
+  function getPos(vertexIdx) {
+    return [
+      pos.getX(vertexIdx),
+      pos.getY(vertexIdx),
+      pos.getZ(vertexIdx),
+    ]
+  }
+
+  const results = []
+
+  for (const loop of loops) {
+    const loopPositions = []
+    for (const vi of loop) {
+      const p = getPos(vi)
+      loopPositions.push(p[0], p[1], p[2])
+    }
+
+    // Compute best-fit plane normal via Newell method
+    const normal = new THREE.Vector3()
+    const n = loop.length
+    for (let i = 0; i < n; i++) {
+      const a = getPos(loop[i])
+      const b = getPos(loop[(i + 1) % n])
+      normal.x += (a[1] - b[1]) * (a[2] + b[2])
+      normal.y += (a[2] - b[2]) * (a[0] + b[0])
+      normal.z += (a[0] - b[0]) * (a[1] + b[1])
+    }
+    normal.normalize()
+
+    // Build orthonormal basis from normal
+    const ref = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)
+    const u = new THREE.Vector3().crossVectors(normal, ref).normalize()
+    const v = new THREE.Vector3().crossVectors(normal, u).normalize()
+
+    // Project loop vertices to 2D
+    const contour2D = []
+    const loop3D = loop.map(vi => new THREE.Vector3().fromArray(getPos(vi)))
+    for (const p of loop3D) {
+      contour2D.push(new THREE.Vector2(p.dot(u), p.dot(v)))
+    }
+
+    // Triangulate the contour
+    const triangles = THREE.ShapeUtils.triangulateShape(contour2D, [])
+
+    // Compute center (average of loop vertices)
+    const center = [0, 0, 0]
+    for (const vi of loop) {
+      const p = getPos(vi)
+      center[0] += p[0]
+      center[1] += p[1]
+      center[2] += p[2]
+    }
+    center[0] /= loop.length
+    center[1] /= loop.length
+    center[2] /= loop.length
+
+    results.push({
+      type: 'hole',
+      positions: new Float32Array(loopPositions),
+      fillIndices: new Uint16Array(triangles.flat()),
+      center,
+    })
+  }
+
+  for (const edge of nonManifoldEdges) {
+    const pa = getPos(edge.a)
+    const pb = getPos(edge.b)
+    results.push({
+      type: 'nonManifold',
+      positions: new Float32Array([pa[0], pa[1], pa[2], pb[0], pb[1], pb[2]]),
+      fillIndices: new Uint16Array(0),
+      center: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2],
+    })
+  }
+
+  return results
 }
 
 export function applyScale(geometry, scaleFactor) {
@@ -458,14 +585,23 @@ export function orderPartsByConnectivity(chunks) {
   )
 }
 
+function yieldToMain() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => setTimeout(resolve, 0))
+  })
+}
+
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
   const info = validateManifold(splitGeometry)
   if (!info.watertight) {
-    const repaired = repairMeshGeometry(splitGeometry)
-    const repairedInfo = validateManifold(repaired)
-    if (!repairedInfo.watertight) {
-      throw new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.')
+    const repaired = await repairMeshGeometryRobust(splitGeometry)
+    if (!repaired) {
+      const boundaryData = computeProblemEdges(splitGeometry)
+      throw Object.assign(
+        new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'),
+        { boundaryData }
+      )
     }
     splitGeometry = repaired
   }
@@ -503,6 +639,7 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
           const cutter = manifold.Manifold.cube(cellSize, true).translate([cx, cy, cz])
           const part = solid.intersect(cutter)
           cutter.delete?.()
+          await yieldToMain()
 
           try {
             if (part.isEmpty()) continue
@@ -513,7 +650,11 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
 
             const resultMesh = part.getMesh()
             const geometry = manifoldMeshToGeometry(resultMesh)
+            await yieldToMain()
+
             const components = splitDisconnectedComponents(geometry)
+            await yieldToMain()
+
             components.forEach((componentGeometry, bodyIndex) => {
               const label = chunkLabel(partNumber, ix, iy, iz, bodyIndex, components.length)
               chunks.push({
@@ -532,6 +673,7 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
           } finally {
             part.delete?.()
           }
+          await yieldToMain()
         }
       }
     }
@@ -761,13 +903,12 @@ export function localWallThicknessAroundFootprint(raycaster, mesh, bbox, point, 
   return minThickness
 }
 
-export async function addConnectorsManifold(chunks, config = {}) {
+export async function computeConnectorPositions(chunks, config = {}) {
   const cleanChunks = chunks.filter(c => !c.isKey)
   const type = resolveConnectorType(config.type)
-  if (type === 'none') return cleanChunks
-  if (cleanChunks.length < 2) return cleanChunks
+  if (type === 'none') return []
+  if (cleanChunks.length < 2) return []
 
-  const manifold = await getManifoldModule()
   const depth = Number(config.depth ?? 5)
   const perFace = Math.max(1, Number(config.perFace || 1))
   if (!Number.isFinite(depth) || depth <= 0) {
@@ -787,12 +928,6 @@ export async function addConnectorsManifold(chunks, config = {}) {
     chunk.geometry.computeBoundingBox()
     return chunk.geometry.boundingBox.clone()
   })
-  const solids = cleanChunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
-  const connectorCounts = cleanChunks.map((chunk) => Number(chunk.connectorCount || 0))
-  const keyChunks = []
-
-  // Raycast meshes (double-sided so back walls register) for local-thickness
-  // probing, so connectors are clamped to the part's real wall, not its bbox.
   const raycaster = new THREE.Raycaster()
   const raycastMeshes = cleanChunks.map((chunk) => {
     const mesh = new THREE.Mesh(chunk.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
@@ -810,178 +945,209 @@ export async function addConnectorsManifold(chunks, config = {}) {
   })
   const bboxTouchTolerance = Math.max(1e-4, (worldSpan.x + worldSpan.y + worldSpan.z) * 1e-6)
 
-  try {
-    for (let i = 0; i < cleanChunks.length; i++) {
-      for (let j = i + 1; j < cleanChunks.length; j++) {
-        const bbA = bboxes[i]
-        const bbB = bboxes[j]
-        if (!bbA.intersectsBox(bbB)) continue
+  const manifest = []
+  let connectorId = 0
 
-        const interMin = new THREE.Vector3(
-          Math.max(bbA.min.x, bbB.min.x),
-          Math.max(bbA.min.y, bbB.min.y),
-          Math.max(bbA.min.z, bbB.min.z),
-        )
-        const interMax = new THREE.Vector3(
-          Math.min(bbA.max.x, bbB.max.x),
-          Math.min(bbA.max.y, bbB.max.y),
-          Math.min(bbA.max.z, bbB.max.z),
-        )
-        const interBox = new THREE.Box3(interMin, interMax)
-        const interSize = new THREE.Vector3()
-        interBox.getSize(interSize)
-        if (interSize.x <= -bboxTouchTolerance || interSize.y <= -bboxTouchTolerance || interSize.z <= -bboxTouchTolerance) continue
+  for (let i = 0; i < cleanChunks.length; i++) {
+    for (let j = i + 1; j < cleanChunks.length; j++) {
+      const bbA = bboxes[i]
+      const bbB = bboxes[j]
+      if (!bbA.intersectsBox(bbB)) continue
 
-        const touchingAxes = [0, 1, 2]
-          .map((axis) => ({
-            axis,
-            overlap: interSize.getComponent(axis),
-          }))
-          .filter((entry) => entry.overlap >= -bboxTouchTolerance && entry.overlap <= bboxTouchTolerance)
-        if (touchingAxes.length !== 1) {
-          continue
-        }
+      const interMin = new THREE.Vector3(
+        Math.max(bbA.min.x, bbB.min.x),
+        Math.max(bbA.min.y, bbB.min.y),
+        Math.max(bbA.min.z, bbB.min.z),
+      )
+      const interMax = new THREE.Vector3(
+        Math.min(bbA.max.x, bbB.max.x),
+        Math.min(bbA.max.y, bbB.max.y),
+        Math.min(bbA.max.z, bbB.max.z),
+      )
+      const interBox = new THREE.Box3(interMin, interMax)
+      const interSize = new THREE.Vector3()
+      interBox.getSize(interSize)
+      if (interSize.x <= -bboxTouchTolerance || interSize.y <= -bboxTouchTolerance || interSize.z <= -bboxTouchTolerance) continue
 
-        const axis = touchingAxes[0].axis
-        const center = new THREE.Vector3()
-        interBox.getCenter(center)
-        const otherAxes = [(axis + 1) % 3, (axis + 2) % 3]
-        const extentA = interSize.getComponent(otherAxes[0])
-        const extentB = interSize.getComponent(otherAxes[1])
-        if (extentA <= bboxTouchTolerance || extentB <= bboxTouchTolerance) {
-          continue
-        }
-
-        const faceTolerance = Math.max(bboxTouchTolerance * 20, 1e-3)
-        const planeValue = center.getComponent(axis)
-
-        // Plan the connector geometry for this shared face. Keys use the
-        // customer's FIXED dimensions (interchangeable across the whole model);
-        // mortise/dowel adapt their cross-section to the face.
-        let radius // footprint half-extent, drives edge margin + wall sampling
-        let keyPeg = null // { pegX, pegY } when type === 'key'
-        let fit = null // adaptive fit when mortise/dowel
-        if (type === 'key') {
-          keyPeg = planKeyFootprint(axis, extentA, extentB, size2, thickness, clearance, faceTolerance)
-          if (!keyPeg) continue
-          radius = Math.max(size2, thickness) / 2
-        } else {
-          fit = fitConnectorToSharedFace(type, {
-            size,
-            size2,
-            thickness,
-            depth,
-            clearance,
-            extentA,
-            extentB,
-            axisDepthA: Math.max(faceTolerance, bbA.max.getComponent(axis) - bbA.min.getComponent(axis)),
-            axisDepthB: Math.max(faceTolerance, bbB.max.getComponent(axis) - bbB.min.getComponent(axis)),
-            faceTolerance,
-          })
-          if (!fit) continue
-          radius = fit.radius
-        }
-
-        const candidates = findSharedCutFaceCandidates(
-          cleanChunks[i].geometry,
-          cleanChunks[j].geometry,
+      const touchingAxes = [0, 1, 2]
+        .map((axis) => ({
           axis,
-          center.getComponent(axis),
-          interBox,
-          otherAxes,
-          Math.max(radius * 1.75, faceTolerance * 4),
+          overlap: interSize.getComponent(axis),
+        }))
+        .filter((entry) => entry.overlap >= -bboxTouchTolerance && entry.overlap <= bboxTouchTolerance)
+      if (touchingAxes.length !== 1) continue
+
+      const axis = touchingAxes[0].axis
+      const center = new THREE.Vector3()
+      interBox.getCenter(center)
+      const otherAxes = [(axis + 1) % 3, (axis + 2) % 3]
+      const extentA = interSize.getComponent(otherAxes[0])
+      const extentB = interSize.getComponent(otherAxes[1])
+      if (extentA <= bboxTouchTolerance || extentB <= bboxTouchTolerance) continue
+
+      const faceTolerance = Math.max(bboxTouchTolerance * 20, 1e-3)
+      const planeValue = center.getComponent(axis)
+
+      let radius
+      let keyPeg = null
+      let fit = null
+      if (type === 'key') {
+        keyPeg = planKeyFootprint(axis, extentA, extentB, size2, thickness, clearance, faceTolerance)
+        if (!keyPeg) continue
+        radius = Math.max(size2, thickness) / 2
+      } else {
+        fit = fitConnectorToSharedFace(type, {
+          size, size2, thickness, depth, clearance,
+          extentA, extentB,
+          axisDepthA: Math.max(faceTolerance, bbA.max.getComponent(axis) - bbA.min.getComponent(axis)),
+          axisDepthB: Math.max(faceTolerance, bbB.max.getComponent(axis) - bbB.min.getComponent(axis)),
           faceTolerance,
-          radius + clearance + faceTolerance,
+        })
+        if (!fit) continue
+        radius = fit.radius
+      }
+
+      const candidates = findSharedCutFaceCandidates(
+        cleanChunks[i].geometry, cleanChunks[j].geometry,
+        axis, center.getComponent(axis), interBox, otherAxes,
+        Math.max(radius * 1.75, faceTolerance * 4), faceTolerance,
+        radius + clearance + faceTolerance,
+      )
+      if (candidates.length === 0) continue
+
+      const viablePositions = []
+      const depthByPosition = new Map()
+      for (const pos of candidates) {
+        const wall = Math.min(
+          localWallThicknessAroundFootprint(raycaster, raycastMeshes[i], bbA, pos, axis, otherAxes, planeValue, faceTolerance, radius),
+          localWallThicknessAroundFootprint(raycaster, raycastMeshes[j], bbB, pos, axis, otherAxes, planeValue, faceTolerance, radius),
         )
-
-        if (candidates.length === 0) {
-          continue
-        }
-
-        // Per-position viability is decided BEFORE spacing selection, so a face
-        // that fits N connectors never drops to 0 just because the farthest-apart
-        // points happen to land on thin walls — we select among the survivors.
-        // Keys must keep their full fixed depth (resizing them would break
-        // interchangeability), so a key position is viable only if the wall holds
-        // the full key plus the 2mm skin; mortise/dowel clamp depth per position.
-        const viablePositions = []
-        const depthByPosition = new Map()
-        for (const pos of candidates) {
-          const wall = Math.min(
-            localWallThicknessAroundFootprint(raycaster, raycastMeshes[i], bbA, pos, axis, otherAxes, planeValue, faceTolerance, radius),
-            localWallThicknessAroundFootprint(raycaster, raycastMeshes[j], bbB, pos, axis, otherAxes, planeValue, faceTolerance, radius),
+        if (type === 'key') {
+          if (wall >= depth + CONNECTOR_SAFETY_MARGIN_MM) {
+            viablePositions.push(pos)
+            depthByPosition.set(pos, depth)
+          }
+        } else {
+          const safeDepth = Math.min(
+            clampConnectorDepth(fit.depth, wall),
+            Math.max(0, wall - CONNECTOR_SAFETY_MARGIN_MM),
           )
-          if (type === 'key') {
-            if (wall >= depth + CONNECTOR_SAFETY_MARGIN_MM) {
-              viablePositions.push(pos)
-              depthByPosition.set(pos, depth)
-            }
-          } else {
-            const safeDepth = Math.min(
-              clampConnectorDepth(fit.depth, wall),
-              Math.max(0, wall - CONNECTOR_SAFETY_MARGIN_MM),
-            )
-            if (safeDepth >= MIN_CONNECTOR_DEPTH) {
-              viablePositions.push(pos)
-              depthByPosition.set(pos, safeDepth)
-            }
+          if (safeDepth >= MIN_CONNECTOR_DEPTH) {
+            viablePositions.push(pos)
+            depthByPosition.set(pos, safeDepth)
           }
-        }
-        if (viablePositions.length === 0) continue
-
-        // Reduce the per-face count to what physically fits, then space the
-        // selected connectors apart across the viable positions.
-        const connectorCross = type === 'dowel' ? radius * 2 : Math.max(size2, thickness)
-        const edgeMargin = radius + clearance + faceTolerance
-        const effectivePerFace = fittedConnectorCount(perFace, extentA - edgeMargin * 2, connectorCross, clearance)
-        const positions = distributeConnectorCandidates(viablePositions, effectivePerFace, otherAxes)
-
-        // Keys share ONE fixed shape across every placement, so every printed key
-        // is identical and matches every cut slot. Mortise/dowel build a shape per
-        // position because their depth is clamped to that position's wall.
-        const keyShape = type === 'key'
-          ? createConnectorShape(manifold, 'key', { size: keyPeg.pegX, thickness: keyPeg.pegY, depth, clearance })
-          : null
-
-        for (const pos of positions) {
-          const placeDepth = depthByPosition.get(pos) ?? depth
-          const shape = keyShape || createConnectorShape(manifold, type, {
-            size: type === 'dowel' ? fit.size : fit.size2,
-            thickness: fit.thickness,
-            depth: placeDepth,
-            clearance,
-          })
-          const peg = orientConnector(shape.makePeg(), axis).translate([pos.x, pos.y, pos.z])
-          const socket = orientConnector(shape.makeSocket(), axis).translate([pos.x, pos.y, pos.z])
-
-          let partA, partB
-          if (type === 'key') {
-            partA = solids[i].subtract(socket)
-            partB = solids[j].subtract(socket)
-
-            const keyGeometry = manifoldMeshToGeometry(peg.getMesh())
-            keyChunks.push({
-              geometry: keyGeometry,
-              volume: Math.abs(peg.volume()),
-              centroid: pos.clone(),
-              isKey: true,
-              connectorCount: 0
-            })
-          } else {
-            partA = solids[i].add(peg)
-            partB = solids[j].subtract(socket)
-          }
-
-          solids[i].delete?.()
-          solids[j].delete?.()
-          peg.delete?.()
-          socket.delete?.()
-          solids[i] = partA
-          solids[j] = partB
-          connectorCounts[i] += 1
-          connectorCounts[j] += 1
         }
       }
+      if (viablePositions.length === 0) {
+        await yieldToMain()
+        continue
+      }
+      await yieldToMain()
+
+      const connectorCross = type === 'dowel' ? radius * 2 : Math.max(size2, thickness)
+      const edgeMargin = radius + clearance + faceTolerance
+      const effectivePerFace = fittedConnectorCount(perFace, extentA - edgeMargin * 2, connectorCross, clearance)
+      const positions = distributeConnectorCandidates(viablePositions, effectivePerFace, otherAxes)
+
+      const fitSize = fit ? fit.size : size
+      const fitSize2 = fit ? fit.size2 : size2
+      const fitThickness = fit ? fit.thickness : thickness
+
+      const faceMinA = interMin.getComponent(otherAxes[0])
+      const faceMaxA = interMax.getComponent(otherAxes[0])
+      const faceMinB = interMin.getComponent(otherAxes[1])
+      const faceMaxB = interMax.getComponent(otherAxes[1])
+
+      for (const pos of positions) {
+        const placeDepth = depthByPosition.get(pos) ?? depth
+        manifest.push({
+          id: `conn-${connectorId++}`,
+          chunkA: i,
+          chunkB: j,
+          axis,
+          plane: planeValue,
+          otherAxes: [...otherAxes],
+          extentA,
+          extentB,
+          faceBounds: { minA: faceMinA, maxA: faceMaxA, minB: faceMinB, maxB: faceMaxB },
+          position: { x: pos.x, y: pos.y, z: pos.z },
+          type,
+          size: fitSize,
+          size2: fitSize2,
+          thickness: fitThickness,
+          depth: placeDepth,
+          clearance,
+          radius,
+          isKey: type === 'key',
+          keyPeg: keyPeg ? { ...keyPeg } : null,
+          safeDepth: placeDepth,
+        })
+      }
+      await yieldToMain()
+    }
+  }
+
+  raycastMeshes.forEach((mesh) => mesh.material.dispose())
+  return manifest
+}
+
+export async function applyConnectorsFromManifest(chunks, manifest) {
+  if (!manifest.length) {
+    return chunks.filter(c => !c.isKey).map((chunk) => ({
+      ...chunk,
+      connectorCount: Number(chunk.connectorCount || 0),
+    }))
+  }
+
+  const manifold = await getManifoldModule()
+  const cleanChunks = chunks.filter(c => !c.isKey)
+  const isKeyType = manifest[0].isKey
+
+  const solids = cleanChunks.map((chunk) => manifold.Manifold.ofMesh(geometryToManifoldMesh(chunk.geometry, manifold)))
+  const connectorCounts = cleanChunks.map((chunk) => Number(chunk.connectorCount || 0))
+  const keyChunks = []
+
+  try {
+    for (const entry of manifest) {
+      const i = entry.chunkA
+      const j = entry.chunkB
+      const pos = new THREE.Vector3(entry.position.x, entry.position.y, entry.position.z)
+
+      const shape = entry.isKey
+        ? createConnectorShape(manifold, 'key', { size: entry.keyPeg.pegX, thickness: entry.keyPeg.pegY, depth: entry.depth, clearance: entry.clearance })
+        : createConnectorShape(manifold, entry.type, { size: entry.size, thickness: entry.thickness, depth: entry.depth, clearance: entry.clearance })
+
+      const peg = orientConnector(shape.makePeg(), entry.axis).translate([pos.x, pos.y, pos.z])
+      const socket = orientConnector(shape.makeSocket(), entry.axis).translate([pos.x, pos.y, pos.z])
+      await yieldToMain()
+
+      let partA, partB
+      if (entry.isKey) {
+        partA = solids[i].subtract(socket)
+        partB = solids[j].subtract(socket)
+
+        const keyGeometry = manifoldMeshToGeometry(peg.getMesh())
+        keyChunks.push({
+          geometry: keyGeometry,
+          volume: Math.abs(peg.volume()),
+          centroid: pos.clone(),
+          isKey: true,
+          connectorCount: 0,
+        })
+      } else {
+        partA = solids[i].add(peg)
+        partB = solids[j].subtract(socket)
+      }
+
+      solids[i].delete?.()
+      solids[j].delete?.()
+      peg.delete?.()
+      socket.delete?.()
+      solids[i] = partA
+      solids[j] = partB
+      connectorCounts[i] += 1
+      connectorCounts[j] += 1
+      await yieldToMain()
     }
 
     const baseChunks = cleanChunks.map((chunk, index) => {
@@ -998,19 +1164,62 @@ export async function addConnectorsManifold(chunks, config = {}) {
       }
     })
 
-    if (type === 'key') {
+    if (isKeyType) {
       const keysWithIndex = keyChunks.map((key, kIndex) => ({
         ...key,
         index: baseChunks.length + kIndex,
-        label: `Key`,
+        label: 'Key',
       }))
       return [...baseChunks, ...keysWithIndex]
     }
     return baseChunks
   } finally {
     solids.forEach((solid) => solid.delete?.())
-    raycastMeshes.forEach((mesh) => mesh.material.dispose())
   }
+}
+
+export async function addConnectorsManifold(chunks, config = {}) {
+  const manifest = await computeConnectorPositions(chunks, config)
+  return applyConnectorsFromManifest(chunks, manifest)
+}
+
+export function validateConnectorPosition(chunks, entry, newPosition) {
+  const cleanChunks = chunks.filter(c => !c.isKey)
+  const i = entry.chunkA
+  const j = entry.chunkB
+  if (i >= cleanChunks.length || j >= cleanChunks.length) return { valid: false, wallThickness: 0, safeDepth: 0 }
+
+  const geometryA = cleanChunks[i].geometry
+  const geometryB = cleanChunks[j].geometry
+  geometryA.computeBoundingBox()
+  geometryB.computeBoundingBox()
+  const bbA = geometryA.boundingBox
+  const bbB = geometryB.boundingBox
+  const raycaster = new THREE.Raycaster()
+  const meshA = new THREE.Mesh(geometryA, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+  const meshB = new THREE.Mesh(geometryB, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+  meshA.updateMatrixWorld()
+  meshB.updateMatrixWorld()
+
+  const pos = new THREE.Vector3(newPosition.x, newPosition.y, newPosition.z)
+  const wall = Math.min(
+    localWallThicknessAroundFootprint(raycaster, meshA, bbA, pos, entry.axis, entry.otherAxes, entry.plane, 1e-3, entry.radius),
+    localWallThicknessAroundFootprint(raycaster, meshB, bbB, pos, entry.axis, entry.otherAxes, entry.plane, 1e-3, entry.radius),
+  )
+  meshA.material.dispose()
+  meshB.material.dispose()
+
+  if (entry.isKey) {
+    const valid = wall >= entry.depth + CONNECTOR_SAFETY_MARGIN_MM
+    return { valid, wallThickness: wall, safeDepth: valid ? entry.depth : 0 }
+  }
+
+  const safeDepth = Math.min(
+    clampConnectorDepth(entry.depth, wall),
+    Math.max(0, wall - CONNECTOR_SAFETY_MARGIN_MM),
+  )
+  const valid = safeDepth >= MIN_CONNECTOR_DEPTH
+  return { valid, wallThickness: wall, safeDepth }
 }
 
 function fitConnectorToSharedFace(type, {

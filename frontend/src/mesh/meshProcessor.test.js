@@ -3,12 +3,15 @@ import * as THREE from 'three'
 import {
   addConnectorsManifold,
   applyScale,
+  computeConnectorPositions,
+  computeProblemEdges,
   computeVolume,
   exportStl,
   exportPackage,
   orderPartsByConnectivity,
   repairMeshGeometry,
   splitMeshManifold,
+  validateConnectorPosition,
   validateExportChunks,
   validateManifold,
 } from './meshProcessor'
@@ -162,6 +165,62 @@ describe('orderPartsByConnectivity', () => {
   it('leaves a single part (or keys) untouched', () => {
     const one = [{ index: 0, label: 'P01', volume: 1, geometry: new THREE.BoxGeometry(1, 1, 1) }]
     expect(orderPartsByConnectivity(one)).toBe(one)
+  })
+})
+
+describe('computeConnectorPositions', () => {
+  it('returns manifest entries with faceBounds for drag clamping', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 2 }
+    const manifest = await computeConnectorPositions(chunks, config)
+
+    expect(manifest.length).toBeGreaterThan(0)
+    manifest.forEach(entry => {
+      expect(entry.faceBounds).toBeDefined()
+      expect(typeof entry.faceBounds.minA).toBe('number')
+      expect(typeof entry.faceBounds.maxA).toBe('number')
+      expect(typeof entry.faceBounds.minB).toBe('number')
+      expect(typeof entry.faceBounds.maxB).toBe('number')
+      expect(entry.faceBounds.maxA).toBeGreaterThan(entry.faceBounds.minA)
+      expect(entry.faceBounds.maxB).toBeGreaterThan(entry.faceBounds.minB)
+    })
+  })
+
+  it('produces faceBounds matching the shared face intersection area', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 1 }
+    const manifest = await computeConnectorPositions(chunks, config)
+
+    expect(manifest.length).toBe(1)
+    const entry = manifest[0]
+    const otherA = entry.otherAxes[0]
+    const otherB = entry.otherAxes[1]
+
+    chunks[0].geometry.computeBoundingBox()
+    chunks[1].geometry.computeBoundingBox()
+    const interMin = Math.max(chunks[0].geometry.boundingBox.min.getComponent(otherA), chunks[1].geometry.boundingBox.min.getComponent(otherA))
+    const interMax = Math.min(chunks[0].geometry.boundingBox.max.getComponent(otherA), chunks[1].geometry.boundingBox.max.getComponent(otherA))
+    expect(entry.faceBounds.minA).toBeCloseTo(interMin)
+    expect(entry.faceBounds.maxA).toBeCloseTo(interMax)
+  })
+
+  it('positions all connectors within faceBounds', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(200, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [200, 100, 100], [2, 1, 1])
+    const config = { type: 'dowel', diameter: 8, depth: 10, clearance: 0.2, perFace: 3 }
+    const manifest = await computeConnectorPositions(chunks, config)
+
+    expect(manifest.length).toBeGreaterThanOrEqual(1)
+    manifest.forEach(entry => {
+      const { faceBounds, otherAxes, axis, plane } = entry
+      expect(entry.position[['x', 'y', 'z'][axis]]).toBeCloseTo(plane)
+      expect(entry.position[['x', 'y', 'z'][otherAxes[0]]]).toBeGreaterThanOrEqual(faceBounds.minA)
+      expect(entry.position[['x', 'y', 'z'][otherAxes[0]]]).toBeLessThanOrEqual(faceBounds.maxA)
+      expect(entry.position[['x', 'y', 'z'][otherAxes[1]]]).toBeGreaterThanOrEqual(faceBounds.minB)
+      expect(entry.position[['x', 'y', 'z'][otherAxes[1]]]).toBeLessThanOrEqual(faceBounds.maxB)
+    })
   })
 })
 
@@ -535,5 +594,87 @@ describe('export validation', () => {
     keyChunks.forEach(chunk => {
       expect(files).not.toContain(`parts/part_${String(chunk.index).padStart(2, '0')}_${chunk.label}.stl`)
     })
+  })
+})
+
+describe('computeProblemEdges', () => {
+  it('returns [] for a watertight box', () => {
+    const geom = new THREE.BoxGeometry(20, 20, 20).toNonIndexed()
+    const result = computeProblemEdges(geom)
+    expect(result).toEqual([])
+  })
+
+  it('finds boundary edges for a box with one face removed', () => {
+    const box = new THREE.BoxGeometry(20, 20, 20)
+    const geom = box.toNonIndexed()
+    const pos = geom.attributes.position
+    // Remove first triangle (vertices 0-2) — 9 floats
+    const keepPos = new Float32Array(pos.array.slice(9))
+    // Build index: remaining 11 triangles (33 vertices), consecutive triplets
+    const triCount = 11
+    const indexArray = new Uint16Array(triCount * 3)
+    for (let i = 0; i < triCount; i++) {
+      indexArray[i * 3] = i * 3
+      indexArray[i * 3 + 1] = i * 3 + 1
+      indexArray[i * 3 + 2] = i * 3 + 2
+    }
+    const newGeom = new THREE.BufferGeometry()
+    newGeom.setAttribute('position', new THREE.Float32BufferAttribute(keepPos, 3))
+    newGeom.setIndex(new THREE.BufferAttribute(indexArray, 1))
+    newGeom.computeVertexNormals()
+    const result = computeProblemEdges(newGeom)
+    expect(result.length).toBeGreaterThan(0)
+    expect(result[0].positions.length).toBeGreaterThan(0)
+    expect(result[0].fillIndices.length).toBeGreaterThan(0)
+    expect(result[0].center.length).toBe(3)
+  })
+
+  it('finds boundary edges for a non-indexed geometry (STL-loaded mesh)', () => {
+    const box = new THREE.BoxGeometry(20, 20, 20)
+    const geom = box.toNonIndexed()
+    const pos = geom.attributes.position
+    const keepPos = new Float32Array(pos.array.slice(9))
+    const newGeom = new THREE.BufferGeometry()
+    newGeom.setAttribute('position', new THREE.Float32BufferAttribute(keepPos, 3))
+    newGeom.computeVertexNormals()
+    const result = computeProblemEdges(newGeom)
+    expect(result.length).toBeGreaterThan(0)
+    expect(result[0].positions.length).toBeGreaterThan(0)
+    expect(result[0].fillIndices.length).toBeGreaterThan(0)
+  })
+
+  it('detects non-manifold edges (count>=3) with type nonManifold', () => {
+    // Two boxes sharing a single edge → that edge has count=4
+    const box1 = new THREE.BoxGeometry(10, 10, 10)
+    const box2 = new THREE.BoxGeometry(10, 10, 10).translate(10, 0, 0)
+    const merged = new THREE.BufferGeometry()
+    const pos1 = box1.attributes.position.array
+    const pos2 = box2.attributes.position.array
+    const idx1 = box1.index.array
+    const idx2 = box2.index.array
+    const offset = pos1.length / 3
+    merged.setAttribute('position', new THREE.Float32BufferAttribute([...pos1, ...pos2], 3))
+    merged.setIndex(new THREE.BufferAttribute(new Uint16Array([...idx1, ...idx2.map(i => i + offset)]), 1))
+    merged.computeVertexNormals()
+    const result = computeProblemEdges(merged)
+    const nmfEdges = result.filter(e => e.type === 'nonManifold')
+    expect(nmfEdges.length).toBeGreaterThan(0)
+    expect(nmfEdges[0].positions.length).toBe(6)
+    expect(nmfEdges[0].fillIndices.length).toBe(0)
+  })
+
+  it('includes boundaryData on error when splitMeshManifold cannot repair', async () => {
+    // A severely non-manifold mesh that cannot be repaired
+    const geom = new THREE.BoxGeometry(10, 10, 10).toNonIndexed()
+    const pos = geom.attributes.position
+    const scrambled = new THREE.BufferGeometry()
+    scrambled.setAttribute('position', new THREE.Float32BufferAttribute(pos.array.slice(0, 30), 3))
+    try {
+      await splitMeshManifold(new THREE.Mesh(scrambled), [100, 100, 100], [2, 2, 1])
+    } catch (e) {
+      if (e.message.includes('non-manifold')) {
+        expect(e.boundaryData).toBeDefined()
+      }
+    }
   })
 })

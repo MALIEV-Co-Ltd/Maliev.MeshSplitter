@@ -90,18 +90,19 @@ function selectKeys() {
 const keyMetaLine = computed(() => {
   if (keyChunks.value.length === 0) return ''
   const firstKey = keyChunks.value[0]
-  const faces = Number(firstKey.faces || 0).toLocaleString()
-  const dims = firstKey.dims
+  return firstKey.dims
     ? `${firstKey.dims.x.toFixed(0)} × ${firstKey.dims.y.toFixed(0)} × ${firstKey.dims.z.toFixed(0)} mm`
     : ''
-  return dims ? `${faces} faces · ${dims}` : `${faces} faces`
 })
 
 const keyVolumeLabel = computed(() => {
   if (keyChunks.value.length === 0) return ''
-  const singleVol = Number(keyChunks.value[0].volume || 0)
+  const firstKey = keyChunks.value[0]
+  const singleVol = Number(firstKey.volume || 0)
   const totalVol = singleVol * keyChunks.value.length
-  return `${(totalVol / 1000).toFixed(1)} cm³`
+  const vol = `${(totalVol / 1000).toFixed(1)} cm³`
+  const faces = Number(firstKey.faces || 0).toLocaleString()
+  return `${vol} · ${faces} faces`
 })
 
 function colorHex(color) {
@@ -110,14 +111,14 @@ function colorHex(color) {
 }
 
 function metaLine(chunk) {
-  const faces = Number(chunk.faces || 0).toLocaleString()
-  const dims = chunk.dims
+  return chunk.dims
     ? `${chunk.dims.x.toFixed(0)} × ${chunk.dims.y.toFixed(0)} × ${chunk.dims.z.toFixed(0)} mm`
     : ''
-  return dims ? `${faces} faces · ${dims}` : `${faces} faces`
 }
 
 function volumeLabel(chunk) {
-  return `${(Number(chunk.volume || 0) / 1000).toFixed(1)} cm³`
+  const vol = `${(Number(chunk.volume || 0) / 1000).toFixed(1)} cm³`
+  const faces = Number(chunk.faces || 0).toLocaleString()
+  return `${vol} · ${faces} faces`
 }
 </script>

@@ -65,17 +65,23 @@ test.describe('Mesh Split Application', () => {
     const yInput = page.locator('#build-volume-Y')
     const zInput = page.locator('#build-volume-Z')
 
-    await preset.selectOption('bambu-x1c')
+    async function selectPreset(label) {
+      await preset.click()
+      await expect(page.locator('.bv-select-menu')).toBeVisible()
+      await page.locator('.bv-option').filter({ hasText: label }).click()
+    }
+
+    await selectPreset('Bambu Lab X1C / X1 / A1')
     await expect(xInput).toHaveValue('256')
     await expect(yInput).toHaveValue('256')
-    await expect(zInput).toHaveValue('256')
+    await expect(zInput).toHaveValue('250')
 
-    await preset.selectOption('prusa-mk4')
+    await selectPreset('Prusa MK4 / MK4S')
     await expect(xInput).toHaveValue('250')
     await expect(yInput).toHaveValue('210')
     await expect(zInput).toHaveValue('220')
 
-    await preset.selectOption('snapmaker-x1e')
+    await selectPreset('Prusa XL')
     await expect(xInput).toHaveValue('360')
     await expect(yInput).toHaveValue('360')
     await expect(zInput).toHaveValue('360')
