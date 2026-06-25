@@ -3,12 +3,14 @@ import * as THREE from 'three'
 import {
   addConnectorsManifold,
   applyScale,
+  computeConnectorPositions,
   computeVolume,
   exportStl,
   exportPackage,
   orderPartsByConnectivity,
   repairMeshGeometry,
   splitMeshManifold,
+  validateConnectorPosition,
   validateExportChunks,
   validateManifold,
 } from './meshProcessor'
@@ -162,6 +164,62 @@ describe('orderPartsByConnectivity', () => {
   it('leaves a single part (or keys) untouched', () => {
     const one = [{ index: 0, label: 'P01', volume: 1, geometry: new THREE.BoxGeometry(1, 1, 1) }]
     expect(orderPartsByConnectivity(one)).toBe(one)
+  })
+})
+
+describe('computeConnectorPositions', () => {
+  it('returns manifest entries with faceBounds for drag clamping', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 2 }
+    const manifest = await computeConnectorPositions(chunks, config)
+
+    expect(manifest.length).toBeGreaterThan(0)
+    manifest.forEach(entry => {
+      expect(entry.faceBounds).toBeDefined()
+      expect(typeof entry.faceBounds.minA).toBe('number')
+      expect(typeof entry.faceBounds.maxA).toBe('number')
+      expect(typeof entry.faceBounds.minB).toBe('number')
+      expect(typeof entry.faceBounds.maxB).toBe('number')
+      expect(entry.faceBounds.maxA).toBeGreaterThan(entry.faceBounds.minA)
+      expect(entry.faceBounds.maxB).toBeGreaterThan(entry.faceBounds.minB)
+    })
+  })
+
+  it('produces faceBounds matching the shared face intersection area', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])
+    const config = { type: 'dowel', diameter: 5, depth: 10, clearance: 0.2, perFace: 1 }
+    const manifest = await computeConnectorPositions(chunks, config)
+
+    expect(manifest.length).toBe(1)
+    const entry = manifest[0]
+    const otherA = entry.otherAxes[0]
+    const otherB = entry.otherAxes[1]
+
+    chunks[0].geometry.computeBoundingBox()
+    chunks[1].geometry.computeBoundingBox()
+    const interMin = Math.max(chunks[0].geometry.boundingBox.min.getComponent(otherA), chunks[1].geometry.boundingBox.min.getComponent(otherA))
+    const interMax = Math.min(chunks[0].geometry.boundingBox.max.getComponent(otherA), chunks[1].geometry.boundingBox.max.getComponent(otherA))
+    expect(entry.faceBounds.minA).toBeCloseTo(interMin)
+    expect(entry.faceBounds.maxA).toBeCloseTo(interMax)
+  })
+
+  it('positions all connectors within faceBounds', async () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(200, 100, 100))
+    const chunks = await splitMeshManifold(mesh, [200, 100, 100], [2, 1, 1])
+    const config = { type: 'dowel', diameter: 8, depth: 10, clearance: 0.2, perFace: 3 }
+    const manifest = await computeConnectorPositions(chunks, config)
+
+    expect(manifest.length).toBeGreaterThanOrEqual(1)
+    manifest.forEach(entry => {
+      const { faceBounds, otherAxes, axis, plane } = entry
+      expect(entry.position[['x', 'y', 'z'][axis]]).toBeCloseTo(plane)
+      expect(entry.position[['x', 'y', 'z'][otherAxes[0]]]).toBeGreaterThanOrEqual(faceBounds.minA)
+      expect(entry.position[['x', 'y', 'z'][otherAxes[0]]]).toBeLessThanOrEqual(faceBounds.maxA)
+      expect(entry.position[['x', 'y', 'z'][otherAxes[1]]]).toBeGreaterThanOrEqual(faceBounds.minB)
+      expect(entry.position[['x', 'y', 'z'][otherAxes[1]]]).toBeLessThanOrEqual(faceBounds.maxB)
+    })
   })
 })
 

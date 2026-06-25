@@ -9,6 +9,7 @@ const {
   mockSplitMeshManifold,
   mockComputeConnectorPositions,
   mockApplyConnectorsFromManifest,
+  mockValidateConnectorPosition,
   mockExportPackage,
   mockExportStl,
   mockExportPdf,
@@ -22,6 +23,7 @@ const {
   mockSplitMeshManifold: vi.fn(),
   mockComputeConnectorPositions: vi.fn(),
   mockApplyConnectorsFromManifest: vi.fn(),
+  mockValidateConnectorPosition: vi.fn(),
   mockExportPackage: vi.fn(),
   mockExportStl: vi.fn(),
   mockExportPdf: vi.fn(),
@@ -38,6 +40,7 @@ vi.mock('../mesh/meshProcessor', () => ({
   addConnectorsManifold: mockApplyConnectorsFromManifest,
   computeConnectorPositions: mockComputeConnectorPositions,
   applyConnectorsFromManifest: mockApplyConnectorsFromManifest,
+  validateConnectorPosition: mockValidateConnectorPosition,
   exportPackage: mockExportPackage,
   exportStl: mockExportStl,
   exportPdf: mockExportPdf,
@@ -73,6 +76,14 @@ function createMockFile(name, content = 'stl data') {
 describe('useMeshProcessor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  describe('initial state', () => {
+    it('connectorPositions starts empty and reapplyingConnectors is false', () => {
+      const { connectorPositions, reapplyingConnectors } = useMeshProcessor()
+      expect(connectorPositions.value).toEqual([])
+      expect(reapplyingConnectors.value).toBe(false)
+    })
   })
 
   describe('loadStl', () => {
@@ -196,6 +207,38 @@ describe('useMeshProcessor', () => {
       expect(error.value).toBeNull()
     })
 
+    it('resets connectorPositions and stores cleanSplitChunks via applyConnectors baseline', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      geometry.userData = { splitSource: 'base' }
+      const rawChunks = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+        { index: 1, geometry, label: 'P01', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+      ]
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
+
+      const file = createMockFile('test.stl')
+      const { loadStl, split, applyConnectors, connectorPositions } = useMeshProcessor()
+      await loadStl(file)
+      await split([250, 250, 250], [2, 1, 1])
+
+      expect(connectorPositions.value).toEqual([])
+
+      mockComputeConnectorPositions.mockResolvedValue([{ id: 'conn-0' }])
+      mockApplyConnectorsFromManifest.mockResolvedValue(rawChunks)
+      await applyConnectors({ type: 'Dowel', diameter: 5 })
+
+      expect(connectorPositions.value).toEqual([{ id: 'conn-0' }])
+
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
+      await split([250, 250, 250], [3, 1, 1])
+
+      expect(connectorPositions.value).toEqual([])
+    })
+
     it('splits the full-resolution mesh and creates separate preview chunks', async () => {
       const geometry = new THREE.SphereGeometry(25, 48, 24)
       mockStlParse.mockReturnValue(geometry)
@@ -288,6 +331,139 @@ describe('useMeshProcessor', () => {
     })
   })
 
+  describe('updateConnectorPosition', () => {
+    it('does nothing when connector id is unknown', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      const rawChunks = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+        { index: 1, geometry, label: 'P01', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+      ]
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
+      mockComputeConnectorPositions.mockResolvedValue([{ id: 'conn-0', position: { x: 0, y: 0, z: 0 } }])
+      mockApplyConnectorsFromManifest.mockResolvedValue(rawChunks)
+      mockValidateConnectorPosition.mockReturnValue({ valid: true, wallThickness: 10, safeDepth: 8 })
+
+      const file = createMockFile('test.stl')
+      const { loadStl, split, applyConnectors, updateConnectorPosition, reapplyingConnectors, chunks } = useMeshProcessor()
+      await loadStl(file)
+      await split([250, 250, 250], [2, 1, 1])
+      await applyConnectors({ type: 'Dowel', diameter: 5 })
+
+      const beforeCallCount = mockApplyConnectorsFromManifest.mock.calls.length
+      await updateConnectorPosition('conn-unknown', { x: 10, y: 10, z: 10 })
+
+      expect(mockApplyConnectorsFromManifest).toHaveBeenCalledTimes(beforeCallCount)
+      expect(reapplyingConnectors.value).toBe(false)
+    })
+
+    it('does nothing when validateConnectorPosition returns invalid', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      const rawChunks = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+        { index: 1, geometry, label: 'P01', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+      ]
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
+      mockComputeConnectorPositions.mockResolvedValue([{ id: 'conn-0', position: { x: 0, y: 0, z: 0 } }])
+      mockApplyConnectorsFromManifest.mockResolvedValue(rawChunks)
+      mockValidateConnectorPosition.mockReturnValue({ valid: false, wallThickness: 0.5, safeDepth: 0 })
+
+      const file = createMockFile('test.stl')
+      const { loadStl, split, applyConnectors, updateConnectorPosition, reapplyingConnectors, chunks } = useMeshProcessor()
+      await loadStl(file)
+      await split([250, 250, 250], [2, 1, 1])
+      await applyConnectors({ type: 'Dowel', diameter: 5 })
+
+      const beforeCallCount = mockApplyConnectorsFromManifest.mock.calls.length
+      await updateConnectorPosition('conn-0', { x: 10, y: 10, z: 10 })
+
+      expect(mockApplyConnectorsFromManifest).toHaveBeenCalledTimes(beforeCallCount)
+      expect(reapplyingConnectors.value).toBe(false)
+    })
+
+    it('re-applies connectors from clean split chunks when position is valid', async () => {
+      const geometry = createMockGeometry()
+      geometry.userData = { splitSource: 'base' }
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      const rawChunks = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+        { index: 1, geometry, label: 'P01', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+      ]
+      const connectorResult = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0), faceCount: 12 },
+        { index: 1, geometry, label: 'P01', volume: 500, centroid: new THREE.Vector3(0, 0, 0), faceCount: 12 },
+      ]
+      const repositionedResult = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0), faceCount: 14 },
+        { index: 1, geometry, label: 'P01', volume: 500, centroid: new THREE.Vector3(0, 0, 0), faceCount: 14 },
+      ]
+
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
+      mockComputeConnectorPositions.mockResolvedValue([{ id: 'conn-0', position: { x: 0, y: 0, z: 0 } }])
+      mockApplyConnectorsFromManifest
+        .mockResolvedValueOnce(connectorResult)
+        .mockResolvedValueOnce(repositionedResult)
+      mockValidateConnectorPosition.mockReturnValue({ valid: true, wallThickness: 10, safeDepth: 8 })
+
+      const file = createMockFile('test.stl')
+      const { loadStl, split, applyConnectors, updateConnectorPosition, connectorPositions, reapplyingConnectors } = useMeshProcessor()
+      await loadStl(file)
+      await split([250, 250, 250], [2, 1, 1])
+      await applyConnectors({ type: 'Dowel', diameter: 5 })
+
+      const applyInput = mockApplyConnectorsFromManifest.mock.calls[0][0]
+      expect(applyInput[0].geometry.userData).toMatchObject({ splitSource: 'base' })
+
+      await updateConnectorPosition('conn-0', { x: 5, y: 5, z: 5 })
+
+      expect(mockApplyConnectorsFromManifest).toHaveBeenCalledTimes(2)
+      const reapplyInput = mockApplyConnectorsFromManifest.mock.calls[1][0]
+      expect(reapplyInput[0].geometry.userData).toMatchObject({ splitSource: 'base' })
+      expect(reapplyingConnectors.value).toBe(false)
+      expect(connectorPositions.value.find(e => e.id === 'conn-0').position).toEqual({ x: 5, y: 5, z: 5 })
+    })
+
+    it('sets reapplyingConnectors true during re-application and resets after', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      const rawChunks = [
+        { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+        { index: 1, geometry, label: 'P01', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
+      ]
+      mockSplitMeshManifold.mockResolvedValue(rawChunks)
+      mockComputeConnectorPositions.mockResolvedValue([{ id: 'conn-0', position: { x: 0, y: 0, z: 0 } }])
+      mockApplyConnectorsFromManifest
+        .mockResolvedValueOnce(rawChunks)
+        .mockImplementationOnce(async (base, manifest) => {
+          expect(reapplyingConnectors.value).toBe(true)
+          return rawChunks
+        })
+      mockValidateConnectorPosition.mockReturnValue({ valid: true, wallThickness: 10, safeDepth: 8 })
+
+      const { loadStl, split, applyConnectors, updateConnectorPosition, reapplyingConnectors } = useMeshProcessor()
+      await loadStl(createMockFile('test.stl'))
+      await split([250, 250, 250], [2, 1, 1])
+      await applyConnectors({ type: 'Dowel', diameter: 5 })
+
+      await updateConnectorPosition('conn-0', { x: 5, y: 5, z: 5 })
+
+      expect(reapplyingConnectors.value).toBe(false)
+    })
+  })
+
   describe('setScaleFactor', () => {
     it('regenerates working mesh from the uploaded source geometry', async () => {
       const geometry = createMockGeometry()
@@ -348,7 +524,7 @@ describe('useMeshProcessor', () => {
         { index: 0, geometry, label: 'X0Y0Z0', volume: 500, centroid: new THREE.Vector3() },
       ])
 
-      const { loadStl, split, clearMesh, meshInfo, chunks, error } = useMeshProcessor()
+      const { loadStl, split, clearMesh, meshInfo, chunks, error, connectorPositions, reapplyingConnectors } = useMeshProcessor()
       const file = createMockFile('test.stl')
       await loadStl(file)
       await split([250, 250, 250], [2, 1, 1])
@@ -361,6 +537,8 @@ describe('useMeshProcessor', () => {
       expect(meshInfo.value).toBeNull()
       expect(chunks.value).toEqual([])
       expect(error.value).toBeNull()
+      expect(connectorPositions.value).toEqual([])
+      expect(reapplyingConnectors.value).toBe(false)
     })
   })
 })
