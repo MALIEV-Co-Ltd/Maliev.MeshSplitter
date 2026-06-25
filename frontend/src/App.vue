@@ -98,7 +98,7 @@
         <div class="canvas-hint">{{ uiCopy.canvasHint }}</div>
         <div v-if="connectorPositions.length > 0 && selectedPartIndex != null" class="canvas-drag-tip">{{ uiCopy.connectorDragTip }}</div>
         <div v-if="reapplyingConnectors" class="canvas-processing" aria-label="Processing">
-          <span class="split-spinner" />
+          <span class="canvas-spinner" />
           {{ progressLabel || uiCopy.working }}
         </div>
         <button v-if="chunks.length > 0" class="canvas-label-toggle" :class="{ active: showLabels }" :aria-label="uiCopy.toggleLabels" :title="uiCopy.toggleLabels" @click="showLabels = !showLabels"><TagsIcon :size="13" :stroke-width="1.75" /> Labels</button>
