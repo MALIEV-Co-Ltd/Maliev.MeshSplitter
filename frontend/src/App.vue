@@ -191,6 +191,7 @@
         </div>
       </div>
     </dialog>
+    <RepairConfirmDialog v-if="repairPreview" :preview="repairPreview" :labels="uiCopy.repairDialog" @confirm="acceptRepair" @cancel="rejectRepair" />
   </main>
 </template>
 
@@ -208,6 +209,7 @@ import MeshUploader from './components/MeshUploader.vue'
 import ScaleConfig from './components/ScaleConfig.vue'
 import BuildVolumeConfig from './components/BuildVolumeConfig.vue'
 import SplitConfig from './components/SplitConfig.vue'
+import RepairConfirmDialog from './components/RepairConfirmDialog.vue'
 import ThreePreview from './components/ThreePreview.vue'
 import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
@@ -224,7 +226,7 @@ const appVersion = pkg.version
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
   connectorPositions, reapplyingConnectors,
-  loading, progressLabel, setProgressLabels, error, scaleFactor, buildVolume,
+  loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, rejectRepair, error, scaleFactor, buildVolume,
   loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
   prepareExport, buildExportPackage, saveBlob,
 } = useMeshProcessor()
@@ -315,6 +317,16 @@ const appTranslations = {
     exportUnit: 'export',
     creditPacksLoading: 'Credit packs load when connected to the MALIEV store.',
     connectorsApplied: 'Connectors applied',
+    repairDialog: {
+      title: 'Mesh repair required',
+      body: 'The mesh is not watertight and has been automatically repaired. Review the result below.',
+      before: 'Before repair',
+      after: 'After repair',
+      faces: 'faces',
+      verts: 'verts',
+      keepOriginal: 'Keep original',
+      useRepaired: 'Use repaired mesh',
+    },
     uploader: {
       title: 'Mesh file',
       watertight: 'Watertight',
@@ -440,6 +452,16 @@ const appTranslations = {
     exportUnit: 'การส่งออก',
     creditPacksLoading: 'แพ็กเครดิตจะโหลดเมื่อเชื่อมต่อร้าน MALIEV',
     connectorsApplied: 'เพิ่มตัวต่อเรียบร้อย',
+    repairDialog: {
+      title: 'จำเป็นต้องซ่อมเมช',
+      body: 'เมชไม่ปิดผิว ระบบได้ซ่อมอัตโนมัติแล้ว ตรวจสอบผลลัพธ์ด้านล่าง',
+      before: 'ก่อนซ่อม',
+      after: 'หลังซ่อม',
+      faces: 'หน้า',
+      verts: 'จุด',
+      keepOriginal: 'ใช้ต้นฉบับ',
+      useRepaired: 'ใช้เมชที่ซ่อมแล้ว',
+    },
     uploader: {
       title: 'ไฟล์เมช',
       watertight: 'ปิดผิวสมบูรณ์',
@@ -450,7 +472,7 @@ const appTranslations = {
       uploading: 'กำลังโหลด...',
       fileTooLarge: 'ไฟล์ใหญ่เกินไป ขนาดสูงสุด 200 MB',
       selectStl: 'กรุณาเลือกไฟล์ .stl',
-      nonWatertightWarning: 'เมชไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
+      nonWatertightWarning: 'เมซไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
       replace: 'เปลี่ยนไฟล์',
       loadedWatertight: 'โหลดเมชแบบปิดผิวสมบูรณ์แล้ว',
       loadedNotWatertight: 'โหลดเมชแล้ว · ผิวไม่ปิดสมบูรณ์',

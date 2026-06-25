@@ -91,7 +91,7 @@ const props = defineProps({
       uploading: 'Loading...',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
       selectStl: 'Please select an .stl file',
-      nonWatertightWarning: 'Mesh is not watertight - splitting may produce unexpected results.',
+      nonWatertightWarning: 'Mesh is not watertight. Mesh Splitter will try automatic repair before splitting.',
       replace: 'Replace file',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',

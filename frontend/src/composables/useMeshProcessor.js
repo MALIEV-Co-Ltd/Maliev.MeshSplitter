@@ -48,6 +48,8 @@ export function useMeshProcessor(options = {}) {
     updating: 'Updating connectors…',
   })
   const error = ref(null)
+  const repairPreview = ref(null)
+  let pendingOriginalGeometry = null
 
   function setProgressLabels(labels) {
     Object.assign(progressLabels.value, { ...progressLabels.value, ...labels })
@@ -101,10 +103,11 @@ export function useMeshProcessor(options = {}) {
       }
     }, 0)
   }
-
   async function loadStl(file) {
     loading.value = true
     progressLabel.value = progressLabels.value.loading
+    repairPreview.value = null
+    pendingOriginalGeometry = null
     error.value = null
     try {
       const buffer = await file.arrayBuffer()
@@ -121,10 +124,20 @@ export function useMeshProcessor(options = {}) {
         const repaired = repairMeshGeometry(workingGeometry)
         progressLabel.value = progressLabels.value.checking
         if (validateManifold(repaired).watertight) {
+          pendingOriginalGeometry = geometry
+          const repairedInfo = validateManifold(repaired)
+          repairPreview.value = {
+            beforeUrl: renderPartThumbnail(geometry),
+            afterUrl: renderPartThumbnail(repaired),
+            beforeStats: { faces: initialInfo.faceCount, verts: initialInfo.vertCount },
+            afterStats: { faces: repairedInfo.faceCount, verts: repairedInfo.vertCount },
+            filename: file.name,
+          }
           workingGeometry = repaired
           wasRepaired = true
         }
       }
+
       sourceGeometry.value = markRaw(workingGeometry)
       scaleFactor.value = 1
 
@@ -135,6 +148,22 @@ export function useMeshProcessor(options = {}) {
     } finally {
       loading.value = false
     }
+  }
+
+  function acceptRepair() {
+    pendingOriginalGeometry = null
+    repairPreview.value = null
+  }
+
+  function rejectRepair() {
+    if (pendingOriginalGeometry) {
+      const prevInfo = meshInfo.value
+      sourceGeometry.value = markRaw(pendingOriginalGeometry)
+      scaleFactor.value = 1
+      setMeshState(pendingOriginalGeometry.clone(), prevInfo?.filename || 'mesh', { wasRepaired: false })
+      pendingOriginalGeometry = null
+    }
+    repairPreview.value = null
   }
 
   function normalizeForPreview(geometry) {
@@ -336,6 +365,9 @@ export function useMeshProcessor(options = {}) {
     loading: readonly(loading),
     progressLabel: readonly(progressLabel),
     setProgressLabels,
+    repairPreview: readonly(repairPreview),
+    acceptRepair,
+    rejectRepair,
     error: readonly(error),
     scaleFactor: readonly(scaleFactor),
     buildVolume,
