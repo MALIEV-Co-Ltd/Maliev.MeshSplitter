@@ -37,6 +37,10 @@ let renderer, scene, camera, controls, meshGroup, connectorMarkers, gridOverlay,
 let ambientLight, keyLight, fillLight, rimLight
 let axisLines
 let problemEdgeOverlay = null
+// Bounding sphere of whatever the camera is currently framing. Used to keep the
+// near/far clipping planes sized to the model as the user zooms, so the mesh
+// never disappears at the extremes of the dolly range (which has no min/max).
+let framedSphere = null
 
 // Connector drag state
 let dragConnector = null
@@ -147,7 +151,12 @@ function initCamera() {
 function initControls() {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = false
-  controls.addEventListener('change', requestRender)
+  controls.addEventListener('change', onControlsChange)
+}
+
+function onControlsChange() {
+  updateClippingPlanes()
+  requestRender()
 }
 
 function disposeGroup(group) {
@@ -204,9 +213,8 @@ function showEmptyScene() {
     : new THREE.Vector3(0.7, 0.5, 1)
   camera.position.copy(direction.normalize().multiplyScalar(dist))
   camera.lookAt(0, 0, 0)
-  camera.near = 0.1
-  camera.far = dist * 4
-  camera.updateProjectionMatrix()
+  framedSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), dist)
+  updateClippingPlanes()
   controls.target.set(0, 0, 0)
   controls.update()
   requestRender()
@@ -492,12 +500,24 @@ function fitCamera(box) {
     : new THREE.Vector3(0.7, 0.5, 1)
 
   camera.position.copy(center).addScaledVector(direction.normalize(), dist)
-  camera.near = Math.max(0.01, dist / 1000)
-  camera.far = dist + radius * 8
-  camera.updateProjectionMatrix()
+  framedSphere = new THREE.Sphere(center.clone(), radius)
+  updateClippingPlanes()
   controls.target.copy(center)
   controls.update()
   requestRender()
+}
+
+// Recompute near/far from the camera's current distance to the framed model so
+// it stays inside the frustum at any zoom level. Called on every controls change
+// because OrbitControls has no dolly limits — without this, zooming out pushes
+// the mesh past a fixed far plane and it vanishes.
+function updateClippingPlanes() {
+  if (!camera || !framedSphere) return
+  const d = camera.position.distanceTo(framedSphere.center)
+  const r = Math.max(framedSphere.radius, 1)
+  camera.near = Math.max(d - r * 2, r * 0.01, 0.01)
+  camera.far = d + r * 4
+  camera.updateProjectionMatrix()
 }
 
 function renderScene() {

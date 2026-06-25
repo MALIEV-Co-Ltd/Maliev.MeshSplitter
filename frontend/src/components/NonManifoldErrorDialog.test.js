@@ -1,19 +1,6 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import NonManifoldErrorDialog from './NonManifoldErrorDialog.vue'
-
-beforeAll(() => {
-  if (!HTMLDialogElement.prototype.showModal) {
-    HTMLDialogElement.prototype.showModal = function () {
-      this.setAttribute('open', '')
-    }
-  }
-  if (!HTMLDialogElement.prototype.close) {
-    HTMLDialogElement.prototype.close = function () {
-      this.removeAttribute('open')
-    }
-  }
-})
 
 describe('NonManifoldErrorDialog', () => {
   it('renders holes and edges stats', () => {
@@ -22,6 +9,16 @@ describe('NonManifoldErrorDialog', () => {
     })
     expect(wrapper.text()).toContain('3')
     expect(wrapper.text()).toContain('42')
+  })
+
+  it('is a non-blocking panel, not a modal dialog', () => {
+    const wrapper = mount(NonManifoldErrorDialog, {
+      props: { boundaryHoles: 1, boundaryEdges: 5, labels: {} },
+    })
+    // A modal <dialog> would cover the canvas with a backdrop; this must stay a
+    // plain alertdialog panel so the 3D problem-edge overlay remains visible.
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(true)
   })
 
   it('emits view-problem on primary button click', async () => {

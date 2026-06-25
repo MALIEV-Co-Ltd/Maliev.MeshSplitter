@@ -104,14 +104,23 @@
           {{ progressLabel || uiCopy.working }}
         </div>
         <button v-if="chunks.length > 0" class="canvas-label-toggle" :class="{ active: showLabels }" :aria-label="uiCopy.toggleLabels" :title="uiCopy.toggleLabels" @click="showLabels = !showLabels"><TagsIcon :size="13" :stroke-width="1.75" /> Labels</button>
+        <NonManifoldErrorDialog
+          v-if="problemEdges.length > 0"
+          :boundary-holes="boundaryHoles"
+          :boundary-edges="boundaryEdges"
+          :non-manifold-edges="nonManifoldEdgeCount"
+          :labels="uiCopy.errorDialog"
+          @view-problem="frameToProblemEdges"
+          @dismiss="dismissProblemEdges"
+        />
       </section>
 
       <section class="col-right">
         <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
         <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
-        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
+        <SplitConfig :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
         <ExportPanel
-          :has-chunks="chunks.length > 0"
+          :has-chunks="chunks.length > 0 && canSplitMesh"
           :loading="loading || exportingPackage"
           :cost="exportCost"
           :labels="uiCopy.exportPanel"
@@ -194,15 +203,6 @@
       </div>
     </dialog>
     <RepairConfirmDialog v-if="repairPreview" :preview="repairPreview" :labels="uiCopy.repairDialog" @confirm="acceptRepair" @cancel="rejectRepair" />
-    <NonManifoldErrorDialog
-      v-if="problemEdges.length > 0"
-      :boundary-holes="boundaryHoles"
-      :boundary-edges="boundaryEdges"
-      :non-manifold-edges="nonManifoldEdgeCount"
-      :labels="uiCopy.errorDialog"
-      @view-problem="frameToProblemEdges"
-      @dismiss="dismissProblemEdges"
-    />
   </main>
 </template>
 
@@ -240,7 +240,7 @@ const {
   connectorPositions, reapplyingConnectors, problemEdges,
   loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, rejectRepair, error, scaleFactor, buildVolume,
   loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
-  prepareExport, buildExportPackage, saveBlob,
+  prepareExport, buildExportPackage, saveBlob, clearProblemEdges,
 } = useMeshProcessor()
 
 const credits = useCredits()
@@ -580,6 +580,10 @@ const appTranslations = {
 }
 const uiCopy = computed(() => appTranslations[locale.value] || appTranslations.en)
 const visibleError = computed(() => problemEdges.value.length > 0 ? '' : (error.value || (hasCreditAccount.value ? creditError.value : '') || ''))
+// A loaded mesh is splittable only once it is watertight. Load already attempts
+// automatic repair, so a mesh that is still non-watertight is non-repairable —
+// splitting it would just fail, so Split (and therefore Export) stay disabled.
+const canSplitMesh = computed(() => !!meshInfo.value && !!meshInfo.value.is_watertight)
 const showCreditSpinner = computed(() => creditLoading.value && !hasCreditAccount.value)
 const creditChipText = computed(() => {
   if (showCreditSpinner.value) return uiCopy.value.credits
@@ -745,8 +749,7 @@ function frameToProblemEdges() {
   threePreviewRef.value?.frameToProblem()
 }
 function dismissProblemEdges() {
-  problemEdges.value = []
-  error.value = null
+  clearProblemEdges()
 }
 
 function productUrl(pack) {

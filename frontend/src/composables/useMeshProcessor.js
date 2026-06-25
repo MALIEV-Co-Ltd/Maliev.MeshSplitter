@@ -339,6 +339,14 @@ export function useMeshProcessor(options = {}) {
     saveBlob(blob, filename)
   }
 
+  // Dismiss the non-manifold error overlay without unloading the mesh. The
+  // refs are exposed read-only, so consumers can't clear them directly — they
+  // call this instead.
+  function clearProblemEdges() {
+    problemEdges.value = []
+    error.value = null
+  }
+
   function clearMesh() {
     meshInfo.value = null
     sourceGeometry.value = null
@@ -391,6 +399,7 @@ export function useMeshProcessor(options = {}) {
     downloadExportPackage,
     downloadStl: downloadExportPackage,
     downloadPdf: downloadExportPackage,
+    clearProblemEdges,
     clearMesh,
   }
 

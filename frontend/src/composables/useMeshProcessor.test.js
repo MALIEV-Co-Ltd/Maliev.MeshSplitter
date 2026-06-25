@@ -581,6 +581,28 @@ describe('useMeshProcessor', () => {
       await split([100, 100, 100], [2, 2, 1])
       expect(problemEdges.value).toEqual([])
     })
+
+    it('clearProblemEdges() dismisses the error without reloading the mesh', async () => {
+      mockSplitMeshManifold.mockRejectedValue(
+        Object.assign(new Error('non-manifold'), {
+          boundaryData: [{
+            positions: new Float32Array([0,0,0,1,0,0,1,1,0]),
+            fillIndices: new Uint16Array([0,1,2]),
+            center: [0.5, 0.33, 0],
+          }],
+        })
+      )
+      const { loadStl, split, problemEdges, error, clearProblemEdges, meshInfo } = setupLoadedMesh()
+      await loadStl(createMockFile('test.stl'))
+      try { await split([100, 100, 100], [2, 2, 1]) } catch { /* expected */ }
+      expect(problemEdges.value.length).toBe(1)
+
+      clearProblemEdges()
+      // Overlay + error gone, but the loaded mesh stays put (Dismiss must not unload it).
+      expect(problemEdges.value).toEqual([])
+      expect(error.value).toBeNull()
+      expect(meshInfo.value).not.toBeNull()
+    })
   })
 
   describe('clearMesh', () => {
