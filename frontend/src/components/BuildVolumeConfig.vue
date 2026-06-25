@@ -24,27 +24,43 @@
         </button>
 
         <div v-if="isOpen" class="bv-select-menu" role="listbox">
-          <button
-            type="button"
-            class="bv-option"
-            role="option"
-            :aria-selected="selectedPresetId === 'custom'"
-            @click="selectPreset('custom')"
-          >
-            <span class="bv-option-name">{{ labels.customManual }}</span>
-          </button>
-          <button
-            v-for="preset in presets"
-            :key="preset.id"
-            type="button"
-            class="bv-option"
-            role="option"
-            :aria-selected="selectedPresetId === preset.id"
-            @click="selectPreset(preset.id)"
-          >
-            <span class="bv-option-name">{{ preset.name }}</span>
-            <span class="bv-option-volume">{{ volumeText(preset.value) }}</span>
-          </button>
+          <div class="bv-search-wrap">
+            <SearchIcon :size="14" class="bv-search-icon" />
+            <input
+              ref="searchInput"
+              type="text"
+              class="bv-search-input"
+              :placeholder="labels.searchPlaceholder"
+              v-model="searchQuery"
+              @click.stop
+            />
+          </div>
+          <div class="bv-search-results">
+            <button
+              type="button"
+              class="bv-option"
+              role="option"
+              :aria-selected="selectedPresetId === 'custom'"
+              @click="selectPreset('custom')"
+            >
+              <span class="bv-option-name">{{ labels.customManual }}</span>
+            </button>
+            <button
+              v-for="preset in filteredPresets"
+              :key="preset.id"
+              type="button"
+              class="bv-option"
+              role="option"
+              :aria-selected="selectedPresetId === preset.id"
+              @click="selectPreset(preset.id)"
+            >
+              <span class="bv-option-name">{{ preset.name }}</span>
+              <span class="bv-option-volume">{{ volumeText(preset.value) }}</span>
+            </button>
+            <div v-if="filteredPresets.length === 0 && searchQuery" class="bv-no-results">
+              {{ labels.noResults }}
+            </div>
+          </div>
         </div>
       </div>
       <div class="grid grid-cols-3 gap-1.5">
@@ -66,9 +82,9 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { onClickOutside } from '@vueuse/core'
-import { Box as BoxIcon, ChevronDown as ChevronDownIcon } from '@lucide/vue'
+import { Box as BoxIcon, ChevronDown as ChevronDownIcon, Search as SearchIcon } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 
 const props = defineProps({
@@ -78,6 +94,8 @@ const props = defineProps({
     default: () => ({
       title: 'Build volume',
       customManual: 'Custom (manual)',
+      searchPlaceholder: 'Search printers…',
+      noResults: 'No printers found',
     }),
   },
 })
@@ -122,10 +140,26 @@ const presets = [
 const selectedPresetId = ref('custom')
 const isOpen = ref(false)
 const selectRoot = ref(null)
+const searchQuery = ref('')
+const searchInput = ref(null)
 const presetMap = Object.fromEntries(presets.map((preset) => [preset.id, preset.value]))
 const selectedPreset = computed(() => presets.find((preset) => preset.id === selectedPresetId.value) || null)
 
+const filteredPresets = computed(() => {
+  if (!searchQuery.value) return presets
+  const q = searchQuery.value.toLowerCase()
+  return presets.filter((p) => p.name.toLowerCase().includes(q))
+})
+
 onClickOutside(selectRoot, () => { isOpen.value = false })
+
+watch(isOpen, async (open) => {
+  if (open) {
+    searchQuery.value = ''
+    await nextTick()
+    searchInput.value?.focus()
+  }
+})
 
 function volumeText(value) {
   return `${value[0]} × ${value[1]} × ${value[2]} mm`

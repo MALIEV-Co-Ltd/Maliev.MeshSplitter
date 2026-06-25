@@ -36,6 +36,7 @@ export function useMeshProcessor(options = {}) {
   const reapplyingConnectors = ref(false)
   let lastConnectorConfig = null
   const loading = ref(false)
+  const progressLabel = ref('')
   const error = ref(null)
   const scaleFactor = ref(1)
   // Default to the Bambu Lab X1C printable envelope (256x256x250, the
@@ -152,10 +153,12 @@ export function useMeshProcessor(options = {}) {
 
   async function split(bv, divisions) {
     loading.value = true
+    progressLabel.value = 'Splitting mesh…'
     error.value = null
     try {
       const mesh = new THREE.Mesh(meshGeometry.value)
       const rawChunks = await splitMeshManifold(mesh, bv, divisions)
+      progressLabel.value = 'Processing chunks…'
       splitChunks.value = rawChunks.map((chunk, i) => ({
         ...chunk,
         geometry: markRaw(chunk.geometry),
@@ -177,10 +180,12 @@ export function useMeshProcessor(options = {}) {
 
   async function applyConnectors(config) {
     loading.value = true
+    progressLabel.value = 'Analyzing connectors…'
     error.value = null
     try {
       const base = splitChunks.value.length > 0 ? splitChunks.value : chunks.value
       const manifest = await computeConnectorPositions(base, config)
+      progressLabel.value = 'Adding connectors…'
       const updated = await applyConnectorsFromManifest(base, manifest)
       connectorPositions.value = manifest
       lastConnectorConfig = config
@@ -208,6 +213,7 @@ export function useMeshProcessor(options = {}) {
     entry.position = { x: newPosition.x, y: newPosition.y, z: newPosition.z }
     entry.safeDepth = valid.safeDepth
     reapplyingConnectors.value = true
+    progressLabel.value = 'Updating connectors…'
     try {
       const base = cleanSplitChunks.value.length > 0 ? cleanSplitChunks.value : splitChunks.value
       const updated = await applyConnectorsFromManifest(base, manifest)
@@ -296,6 +302,7 @@ export function useMeshProcessor(options = {}) {
     lastConnectorConfig = null
     loading.value = false
     error.value = null
+    progressLabel.value = ''
     scaleFactor.value = 1
     disposeThumbnailRenderer()
   }
@@ -310,6 +317,7 @@ export function useMeshProcessor(options = {}) {
     connectorPositions: readonly(connectorPositions),
     reapplyingConnectors: readonly(reapplyingConnectors),
     loading: readonly(loading),
+    progressLabel: readonly(progressLabel),
     error: readonly(error),
     scaleFactor: readonly(scaleFactor),
     buildVolume,

@@ -54,7 +54,7 @@
         </Button>
       </div>
 
-      <p v-if="loading" class="mt-3 text-sm text-signal flex items-center gap-2">
+      <p v-if="loading && !meshInfo" class="mt-3 text-sm text-signal flex items-center gap-2">
         <span class="mesh-uploader__spinner"></span>
         {{ labels.uploading }}
       </p>
@@ -87,7 +87,7 @@ const props = defineProps({
       dropFile: 'Drop file here',
       uploadTitle: 'Upload an STL file',
       uploadHint: 'Drag & drop an STL file or click to browse',
-      uploading: 'Uploading...',
+      uploading: 'Loading...',
       selectStl: 'Please select an .stl file',
       nonWatertightWarning: 'Mesh is not watertight - splitting may produce unexpected results.',
       replace: 'Replace file',

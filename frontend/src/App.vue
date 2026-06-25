@@ -74,6 +74,8 @@
               :selected-chunk-index="selectedChunkIndex"
               :connector-positions="connectorPositions"
               :reapplying-connectors="reapplyingConnectors"
+              :show-labels="showLabels"
+              @connector-drag-start="onConnectorDragStart"
               @connector-drag-end="onConnectorDragEnd"
             />
           </CardContent>
@@ -94,12 +96,18 @@
         </div>
         <div class="canvas-label">{{ uiCopy.preview }}{{ previewDims ? ` · ${previewDims}` : '' }} · {{ uiCopy.scale.toUpperCase() }} {{ scaleFactor.toFixed(3) }}&times;{{ previewInfo?.optimized ? ` · ${uiCopy.previewOptimized}` : '' }}</div>
         <div class="canvas-hint">{{ uiCopy.canvasHint }}</div>
+        <div v-if="connectorPositions.length > 0 && selectedPartIndex != null" class="canvas-drag-tip">{{ uiCopy.connectorDragTip }}</div>
+        <div v-if="reapplyingConnectors" class="canvas-processing" aria-label="Processing">
+          <span class="split-spinner" />
+          {{ progressLabel || uiCopy.working }}
+        </div>
+        <button v-if="chunks.length > 0" class="canvas-label-toggle" :class="{ active: showLabels }" :aria-label="uiCopy.toggleLabels" :title="uiCopy.toggleLabels" @click="showLabels = !showLabels"><TagsIcon :size="13" :stroke-width="1.75" /></button>
       </section>
 
       <section class="col-right">
         <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
         <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
-        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
+        <SplitConfig :v="buildVolume" :ok="!!meshInfo" :err="visibleError" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
         <ExportPanel
           :has-chunks="chunks.length > 0"
           :loading="loading || exportingPackage"
@@ -138,7 +146,7 @@
             <span class="credit-pack-card__credits">{{ pack.credits }} {{ uiCopy.credits }}</span>
             <span class="credit-pack-card__price">
               {{ formatPrice(pack.priceCents, pack.currency) }}
-              <small>{{ pricePerCredit(pack) }} / {{ uiCopy.credits }}</small>
+              <small>{{ pricePerCredit(pack) }} / {{ uiCopy.exportUnit }}</small>
             </span>
             <span v-if="pack.bestFor" class="credit-pack-card__summary">{{ pack.bestFor }}</span>
             <span class="credit-pack-card__cta">{{ uiCopy.buyCredits }}</span>
@@ -188,7 +196,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon } from '@lucide/vue'
+import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon, Tags as TagsIcon } from '@lucide/vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
@@ -216,7 +224,7 @@ const appVersion = pkg.version
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
   connectorPositions, reapplyingConnectors,
-  loading, error, scaleFactor, buildVolume,
+  loading, progressLabel, error, scaleFactor, buildVolume,
   loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
   prepareExport, buildExportPackage, saveBlob,
 } = useMeshProcessor()
@@ -245,6 +253,7 @@ const loginDialog = ref(null)
 const divisions = ref([2, 2, 1])
 const upAxis = ref('Z')
 const splitAuthorizing = ref(false)
+const showLabels = ref(true)
 // The split inputs that produced the current chunks. The build volume can be
 // edited after a split without re-splitting, so the value used for billing must
 // be captured at split time, not read live.
@@ -256,6 +265,12 @@ const exportedAuthByKey = ref(new Map())
 const exportingPackage = ref(false)
 const scaleInput = ref(1)
 const selectedChunkIndex = ref(null)
+const selectedPartIndex = computed(() => {
+  const idx = selectedChunkIndex.value
+  if (idx == null) return null
+  const chunk = chunks.value[idx]
+  return chunk && !chunk.isKey ? idx : null
+})
 const appTranslations = {
   en: {
     buyCredits: 'Buy credits',
@@ -278,12 +293,16 @@ const appTranslations = {
     previewFaces: 'preview faces',
     printFaces: 'print faces',
     canvasHint: 'DRAG TO ROTATE · SCROLL TO ZOOM',
+    connectorDragTip: 'Drag to reposition connector',
+    toggleLabels: 'Toggle part labels',
+    working: 'Working…',
     close: 'Close',
     getCredits: 'Get extra credits',
     creditSub: 'Purchase a pack to split and export more parts.',
     freeThisMonth: 'Free this month',
     pricesIn: 'Prices in',
     viaStore: 'via the MALIEV Shopify store.',
+    exportUnit: 'export',
     creditPacksLoading: 'Credit packs load when connected to the MALIEV store.',
     connectorsApplied: 'Connectors applied',
     uploader: {
@@ -293,7 +312,7 @@ const appTranslations = {
       dropFile: 'Drop file here',
       uploadTitle: 'Upload an STL file',
       uploadHint: 'Drag & drop an STL file or click to browse',
-      uploading: 'Uploading...',
+      uploading: 'Loading...',
       selectStl: 'Please select an .stl file',
       nonWatertightWarning: 'Mesh is not watertight. Mesh Splitter will try automatic repair before splitting.',
       replace: 'Replace file',
@@ -388,12 +407,16 @@ const appTranslations = {
     previewFaces: 'หน้าในพรีวิว',
     printFaces: 'หน้าไฟล์จริง',
     canvasHint: 'ลากเพื่อหมุน · เลื่อนเพื่อซูม',
+    connectorDragTip: 'ลากเพื่อเลื่อนตำแหน่งตัวต่อ',
+    toggleLabels: 'ซ่อน/แสดงป้ายชื่อชิ้นงาน',
+    working: 'กำลังทำงาน…',
     close: 'ปิด',
     getCredits: 'ซื้อเครดิตเพิ่ม',
     creditSub: 'ซื้อแพ็กเครดิตเพื่อแยกและส่งออกชิ้นงานเพิ่ม',
     freeThisMonth: 'ฟรีเดือนนี้',
     pricesIn: 'ราคาเป็น',
     viaStore: 'ผ่านร้าน MALIEV Shopify',
+    exportUnit: 'การส่งออก',
     creditPacksLoading: 'แพ็กเครดิตจะโหลดเมื่อเชื่อมต่อร้าน MALIEV',
     connectorsApplied: 'เพิ่มตัวต่อเรียบร้อย',
     uploader: {
@@ -403,7 +426,7 @@ const appTranslations = {
       dropFile: 'วางไฟล์ที่นี่',
       uploadTitle: 'อัปโหลดไฟล์ STL',
       uploadHint: 'ลากไฟล์ STL มาวาง หรือคลิกเพื่อเลือกไฟล์',
-      uploading: 'กำลังอัปโหลด...',
+      uploading: 'กำลังโหลด...',
       selectStl: 'กรุณาเลือกไฟล์ .stl',
       nonWatertightWarning: 'เมชไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
       replace: 'เปลี่ยนไฟล์',
@@ -606,6 +629,7 @@ function onScaleApply(value) {
 
 async function onSplit(volume, gridDivisions, connectorConfig) {
   splitAuthorizing.value = true
+  await new Promise(r => setTimeout(r, 0))
   try {
     await split(volume, gridDivisions)
     selectedChunkIndex.value = null
@@ -627,6 +651,9 @@ function onSelectChunk(index) {
   // Clicking the already-selected part again clears isolation and shows the
   // whole assembly at full opacity again (toggle behaviour).
   selectedChunkIndex.value = selectedChunkIndex.value === index ? null : index
+}
+
+function onConnectorDragStart(id) {
 }
 
 function onConnectorDragEnd(id, position) {

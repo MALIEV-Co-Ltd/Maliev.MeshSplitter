@@ -458,6 +458,12 @@ export function orderPartsByConnectivity(chunks) {
   )
 }
 
+function yieldToMain() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => setTimeout(resolve, 0))
+  })
+}
+
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
   const info = validateManifold(splitGeometry)
@@ -503,6 +509,7 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
           const cutter = manifold.Manifold.cube(cellSize, true).translate([cx, cy, cz])
           const part = solid.intersect(cutter)
           cutter.delete?.()
+          await yieldToMain()
 
           try {
             if (part.isEmpty()) continue
@@ -513,7 +520,11 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
 
             const resultMesh = part.getMesh()
             const geometry = manifoldMeshToGeometry(resultMesh)
+            await yieldToMain()
+
             const components = splitDisconnectedComponents(geometry)
+            await yieldToMain()
+
             components.forEach((componentGeometry, bodyIndex) => {
               const label = chunkLabel(partNumber, ix, iy, iz, bodyIndex, components.length)
               chunks.push({
@@ -532,6 +543,7 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
           } finally {
             part.delete?.()
           }
+          await yieldToMain()
         }
       }
     }
@@ -896,7 +908,11 @@ export async function computeConnectorPositions(chunks, config = {}) {
           }
         }
       }
-      if (viablePositions.length === 0) continue
+      if (viablePositions.length === 0) {
+        await yieldToMain()
+        continue
+      }
+      await yieldToMain()
 
       const connectorCross = type === 'dowel' ? radius * 2 : Math.max(size2, thickness)
       const edgeMargin = radius + clearance + faceTolerance
@@ -937,6 +953,7 @@ export async function computeConnectorPositions(chunks, config = {}) {
           safeDepth: placeDepth,
         })
       }
+      await yieldToMain()
     }
   }
 
@@ -972,6 +989,7 @@ export async function applyConnectorsFromManifest(chunks, manifest) {
 
       const peg = orientConnector(shape.makePeg(), entry.axis).translate([pos.x, pos.y, pos.z])
       const socket = orientConnector(shape.makeSocket(), entry.axis).translate([pos.x, pos.y, pos.z])
+      await yieldToMain()
 
       let partA, partB
       if (entry.isKey) {
@@ -999,6 +1017,7 @@ export async function applyConnectorsFromManifest(chunks, manifest) {
       solids[j] = partB
       connectorCounts[i] += 1
       connectorCounts[j] += 1
+      await yieldToMain()
     }
 
     const baseChunks = cleanChunks.map((chunk, index) => {
