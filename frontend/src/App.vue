@@ -620,7 +620,7 @@ function toggleLocale() {
 }
 
 watch(locale, () => {
-  setProgressLabels(uiCopy.progress)
+  setProgressLabels(uiCopy.value.progress)
 }, { immediate: true })
 
 watch(meshInfo, (info) => {
