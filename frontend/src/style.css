@@ -1661,11 +1661,23 @@
     margin-top: 0.75rem;
   }
 
-  /* Promo video: square clip centered under the hero, capped so it stays a
-     tasteful feature rather than a full-bleed wall on wide screens. */
+  /* "See it in action" band: heading copy on the left, promo video on the
+     right — same two-column rhythm as the hero. */
+  .video-band {
+    align-items: center;
+    display: grid;
+    gap: clamp(2rem, 5vw, 4.5rem);
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
+  }
+
+  .video-band .section-heading {
+    margin: 0;
+    max-width: 460px;
+  }
+
   .promo-video-frame {
-    margin: 2rem auto 0;
-    max-width: 520px;
+    margin: 0;
+    max-width: 100%;
     width: 100%;
   }
 
@@ -2131,6 +2143,20 @@
     .landing-band,
     .landing-cta {
       padding: 2rem 1.25rem;
+    }
+
+    /* Stack the video band on phones: heading, then the video below it. */
+    .video-band {
+      grid-template-columns: 1fr;
+    }
+
+    .video-band .section-heading {
+      max-width: none;
+    }
+
+    .video-band .promo-video-frame {
+      margin: 1.5rem auto 0;
+      max-width: 520px;
     }
 
     .pricing-heading h2 {
