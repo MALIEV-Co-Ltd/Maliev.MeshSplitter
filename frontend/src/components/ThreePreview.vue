@@ -24,6 +24,7 @@ const props = defineProps({
   connectorPositions: { type: Array, default: () => [] },
   reapplyingConnectors: { type: Boolean, default: false },
   showLabels: { type: Boolean, default: true },
+  problemEdges: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['connector-drag-start', 'connector-drag-end'])
@@ -35,6 +36,7 @@ const selectedOpacity = 0.06
 let renderer, scene, camera, controls, meshGroup, connectorMarkers, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
 let ambientLight, keyLight, fillLight, rimLight
 let axisLines
+let problemEdgeOverlay = null
 
 // Connector drag state
 let dragConnector = null
@@ -181,6 +183,10 @@ function clearScene() {
   if (buildVolumeOverlay) {
     disposeGroup(buildVolumeOverlay)
     buildVolumeOverlay = null
+  }
+  if (problemEdgeOverlay) {
+    disposeGroup(problemEdgeOverlay)
+    problemEdgeOverlay = null
   }
   requestRender()
 }
@@ -813,6 +819,34 @@ watch(() => props.showLabels, () => {
   applyLabelVisibility(props.selectedChunkIndex)
 })
 
+watch(() => props.problemEdges, (edges) => {
+  if (problemEdgeOverlay) {
+    disposeGroup(problemEdgeOverlay)
+    problemEdgeOverlay = null
+  }
+  if (!edges || edges.length === 0) return
+  problemEdgeOverlay = new THREE.Group()
+  for (const hole of edges) {
+    const lineGeom = new THREE.BufferGeometry()
+    lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.9, depthTest: false })
+    const line = new THREE.LineLoop(lineGeom, lineMat)
+    line.renderOrder = 998
+    problemEdgeOverlay.add(line)
+
+    const fillGeom = new THREE.BufferGeometry()
+    fillGeom.setAttribute('position', new THREE.Float32BufferAttribute(hole.positions, 3))
+    fillGeom.setIndex(new THREE.BufferAttribute(hole.fillIndices, 1))
+    fillGeom.computeVertexNormals()
+    const fillMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 })
+    const fill = new THREE.Mesh(fillGeom, fillMat)
+    fill.renderOrder = 997
+    problemEdgeOverlay.add(fill)
+  }
+  scene.add(problemEdgeOverlay)
+  requestRender()
+}, { deep: false })
+
 watch(() => props.previewInfo?.optimized, () => {
   applyPixelRatio()
   requestRender()
@@ -833,4 +867,16 @@ watch(() => props.isDark, () => {
   }
   requestRender()
 })
+
+function frameToProblem() {
+  if (!problemEdgeOverlay || problemEdgeOverlay.children.length === 0) return
+  const box = new THREE.Box3()
+  problemEdgeOverlay.children.forEach((child) => {
+    if (child.geometry) box.expandByObject(child)
+  })
+  if (box.isEmpty()) return
+  fitCamera(box)
+}
+
+defineExpose({ frameToProblem })
 </script>
