@@ -629,6 +629,20 @@ describe('computeProblemEdges', () => {
     expect(result[0].center.length).toBe(3)
   })
 
+  it('finds boundary edges for a non-indexed geometry (STL-loaded mesh)', () => {
+    const box = new THREE.BoxGeometry(20, 20, 20)
+    const geom = box.toNonIndexed()
+    const pos = geom.attributes.position
+    const keepPos = new Float32Array(pos.array.slice(9))
+    const newGeom = new THREE.BufferGeometry()
+    newGeom.setAttribute('position', new THREE.Float32BufferAttribute(keepPos, 3))
+    newGeom.computeVertexNormals()
+    const result = computeProblemEdges(newGeom)
+    expect(result.length).toBeGreaterThan(0)
+    expect(result[0].positions.length).toBeGreaterThan(0)
+    expect(result[0].fillIndices.length).toBeGreaterThan(0)
+  })
+
   it('includes boundaryData on error when splitMeshManifold cannot repair', async () => {
     // A severely non-manifold mesh that cannot be repaired
     const geom = new THREE.BoxGeometry(10, 10, 10).toNonIndexed()

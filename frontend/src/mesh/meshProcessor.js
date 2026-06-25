@@ -290,10 +290,11 @@ function findBoundaryLoops(geometry) {
 }
 
 export function computeProblemEdges(geometry) {
-  const loops = findBoundaryLoops(geometry)
+  const welded = weldGeometry(geometry, 1e-4)
+  const loops = findBoundaryLoops(welded)
   if (loops.length === 0) return []
 
-  const pos = geometry.attributes.position
+  const pos = welded.attributes.position
 
   function getPos(vertexIdx) {
     return [
