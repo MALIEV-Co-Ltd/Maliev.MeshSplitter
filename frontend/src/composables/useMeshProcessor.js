@@ -7,7 +7,7 @@ import {
   computeConnectorPositions,
   exportPackage,
   prepareExportChunks,
-  repairMeshGeometry,
+  repairMeshGeometryRobust,
   splitMeshManifold,
   validateConnectorPosition,
   validateManifold,
@@ -121,11 +121,11 @@ export function useMeshProcessor(options = {}) {
       const initialInfo = validateManifold(workingGeometry)
       if (!initialInfo.watertight) {
         progressLabel.value = progressLabels.value.repairing
-        const repaired = repairMeshGeometry(workingGeometry)
+        const repaired = await repairMeshGeometryRobust(workingGeometry)
         progressLabel.value = progressLabels.value.checking
-        if (validateManifold(repaired).watertight) {
-          pendingOriginalGeometry = geometry
+        if (repaired) {
           const repairedInfo = validateManifold(repaired)
+          pendingOriginalGeometry = geometry
           repairPreview.value = {
             beforeUrl: renderPartThumbnail(geometry),
             afterUrl: renderPartThumbnail(repaired),

@@ -164,6 +164,19 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
   return repaired
 }
 
+// Try Three.js hole-fill first; if that fails, fall back to the authoritative
+// manifold-3d engine for a clean round-trip repair.
+export async function repairMeshGeometryRobust(geometry) {
+  const filled = repairMeshGeometry(geometry)
+  if (validateManifold(filled).watertight) return filled
+
+  const manifold = await getManifoldModule()
+  const cleaned = manifoldCleanGeometry(filled, manifold)
+  if (cleaned && validateManifold(cleaned).watertight) return cleaned
+
+  return null
+}
+
 function triangleNormalFromPositions(positions, a, b, c) {
   const va = new THREE.Vector3(positions[a * 3], positions[a * 3 + 1], positions[a * 3 + 2])
   const vb = new THREE.Vector3(positions[b * 3], positions[b * 3 + 1], positions[b * 3 + 2])
@@ -468,9 +481,8 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
   const info = validateManifold(splitGeometry)
   if (!info.watertight) {
-    const repaired = repairMeshGeometry(splitGeometry)
-    const repairedInfo = validateManifold(repaired)
-    if (!repairedInfo.watertight) {
+    const repaired = await repairMeshGeometryRobust(splitGeometry)
+    if (!repaired) {
       throw new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.')
     }
     splitGeometry = repaired
