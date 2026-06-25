@@ -54,7 +54,10 @@
         </Button>
       </div>
 
-      <p v-if="loading" class="mt-3 text-sm text-signal">{{ labels.uploading }}</p>
+      <p v-if="loading" class="mt-3 text-sm text-signal flex items-center gap-2">
+        <span class="mesh-uploader__spinner"></span>
+        {{ labels.uploading }}
+      </p>
       <p v-if="localError && !loading" class="mt-3 text-sm text-destructive">{{ localError }}</p>
       <p v-if="error && !loading" class="mt-3 text-sm text-destructive">{{ error }}</p>
 
@@ -123,3 +126,18 @@ function handleFile(file) {
   emit('upload', file)
 }
 </script>
+
+<style scoped>
+.mesh-uploader__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: mesh-uploader-spin 0.6s linear infinite;
+}
+@keyframes mesh-uploader-spin {
+  to { transform: rotate(360deg); }
+}
+</style>
