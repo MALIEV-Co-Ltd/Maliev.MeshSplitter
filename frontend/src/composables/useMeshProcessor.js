@@ -5,6 +5,7 @@ import {
   applyConnectorsFromManifest,
   applyScale,
   computeConnectorPositions,
+  computeProblemEdges,
   exportPackage,
   prepareExportChunks,
   repairMeshGeometryRobust,
@@ -137,6 +138,9 @@ export function useMeshProcessor(options = {}) {
           }
           workingGeometry = repaired
           wasRepaired = true
+        } else {
+          problemEdges.value = computeProblemEdges(geometry)
+          error.value = 'Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'
         }
       }
 

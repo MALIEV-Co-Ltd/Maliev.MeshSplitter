@@ -23,7 +23,7 @@
       </div>
 
       <div class="nmf-dialog__actions">
-        <Button variant="outline" class="justify-center" @click="emit('dismiss')">
+        <Button variant="outline" class="justify-center" @click="handleDismiss">>
           {{ labels.dismiss || 'Dismiss' }}
         </Button>
         <Button class="justify-center" @click="emit('view-problem')">
@@ -35,7 +35,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { AlertTriangle as AlertTriangleIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 
@@ -53,15 +53,25 @@ const dialogEl = ref(null)
 onMounted(() => {
   dialogEl.value?.showModal()
 })
+
+onBeforeUnmount(() => {
+  if (dialogEl.value?.open) dialogEl.value.close()
+})
+
+function handleDismiss() {
+  if (dialogEl.value?.open) dialogEl.value.close()
+  emit('dismiss')
+}
 </script>
 
 <style scoped>
 .nmf-dialog {
   background: transparent;
   border: none;
-  max-width: 480px;
+  max-width: 420px;
   padding: 0;
-  width: 90vw;
+  width: auto;
+  margin: auto;
 }
 .nmf-dialog::backdrop {
   background: oklch(0 0 0 / 0.48);
