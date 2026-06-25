@@ -37,7 +37,18 @@ export function useMeshProcessor(options = {}) {
   let lastConnectorConfig = null
   const loading = ref(false)
   const progressLabel = ref('')
+  const progressLabels = ref({
+    splitting: 'Splitting mesh…',
+    processing: 'Processing chunks…',
+    analyzing: 'Analyzing connectors…',
+    adding: 'Adding connectors…',
+    updating: 'Updating connectors…',
+  })
   const error = ref(null)
+
+  function setProgressLabels(labels) {
+    Object.assign(progressLabels.value, { ...progressLabels.value, ...labels })
+  }
   const scaleFactor = ref(1)
   // Default to the Bambu Lab X1C printable envelope (256x256x250, the
   // Bambu-Studio default Z). BuildVolumeConfig auto-selects the matching preset.
@@ -153,12 +164,12 @@ export function useMeshProcessor(options = {}) {
 
   async function split(bv, divisions) {
     loading.value = true
-    progressLabel.value = 'Splitting mesh…'
+    progressLabel.value = progressLabels.value.splitting
     error.value = null
     try {
       const mesh = new THREE.Mesh(meshGeometry.value)
       const rawChunks = await splitMeshManifold(mesh, bv, divisions)
-      progressLabel.value = 'Processing chunks…'
+      progressLabel.value = progressLabels.value.processing
       splitChunks.value = rawChunks.map((chunk, i) => ({
         ...chunk,
         geometry: markRaw(chunk.geometry),
@@ -180,12 +191,12 @@ export function useMeshProcessor(options = {}) {
 
   async function applyConnectors(config) {
     loading.value = true
-    progressLabel.value = 'Analyzing connectors…'
+    progressLabel.value = progressLabels.value.analyzing
     error.value = null
     try {
       const base = splitChunks.value.length > 0 ? splitChunks.value : chunks.value
       const manifest = await computeConnectorPositions(base, config)
-      progressLabel.value = 'Adding connectors…'
+      progressLabel.value = progressLabels.value.adding
       const updated = await applyConnectorsFromManifest(base, manifest)
       connectorPositions.value = manifest
       lastConnectorConfig = config
@@ -213,7 +224,7 @@ export function useMeshProcessor(options = {}) {
     entry.position = { x: newPosition.x, y: newPosition.y, z: newPosition.z }
     entry.safeDepth = valid.safeDepth
     reapplyingConnectors.value = true
-    progressLabel.value = 'Updating connectors…'
+    progressLabel.value = progressLabels.value.updating
     try {
       const base = cleanSplitChunks.value.length > 0 ? cleanSplitChunks.value : splitChunks.value
       const updated = await applyConnectorsFromManifest(base, manifest)
@@ -318,6 +329,7 @@ export function useMeshProcessor(options = {}) {
     reapplyingConnectors: readonly(reapplyingConnectors),
     loading: readonly(loading),
     progressLabel: readonly(progressLabel),
+    setProgressLabels,
     error: readonly(error),
     scaleFactor: readonly(scaleFactor),
     buildVolume,

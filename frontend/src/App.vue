@@ -224,7 +224,7 @@ const appVersion = pkg.version
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
   connectorPositions, reapplyingConnectors,
-  loading, progressLabel, error, scaleFactor, buildVolume,
+  loading, progressLabel, setProgressLabels, error, scaleFactor, buildVolume,
   loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
   prepareExport, buildExportPackage, saveBlob,
 } = useMeshProcessor()
@@ -296,6 +296,13 @@ const appTranslations = {
     connectorDragTip: 'Drag to reposition connector',
     toggleLabels: 'Toggle part labels',
     working: 'Working…',
+    progress: {
+      splitting: 'Splitting mesh…',
+      processing: 'Processing chunks…',
+      analyzing: 'Analyzing connectors…',
+      adding: 'Adding connectors…',
+      updating: 'Updating connectors…',
+    },
     close: 'Close',
     getCredits: 'Get extra credits',
     creditSub: 'Purchase a pack to split and export more parts.',
@@ -410,6 +417,13 @@ const appTranslations = {
     connectorDragTip: 'ลากเพื่อเลื่อนตำแหน่งตัวต่อ',
     toggleLabels: 'ซ่อน/แสดงป้ายชื่อชิ้นงาน',
     working: 'กำลังทำงาน…',
+    progress: {
+      splitting: 'กำลังแยกเมช…',
+      processing: 'กำลังประมวลผลชิ้นงาน…',
+      analyzing: 'กำลังวิเคราะห์ตำแหน่งตัวต่อ…',
+      adding: 'กำลังเพิ่มตัวต่อ…',
+      updating: 'กำลังอัปเดตตัวต่อ…',
+    },
     close: 'ปิด',
     getCredits: 'ซื้อเครดิตเพิ่ม',
     creditSub: 'ซื้อแพ็กเครดิตเพื่อแยกและส่งออกชิ้นงานเพิ่ม',
@@ -604,6 +618,10 @@ function toggleLocale() {
   locale.value = locale.value === 'th' ? 'en' : 'th'
   window.localStorage?.setItem('meshSplitterLocale', locale.value)
 }
+
+watch(locale, () => {
+  setProgressLabels(uiCopy.progress)
+}, { immediate: true })
 
 watch(meshInfo, (info) => {
   if (info && info.bounds) {
