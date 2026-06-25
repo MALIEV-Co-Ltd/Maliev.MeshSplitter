@@ -339,15 +339,6 @@ export function computeProblemEdges(geometry) {
     // Triangulate the contour
     const triangles = THREE.ShapeUtils.triangulateShape(contour2D, [])
 
-    // Map triangles back to 3D
-    const fillPositions = []
-    for (const tri of triangles) {
-      for (let k = 0; k < 3; k++) {
-        const idx = tri[k]
-        fillPositions.push(loop3D[idx].x, loop3D[idx].y, loop3D[idx].z)
-      }
-    }
-
     // Compute center (average of loop vertices)
     const center = [0, 0, 0]
     for (const vi of loop) {
