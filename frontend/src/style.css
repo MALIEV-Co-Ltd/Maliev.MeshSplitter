@@ -2066,48 +2066,42 @@
       display: none;
     }
 
+    /* Logo stays on the left; every control sits in one right-aligned cluster
+       that wraps to a second (still right-aligned) row only if it must. */
     .lnd-header {
       align-items: center;
-      display: grid;
-      gap: 10px;
-      grid-template-columns: minmax(0, 1fr);
+      column-gap: 12px;
+      display: flex;
+      flex-wrap: wrap;
       height: auto;
-      padding: 12px 20px;
+      justify-content: space-between;
+      padding: 12px 16px;
       position: static;
+      row-gap: 8px;
     }
 
     .lnd-logo {
-      justify-content: center;
+      flex: none;
+      justify-content: flex-start;
     }
 
-    /* Row 1: the toggle cluster + the credit chip / sign-in fill the width.
-       Row 2: the primary "Launch" CTA spans full width on its own line. */
     .lnd-header-right {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-left: 0;
-      width: 100%;
+      justify-content: flex-end;
+      margin-left: auto;
+      width: auto;
     }
 
-    .lnd-header-right .lnd-toggles {
-      flex: none;
-    }
-
+    .lnd-header-right .lnd-toggles,
     .lnd-header-right .lnd-credit-chip,
-    .lnd-header-right .lnd-btn-outline {
-      flex: 1;
-      justify-content: center;
-      min-width: 0;
-    }
-
-    .lnd-header-right .lnd-btn-ink {
-      flex-basis: 100%;
+    .lnd-header-right .lnd-btn {
+      flex: 0 0 auto;
     }
 
     .lnd-btn {
       justify-content: center;
-      min-width: 0;
       padding: 0 12px;
       text-align: center;
       white-space: nowrap;

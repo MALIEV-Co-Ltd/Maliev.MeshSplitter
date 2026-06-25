@@ -10,10 +10,14 @@ import { createCadSurfaceMaterial } from './cadMaterial'
 // degrades to `null` instead of throwing, which is what lets the PDF build
 // keep working (text-only) wherever 3D rendering isn't available.
 
-const WIDTH = 900
-const HEIGHT = 675
+// Square render: split parts are roughly cubic and the PDF image frames are
+// near-square, so a 4:3 canvas wasted big horizontal margins (and then got
+// letterboxed again into the frame) — making the model look tiny. A square
+// canvas + a tighter fit margin fills those frames properly.
+const WIDTH = 800
+const HEIGHT = 800
 const CAMERA_FOV_DEGREES = 40
-const CAMERA_FIT_MARGIN = 1.35
+const CAMERA_FIT_MARGIN = 1.12
 const NEUTRAL_COLOR = 0x9fb8d6
 const ALREADY_PLACED_COLOR = 0xb9c2cc
 
@@ -107,12 +111,16 @@ export function computePartCameraView(assemblyBox, partCenter, partRadius, fovDe
   }
   viewDir.normalize()
 
-  // Zoom to ~2.2x the part so it's clearly visible with a little context, but
+  // Zoom to ~1.7x the part so it's clearly visible with a little context, but
   // never looser than the whole assembly (no point zooming out past the model).
-  const focusRadius = Math.min(radius * 2.2, assemblyRadius * 1.15)
+  // The fit works off the box's bounding SPHERE, so size the cube to give a
+  // bounding sphere of exactly focusRadius (side = 2*r/sqrt(3)); using side=2*r
+  // makes the sphere sqrt(3)x too big and zooms way out.
+  const focusRadius = Math.min(radius * 1.7, assemblyRadius * 1.15)
+  const focusSide = (focusRadius * 2) / Math.sqrt(3)
   const focusBox = new THREE.Box3().setFromCenterAndSize(
     partCenter,
-    new THREE.Vector3(focusRadius * 2, focusRadius * 2, focusRadius * 2),
+    new THREE.Vector3(focusSide, focusSide, focusSide),
   )
   const distance = calculatePerspectiveFitDistance(focusBox, fovDegrees, aspect, CAMERA_FIT_MARGIN)
   return {
