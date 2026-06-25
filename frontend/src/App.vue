@@ -72,6 +72,9 @@
               :up-axis="upAxis"
               :is-dark="isDark"
               :selected-chunk-index="selectedChunkIndex"
+              :connector-positions="connectorPositions"
+              :reapplying-connectors="reapplyingConnectors"
+              @connector-drag-end="onConnectorDragEnd"
             />
           </CardContent>
         </Card>
@@ -211,8 +214,11 @@ import pkg from '../package.json'
 const appVersion = pkg.version
 
 const {
-  meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks, loading, error, scaleFactor, buildVolume,
-  loadStl, setScaleFactor, split, applyConnectors, prepareExport, buildExportPackage, saveBlob,
+  meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
+  connectorPositions, reapplyingConnectors,
+  loading, error, scaleFactor, buildVolume,
+  loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
+  prepareExport, buildExportPackage, saveBlob,
 } = useMeshProcessor()
 
 const credits = useCredits()
@@ -621,6 +627,10 @@ function onSelectChunk(index) {
   // Clicking the already-selected part again clears isolation and shows the
   // whole assembly at full opacity again (toggle behaviour).
   selectedChunkIndex.value = selectedChunkIndex.value === index ? null : index
+}
+
+function onConnectorDragEnd(id, position) {
+  updateConnectorPosition(id, position)
 }
 
 function productUrl(pack) {

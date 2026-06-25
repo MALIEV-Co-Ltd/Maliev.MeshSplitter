@@ -7,7 +7,8 @@ const {
   mockApplyScale,
   mockRepairMeshGeometry,
   mockSplitMeshManifold,
-  mockAddConnectorsManifold,
+  mockComputeConnectorPositions,
+  mockApplyConnectorsFromManifest,
   mockExportPackage,
   mockExportStl,
   mockExportPdf,
@@ -19,7 +20,8 @@ const {
   mockApplyScale: vi.fn(),
   mockRepairMeshGeometry: vi.fn(),
   mockSplitMeshManifold: vi.fn(),
-  mockAddConnectorsManifold: vi.fn(),
+  mockComputeConnectorPositions: vi.fn(),
+  mockApplyConnectorsFromManifest: vi.fn(),
   mockExportPackage: vi.fn(),
   mockExportStl: vi.fn(),
   mockExportPdf: vi.fn(),
@@ -33,7 +35,9 @@ vi.mock('../mesh/meshProcessor', () => ({
   applyScale: mockApplyScale,
   repairMeshGeometry: mockRepairMeshGeometry,
   splitMeshManifold: mockSplitMeshManifold,
-  addConnectorsManifold: mockAddConnectorsManifold,
+  addConnectorsManifold: mockApplyConnectorsFromManifest,
+  computeConnectorPositions: mockComputeConnectorPositions,
+  applyConnectorsFromManifest: mockApplyConnectorsFromManifest,
   exportPackage: mockExportPackage,
   exportStl: mockExportStl,
   exportPdf: mockExportPdf,
@@ -257,28 +261,30 @@ describe('useMeshProcessor', () => {
       ]
 
       mockSplitMeshManifold.mockResolvedValue(rawChunks)
-      mockAddConnectorsManifold
+      mockComputeConnectorPositions.mockResolvedValue([{ id: 'conn-0' }])
+      mockApplyConnectorsFromManifest
         .mockResolvedValueOnce(withConnectorA)
         .mockResolvedValueOnce(withConnectorB)
 
       const file = createMockFile('test.stl')
-      const { loadStl, split, applyConnectors, chunks } = useMeshProcessor()
+      const { loadStl, split, applyConnectors, chunks, connectorPositions } = useMeshProcessor()
       await loadStl(file)
       await split([250, 250, 250], [2, 1, 1])
 
       await applyConnectors({ type: 'Dowel', diameter: 5 })
       await applyConnectors({ type: 'Mortise & Tenon', diameter: 6 })
 
-      const firstCallInput = mockAddConnectorsManifold.mock.calls[0][0]
-      const secondCallInput = mockAddConnectorsManifold.mock.calls[1][0]
+      const firstCallInput = mockApplyConnectorsFromManifest.mock.calls[0][0]
+      const secondCallInput = mockApplyConnectorsFromManifest.mock.calls[1][0]
 
-      expect(mockAddConnectorsManifold).toHaveBeenCalledTimes(2)
+      expect(mockApplyConnectorsFromManifest).toHaveBeenCalledTimes(2)
       expect(firstCallInput[0].geometry.userData).toMatchObject({ splitSource: 'base' })
       expect(firstCallInput[1].geometry.userData).toMatchObject({ splitSource: 'base' })
       expect(secondCallInput[0].geometry.userData).toMatchObject({ splitSource: 'base' })
       expect(secondCallInput[1].geometry.userData).toMatchObject({ splitSource: 'base' })
       expect(chunks.value[0].geometry.userData).toMatchObject({ source: 'connectorB' })
       expect(chunks.value[1].geometry.userData).toMatchObject({ source: 'connectorB' })
+      expect(connectorPositions.value).toEqual([{ id: 'conn-0' }])
     })
   })
 

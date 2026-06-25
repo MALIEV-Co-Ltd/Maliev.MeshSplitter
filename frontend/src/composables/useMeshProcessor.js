@@ -2,12 +2,14 @@ import { markRaw, readonly, ref, shallowRef } from 'vue'
 import * as THREE from 'three'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import {
-  addConnectorsManifold,
+  applyConnectorsFromManifest,
   applyScale,
+  computeConnectorPositions,
   exportPackage,
   prepareExportChunks,
   repairMeshGeometry,
   splitMeshManifold,
+  validateConnectorPosition,
   validateManifold,
 } from '../mesh/meshProcessor'
 import { allocatePreviewBudget, createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
@@ -27,8 +29,12 @@ export function useMeshProcessor(options = {}) {
   const previewMeshGeometry = shallowRef(null)
   const previewInfo = shallowRef(null)
   const splitChunks = shallowRef([])
+  const cleanSplitChunks = shallowRef([])
   const chunks = shallowRef([])
   const previewChunks = shallowRef([])
+  const connectorPositions = ref([])
+  const reapplyingConnectors = ref(false)
+  let lastConnectorConfig = null
   const loading = ref(false)
   const error = ref(null)
   const scaleFactor = ref(1)
@@ -155,6 +161,9 @@ export function useMeshProcessor(options = {}) {
         geometry: markRaw(chunk.geometry),
         color: COLORS[i % COLORS.length],
       }))
+      cleanSplitChunks.value = splitChunks.value
+      connectorPositions.value = []
+      lastConnectorConfig = null
       chunks.value = decorateChunks(splitChunks.value)
       setPreviewChunks(chunks.value)
       generateThumbnails()
@@ -171,7 +180,10 @@ export function useMeshProcessor(options = {}) {
     error.value = null
     try {
       const base = splitChunks.value.length > 0 ? splitChunks.value : chunks.value
-      const updated = await addConnectorsManifold(base, config)
+      const manifest = await computeConnectorPositions(base, config)
+      const updated = await applyConnectorsFromManifest(base, manifest)
+      connectorPositions.value = manifest
+      lastConnectorConfig = config
       chunks.value = decorateChunks(updated)
       setPreviewChunks(chunks.value)
       generateThumbnails()
@@ -180,6 +192,33 @@ export function useMeshProcessor(options = {}) {
       throw e
     } finally {
       loading.value = false
+    }
+  }
+
+  async function updateConnectorPosition(id, newPosition) {
+    const manifest = connectorPositions.value
+    const entry = manifest.find(e => e.id === id)
+    if (!entry) return
+    const valid = validateConnectorPosition(
+      cleanSplitChunks.value.length > 0 ? cleanSplitChunks.value : chunks.value,
+      entry,
+      newPosition,
+    )
+    if (!valid.valid) return
+    entry.position = { x: newPosition.x, y: newPosition.y, z: newPosition.z }
+    entry.safeDepth = valid.safeDepth
+    reapplyingConnectors.value = true
+    try {
+      const base = cleanSplitChunks.value.length > 0 ? cleanSplitChunks.value : splitChunks.value
+      const updated = await applyConnectorsFromManifest(base, manifest)
+      chunks.value = decorateChunks(updated)
+      setPreviewChunks(chunks.value)
+      generateThumbnails()
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      reapplyingConnectors.value = false
     }
   }
 
@@ -250,7 +289,11 @@ export function useMeshProcessor(options = {}) {
     setPreviewChunks([])
     previewInfo.value = null
     splitChunks.value = []
+    cleanSplitChunks.value = []
     chunks.value = []
+    connectorPositions.value = []
+    reapplyingConnectors.value = false
+    lastConnectorConfig = null
     loading.value = false
     error.value = null
     scaleFactor.value = 1
@@ -264,6 +307,8 @@ export function useMeshProcessor(options = {}) {
     previewInfo: readonly(previewInfo),
     chunks: readonly(chunks),
     previewChunks: readonly(previewChunks),
+    connectorPositions: readonly(connectorPositions),
+    reapplyingConnectors: readonly(reapplyingConnectors),
     loading: readonly(loading),
     error: readonly(error),
     scaleFactor: readonly(scaleFactor),
@@ -272,6 +317,7 @@ export function useMeshProcessor(options = {}) {
     setScaleFactor,
     split,
     applyConnectors,
+    updateConnectorPosition,
     prepareExport,
     buildExportPackage,
     saveBlob,

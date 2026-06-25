@@ -21,14 +21,31 @@ const props = defineProps({
   selectedChunkIndex: { type: Number, default: null },
   previewInfo: { type: Object, default: null },
   isDark: { type: Boolean, default: false },
+  connectorPositions: { type: Array, default: () => [] },
+  reapplyingConnectors: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['connector-drag-end'])
 
 const container = ref(null)
 // Non-selected parts fade well back so the isolated part clearly stands out.
 const selectedOpacity = 0.06
 
-let renderer, scene, camera, controls, meshGroup, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
+let renderer, scene, camera, controls, meshGroup, connectorMarkers, gridOverlay, buildVolumeOverlay, grid, renderFrame, lastGridExtent = 0, isUnmounting = false
 let ambientLight, keyLight, fillLight
+
+// Connector drag state
+let dragConnector = null
+let dragPlane = new THREE.Plane()
+let dragOffset = new THREE.Vector3()
+let isDragging = false
+const raycaster = new THREE.Raycaster()
+const pointer = new THREE.Vector2()
+const CONNECTOR_MARKER_COLORS = {
+  dowel: 0x00e5ff,
+  mortise: 0xff6b35,
+  key: 0xffd700,
+}
 const COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x34495e]
 
 function sceneBackground() {
@@ -455,6 +472,135 @@ function requestRender() {
   })
 }
 
+function buildConnectorMarkers(positions) {
+  if (connectorMarkers) {
+    scene.remove(connectorMarkers)
+    connectorMarkers.children.forEach((c) => {
+      c.geometry?.dispose()
+      c.material?.dispose()
+    })
+    connectorMarkers = null
+  }
+  if (!positions || positions.length === 0) return
+  connectorMarkers = new THREE.Group()
+  for (const entry of positions) {
+    const pos = new THREE.Vector3(entry.position.x, entry.position.y, entry.position.z)
+    const normal = new THREE.Vector3()
+    normal.setComponent(entry.axis, entry.plane > 0 ? 1 : -1)
+    const markerPos = pos.clone().add(normal.clone().multiplyScalar(1.5))
+    const color = CONNECTOR_MARKER_COLORS[entry.type] || 0x00e5ff
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(Math.max(entry.radius * 0.5, 2), 12, 12),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 }),
+    )
+    marker.position.copy(markerPos)
+    marker.userData.connectorId = entry.id
+    marker.userData.isConnectorMarker = true
+    connectorMarkers.add(marker)
+  }
+  scene.add(connectorMarkers)
+  requestRender()
+}
+
+function getPointerNDC(event) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+}
+
+function findConnectorMarker(intersects) {
+  for (const hit of intersects) {
+    if (hit.object.userData?.isConnectorMarker) {
+      return hit.object.userData.connectorId
+    }
+  }
+  return null
+}
+
+function onPointerDown(event) {
+  if (props.reapplyingConnectors) return
+  getPointerNDC(event)
+  raycaster.setFromCamera(pointer, camera)
+  const targets = connectorMarkers ? [connectorMarkers] : []
+  if (!targets.length) return
+  const intersects = raycaster.intersectObjects(targets, true)
+  const connectorId = findConnectorMarker(intersects)
+  if (!connectorId) return
+  const entry = props.connectorPositions.find(e => e.id === connectorId)
+  if (!entry) return
+  const pos = new THREE.Vector3(entry.position.x, entry.position.y, entry.position.z)
+  const normal = new THREE.Vector3()
+  normal.setComponent(entry.axis, 1)
+  dragPlane.setFromNormalAndCoplanarPoint(normal, pos)
+  const planeIntersect = new THREE.Vector3()
+  raycaster.ray.intersectPlane(dragPlane, planeIntersect)
+  if (!planeIntersect) return
+  dragOffset.copy(pos).sub(planeIntersect)
+  dragConnector = entry
+  isDragging = true
+  controls.enabled = false
+  renderer.domElement.style.cursor = 'grabbing'
+  event.preventDefault()
+}
+
+function onPointerMove(event) {
+  if (!isDragging || !dragConnector) return
+  getPointerNDC(event)
+  raycaster.setFromCamera(pointer, camera)
+  const planeIntersect = new THREE.Vector3()
+  raycaster.ray.intersectPlane(dragPlane, planeIntersect)
+  if (!planeIntersect) return
+  const rawPos = planeIntersect.add(dragOffset)
+  const clampedPos = clampToFaceBounds(rawPos, dragConnector)
+  const marker = connectorMarkers?.children.find(
+    (c) => c.userData.connectorId === dragConnector.id,
+  )
+  if (marker) {
+    const normal = new THREE.Vector3()
+    normal.setComponent(dragConnector.axis, dragConnector.plane > 0 ? 1 : -1)
+    marker.position.copy(clampedPos).add(normal.clone().multiplyScalar(1.5))
+    requestRender()
+  }
+}
+
+function onPointerUp(event) {
+  if (!isDragging || !dragConnector) return
+  isDragging = false
+  controls.enabled = true
+  renderer.domElement.style.cursor = ''
+  const entry = dragConnector
+  dragConnector = null
+  const pos = new THREE.Vector3()
+  const marker = connectorMarkers?.children.find(
+    (c) => c.userData.connectorId === entry.id,
+  )
+  if (marker) {
+    const normal = new THREE.Vector3()
+    normal.setComponent(entry.axis, entry.plane > 0 ? 1 : -1)
+    pos.copy(marker.position).sub(normal.clone().multiplyScalar(1.5))
+  } else {
+    pos.set(entry.position.x, entry.position.y, entry.position.z)
+  }
+  emit('connector-drag-end', entry.id, { x: pos.x, y: pos.y, z: pos.z })
+}
+
+function clampToFaceBounds(position, entry) {
+  const clamped = position.clone()
+  const { faceBounds, otherAxes } = entry
+  if (faceBounds) {
+    clamped.setComponent(
+      otherAxes[0],
+      THREE.MathUtils.clamp(position.getComponent(otherAxes[0]), faceBounds.minA, faceBounds.maxA),
+    )
+    clamped.setComponent(
+      otherAxes[1],
+      THREE.MathUtils.clamp(position.getComponent(otherAxes[1]), faceBounds.minB, faceBounds.maxB),
+    )
+  }
+  clamped.setComponent(entry.axis, entry.plane)
+  return clamped
+}
+
 function onResize() {
   if (!container.value || !renderer || !camera) return
   const w = container.value.clientWidth
@@ -473,11 +619,17 @@ onMounted(() => {
   initControls()
   requestRender()
   window.addEventListener('resize', onResize)
+  renderer.domElement.addEventListener('pointerdown', onPointerDown)
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
 })
 
 onBeforeUnmount(() => {
   isUnmounting = true
   window.removeEventListener('resize', onResize)
+  renderer.domElement.removeEventListener('pointerdown', onPointerDown)
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
   controls?.dispose()
   if (renderFrame) cancelAnimationFrame(renderFrame)
   clearScene()
@@ -487,12 +639,18 @@ onBeforeUnmount(() => {
 watch(() => props.chunks, (val) => {
   if (val?.length > 0) {
     buildMeshes(val)
+    buildConnectorMarkers(props.connectorPositions)
   } else if (props.meshGeometry) {
     showOriginal(props.meshGeometry, props.divisions)
+    buildConnectorMarkers([])
   } else {
     clearScene()
   }
 })
+
+watch(() => props.connectorPositions, (val) => {
+  buildConnectorMarkers(val)
+}, { deep: true })
 
 watch(() => props.meshGeometry, (val) => {
   if (val && (!props.chunks || props.chunks.length === 0)) {
