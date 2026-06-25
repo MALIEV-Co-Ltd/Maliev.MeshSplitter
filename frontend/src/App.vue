@@ -49,7 +49,7 @@
     </header>
     <div class="workspace-grid">
       <section class="col-left">
-        <MeshUploader :mesh-info="meshInfo" :loading="loading" :progress-label="progressLabel" :error="error" :labels="uiCopy.uploader" @upload="onUpload" />
+        <MeshUploader :mesh-info="meshInfo" :loading="loading" :progress-label="progressLabel" :error="visibleError" :labels="uiCopy.uploader" @upload="onUpload" />
         <PartList
           :chunks="chunks"
           :selected-chunk-index="selectedChunkIndex"

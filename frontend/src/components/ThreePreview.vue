@@ -184,10 +184,6 @@ function clearScene() {
     disposeGroup(buildVolumeOverlay)
     buildVolumeOverlay = null
   }
-  if (problemEdgeOverlay) {
-    disposeGroup(problemEdgeOverlay)
-    problemEdgeOverlay = null
-  }
   if (connectorMarkers) {
     stopConnectorAnimation()
     scene.remove(connectorMarkers)
@@ -781,6 +777,10 @@ onBeforeUnmount(() => {
   controls?.dispose()
   if (renderFrame) cancelAnimationFrame(renderFrame)
   clearScene()
+  if (problemEdgeOverlay) {
+    disposeGroup(problemEdgeOverlay)
+    problemEdgeOverlay = null
+  }
   renderer?.dispose()
 })
 
