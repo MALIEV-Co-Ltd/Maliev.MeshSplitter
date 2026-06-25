@@ -1654,11 +1654,97 @@ function setRgb(pdf, method, color) {
 // the Thai string table. Set per-export in exportPdf, reset in its finally.
 let pdfFontFamily = 'helvetica'
 let T
+// Track the active font so the Thai canvas-image path can match it.
+let lastFont = { size: 9, style: 'normal', color: BRAND.ink }
 
 function setFont(pdf, size, style = 'normal', color = BRAND.ink) {
   pdf.setFont(pdfFontFamily, style)
   pdf.setFontSize(size)
   setRgb(pdf, 'setTextColor', color)
+  lastFont = { size, style, color }
+}
+
+const THAI_RE = /[฀-๿]/
+const PT_TO_MM = 0.352778
+const THAI_PX_PER_MM = 8 // ~200 dpi: crisp for print without bloating the PDF
+
+// jsPDF embeds the Thai font but does not position combining marks, so a stacked
+// vowel + tone mark collapses onto one another (the reported overlap). The
+// browser's own canvas text engine shapes Thai correctly, so Thai text is drawn
+// to a canvas and embedded as an image; English keeps using vector pdf.text.
+// Falls back to pdf.text when there's no 2D canvas (e.g. jsdom under test).
+function pdfText(pdf, text, x, y, opts = {}) {
+  const joined = Array.isArray(text) ? text.join('') : String(text)
+  if (pdfFontFamily !== 'NotoSansThai' || !THAI_RE.test(joined)) {
+    pdf.text(text, x, y, opts)
+    return
+  }
+  const image = renderThaiTextImage(Array.isArray(text) ? text : [text], opts)
+  if (!image) {
+    pdf.text(text, x, y, opts)
+    return
+  }
+  let drawX = x
+  if (opts.align === 'center') drawX = x - image.widthMm / 2
+  else if (opts.align === 'right') drawX = x - image.widthMm
+  // pdf.text anchors the first line's baseline at y; match that, or vertically
+  // centre when baseline:'middle' was requested.
+  const topY = opts.baseline === 'middle' ? y - image.heightMm / 2 : y - image.baselineMm
+  pdf.addImage(image.dataUrl, 'PNG', drawX, topY, image.widthMm, image.heightMm)
+}
+
+function renderThaiTextImage(lines, opts) {
+  if (typeof document === 'undefined') return null
+  try {
+    return renderThaiTextImageUnsafe(lines, opts)
+  } catch {
+    return null // no usable 2D canvas (e.g. jsdom) -> caller falls back to vector text
+  }
+}
+
+function renderThaiTextImageUnsafe(lines, opts) {
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  const { size, style, color } = lastFont
+  const fontPx = size * PT_TO_MM * THAI_PX_PER_MM
+  const fontSpec = `${style === 'bold' ? 'bold ' : ''}${fontPx}px "Noto Sans Thai", "NotoSansThai", sans-serif`
+  ctx.font = fontSpec
+
+  const maxWidthPx = opts.maxWidth ? opts.maxWidth * THAI_PX_PER_MM : Infinity
+  const wrapped = []
+  for (const line of lines) {
+    const str = String(line)
+    if (ctx.measureText(str).width <= maxWidthPx) { wrapped.push(str); continue }
+    let cur = ''
+    for (const word of str.split(' ')) {
+      const test = cur ? `${cur} ${word}` : word
+      if (cur && ctx.measureText(test).width > maxWidthPx) { wrapped.push(cur); cur = word }
+      else cur = test
+    }
+    if (cur) wrapped.push(cur)
+  }
+
+  const lineSpacingPx = fontPx * 1.18
+  const topRoomPx = fontPx * 1.2 // headroom for stacked upper vowel + tone marks
+  const bottomRoomPx = fontPx * 0.4
+  let widthPx = 1
+  for (const line of wrapped) widthPx = Math.max(widthPx, ctx.measureText(line).width)
+
+  canvas.width = Math.ceil(widthPx + 4)
+  canvas.height = Math.ceil(topRoomPx + (wrapped.length - 1) * lineSpacingPx + bottomRoomPx)
+  ctx.font = fontSpec // re-apply: resizing the canvas resets context state
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = `rgb(${color[0]}, ${color[1]}, ${color[2]})`
+  wrapped.forEach((line, i) => ctx.fillText(line, 0, topRoomPx + i * lineSpacingPx))
+
+  return {
+    dataUrl: canvas.toDataURL('image/png'),
+    widthMm: canvas.width / THAI_PX_PER_MM,
+    heightMm: canvas.height / THAI_PX_PER_MM,
+    baselineMm: topRoomPx / THAI_PX_PER_MM,
+  }
 }
 
 // Embed NotoSansThai so Thai text renders instead of blank boxes. Registered
@@ -1684,7 +1770,7 @@ async function addHeader(pdf, title, subtitle, appUrl, qrImage) {
 
   drawLogo(pdf)
   setFont(pdf, 5.8, 'normal', [229, 231, 235])
-  pdf.text(appUrl, PDF_PAGE.width - PDF_PAGE.margin, 14, { align: 'right' })
+  pdfText(pdf,appUrl, PDF_PAGE.width - PDF_PAGE.margin, 14, { align: 'right' })
 }
 
 function addPageTitle(pdf, title, subtitle, qrImage) {
@@ -1696,10 +1782,10 @@ function addPageTitle(pdf, title, subtitle, qrImage) {
   }
 
   setFont(pdf, 20, 'bold', BRAND.black)
-  pdf.text(title, PDF_PAGE.margin, 44)
+  pdfText(pdf,title, PDF_PAGE.margin, 44)
   if (subtitle) {
     setFont(pdf, 9, 'normal', BRAND.muted)
-    pdf.text(subtitle, PDF_PAGE.margin, 52, { maxWidth: qrImage ? 128 : 162 })
+    pdfText(pdf,subtitle, PDF_PAGE.margin, 52, { maxWidth: qrImage ? 128 : 162 })
   }
 }
 
@@ -1726,7 +1812,7 @@ function drawLogo(pdf) {
 
 function drawLogoFallback(pdf) {
   setFont(pdf, 11, 'bold', [255, 255, 255])
-  pdf.text('MALIEV', PDF_PAGE.margin, 14)
+  pdfText(pdf,'MALIEV', PDF_PAGE.margin, 14)
 }
 
 function getMalievLogoPathData() {
@@ -1843,10 +1929,10 @@ function addFooter(pdf, appUrl, pageNumber, exportAuthorization) {
   pdf.line(PDF_PAGE.margin, 280, PDF_PAGE.width - PDF_PAGE.margin, 280)
   setFont(pdf, 8, 'normal', BRAND.muted)
   const receipt = exportAuthorization?.fingerprint ? ` | Receipt ${exportAuthorization.fingerprint}` : ''
-  pdf.text(`Generated by MALIEV Mesh Splitter | ${appUrl}${receipt}`, PDF_PAGE.margin, 286, {
+  pdfText(pdf,`Generated by MALIEV Mesh Splitter | ${appUrl}${receipt}`, PDF_PAGE.margin, 286, {
     maxWidth: PDF_PAGE.width - PDF_PAGE.margin * 2 - 20,
   })
-  pdf.text(`Page ${pageNumber}`, PDF_PAGE.width - PDF_PAGE.margin, 286, { align: 'right' })
+  pdfText(pdf,`Page ${pageNumber}`, PDF_PAGE.width - PDF_PAGE.margin, 286, { align: 'right' })
 }
 
 async function addPage(pdf, title, subtitle, appUrl, qrImage, pageNumber, options = {}) {
@@ -1867,7 +1953,7 @@ function addImageFrame(pdf, image, x, y, width, height, caption, options = {}) {
   const contentHeight = title ? height - 25 : height - 14
   if (title) {
     setFont(pdf, 9, 'bold', BRAND.black)
-    pdf.text(title, x + 5, y + 11)
+    pdfText(pdf,title, x + 5, y + 11)
   }
   if (badge) {
     drawPill(pdf, badge, x + width - 24, y + 6, 18, 6)
@@ -1879,11 +1965,11 @@ function addImageFrame(pdf, image, x, y, width, height, caption, options = {}) {
     pdf.addImage(image, 'JPEG', contentBox.x, contentBox.y, contentBox.width, contentBox.height)
   } else {
     setFont(pdf, 9, 'normal', BRAND.muted)
-    pdf.text(T?.imageUnavailable || 'Preview image unavailable for this export.', x + width / 2, y + height / 2, { align: 'center' })
+    pdfText(pdf,T?.imageUnavailable || 'Preview image unavailable for this export.', x + width / 2, y + height / 2, { align: 'center' })
   }
   if (caption) {
     setFont(pdf, 8, 'normal', BRAND.muted)
-    pdf.text(caption, x + 5, y + height - 5)
+    pdfText(pdf,caption, x + 5, y + height - 5)
   }
 }
 
@@ -1913,7 +1999,7 @@ function addMetric(pdf, label, value, x, y, width = 54, height = 18, options = {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 3, 3, 'FD')
   setFont(pdf, 7, 'normal', BRAND.muted)
-  pdf.text(label, x + 3, y + 6)
+  pdfText(pdf,label, x + 3, y + 6)
   const maxWidth = width - 6
   const text = String(value)
   if (options.singleLine && typeof pdf.getTextWidth === 'function') {
@@ -1926,10 +2012,10 @@ function addMetric(pdf, label, value, x, y, width = 54, height = 18, options = {
       fontSize -= 0.5
       setFont(pdf, fontSize, 'bold', BRAND.black)
     }
-    pdf.text(fitTextToWidth(pdf, text, maxWidth), x + 3, y + 14)
+    pdfText(pdf,fitTextToWidth(pdf, text, maxWidth), x + 3, y + 14)
   } else {
     setFont(pdf, 10, 'bold', BRAND.black)
-    pdf.text(text, x + 3, y + 14, { maxWidth })
+    pdfText(pdf,text, x + 3, y + 14, { maxWidth })
   }
 }
 
@@ -1949,7 +2035,7 @@ function drawPill(pdf, text, x, y, width, height) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, height / 2, height / 2, 'FD')
   setFont(pdf, 4.5, 'bold', BRAND.muted)
-  pdf.text(text, x + width / 2, y + 4, { align: 'center' })
+  pdfText(pdf,text, x + width / 2, y + 4, { align: 'center' })
 }
 
 function addQrPanel(pdf, qrImage, x, y, width, height, { caption = true } = {}) {
@@ -1965,7 +2051,7 @@ function addQrPanel(pdf, qrImage, x, y, width, height, { caption = true } = {}) 
   }
   if (caption) {
     setFont(pdf, 5.2, 'bold', BRAND.muted)
-    pdf.text(['Scan to open', 'Mesh Splitter'], x + width / 2, y + height - 8, { align: 'center' })
+    pdfText(pdf,['Scan to open', 'Mesh Splitter'], x + width / 2, y + height - 8, { align: 'center' })
   }
 }
 
@@ -1981,11 +2067,11 @@ function addCoverHero(pdf, qrImage, appUrl) {
   pdf.roundedRect(x, y, width, height, 7, 7, 'FD')
 
   setFont(pdf, 6.2, 'bold', [71, 85, 105])
-  pdf.text(T.coverEyebrow, x + 8, y + 10)
+  pdfText(pdf,T.coverEyebrow, x + 8, y + 10)
   setFont(pdf, 21, 'bold', BRAND.black)
-  pdf.text(T.coverTitle, x + 8, y + 20)
+  pdfText(pdf,T.coverTitle, x + 8, y + 20)
   setFont(pdf, 7.2, 'normal', BRAND.muted)
-  pdf.text(T.coverBody, x + 8, y + 36, { maxWidth: 105 })
+  pdfText(pdf,T.coverBody, x + 8, y + 36, { maxWidth: 105 })
   addQrPanel(pdf, qrImage, x + width - 33, y + 8, 24, 31)
 }
 
@@ -2206,7 +2292,7 @@ function addChecklistCard(pdf, x, y, width, height) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 4, 4, 'FD')
   setFont(pdf, 9, 'bold', BRAND.black)
-  pdf.text(T.checklistTitle, x + 5, y + 10)
+  pdfText(pdf,T.checklistTitle, x + 5, y + 10)
   // Four two-line items spread across the card body. Start/step are tuned so the
   // final item's second line clears the bottom border instead of touching it.
   let rowY = y + 20
@@ -2215,7 +2301,7 @@ function addChecklistCard(pdf, x, y, width, height) {
     setRgb(pdf, 'setDrawColor', [148, 163, 184])
     pdf.roundedRect(x + 5, rowY - 2.5, 3.2, 3.2, 0.6, 0.6, 'S')
     setFont(pdf, 6.1, 'normal', BRAND.ink)
-    pdf.text(item, x + 11, rowY, { maxWidth: width - 15 })
+    pdfText(pdf,item, x + 11, rowY, { maxWidth: width - 15 })
     rowY += rowStep
   })
 }
@@ -2225,7 +2311,7 @@ function addAssemblyFlowCard(pdf, x, y, width, height) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 4, 4, 'FD')
   setFont(pdf, 9, 'bold', BRAND.black)
-  pdf.text(T.assemblyFlowTitle, x + 5, y + 10)
+  pdfText(pdf,T.assemblyFlowTitle, x + 5, y + 10)
   const steps = T.assemblyFlowSteps
   let rowY = y + 21
   steps.forEach((step, index) => {
@@ -2234,9 +2320,9 @@ function addAssemblyFlowCard(pdf, x, y, width, height) {
     pdf.circle(x + 7.5, circleY, 3.5, 'F')
     setFont(pdf, 6.3, 'bold', [255, 255, 255])
     // Anchor the digit on the circle's exact center so it reads centered.
-    pdf.text(String(index + 1), x + 7.5, circleY, { align: 'center', baseline: 'middle' })
+    pdfText(pdf,String(index + 1), x + 7.5, circleY, { align: 'center', baseline: 'middle' })
     setFont(pdf, 5.9, 'normal', BRAND.ink)
-    pdf.text(step, x + 13, rowY, { maxWidth: width - 18 })
+    pdfText(pdf,step, x + 13, rowY, { maxWidth: width - 18 })
     rowY += 9.6
   })
 }
@@ -2246,9 +2332,9 @@ function addInfoCard(pdf, title, body, info, x, y, width, height) {
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.roundedRect(x, y, width, height, 4, 4, 'FD')
   setFont(pdf, 9, 'bold', BRAND.black)
-  pdf.text(title, x + 5, y + 10)
+  pdfText(pdf,title, x + 5, y + 10)
   setFont(pdf, 6.7, 'normal', BRAND.ink)
-  pdf.text(body, x + 5, y + 20, { maxWidth: width - 10 })
+  pdfText(pdf,body, x + 5, y + 20, { maxWidth: width - 10 })
   setRgb(pdf, 'setDrawColor', BRAND.border)
   pdf.line(x + 5, y + height - 18, x + width - 5, y + height - 18)
   // Center the icon and the note block on a shared line so the text sits level
@@ -2260,7 +2346,7 @@ function addInfoCard(pdf, title, body, info, x, y, width, height) {
   const noteLineHeight = 2.5
   const noteTop = noteCenterY - ((noteLines.length - 1) * noteLineHeight) / 2
   noteLines.forEach((line, i) => {
-    pdf.text(line, x + 15, noteTop + i * noteLineHeight, { maxWidth: width - 20, baseline: 'middle' })
+    pdfText(pdf,line, x + 15, noteTop + i * noteLineHeight, { maxWidth: width - 20, baseline: 'middle' })
   })
 }
 
@@ -2269,7 +2355,7 @@ function drawInfoIcon(pdf, centerX, centerY) {
   setRgb(pdf, 'setDrawColor', [147, 197, 253])
   pdf.circle(centerX, centerY, 3.4, 'FD')
   setFont(pdf, 8.5, 'bold', BRAND.accent)
-  pdf.text('i', centerX, centerY + 1.3, { align: 'center' })
+  pdfText(pdf,'i', centerX, centerY + 1.3, { align: 'center' })
 }
 
 function partDimensions(chunk) {
@@ -2306,7 +2392,7 @@ function addPartsTable(pdf, chunks, startY = 168) {
   let x = PDF_PAGE.margin
   setFont(pdf, 8, 'bold', BRAND.black)
   headers.forEach((header, i) => {
-    pdf.text(header, x, startY)
+    pdfText(pdf,header, x, startY)
     x += widths[i]
   })
   setRgb(pdf, 'setDrawColor', BRAND.border)
@@ -2335,7 +2421,7 @@ function addPartsTable(pdf, chunks, startY = 168) {
       `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)}`,
     ]
     row.forEach((cell, i) => {
-      pdf.text(cell, x, y, { maxWidth: widths[i] - 4 })
+      pdfText(pdf,cell, x, y, { maxWidth: widths[i] - 4 })
       x += widths[i]
     })
     y += 8
@@ -2357,7 +2443,7 @@ function addPartsTable(pdf, chunks, startY = 168) {
         `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)}`,
       ]
       row.forEach((cell, i) => {
-        pdf.text(cell, x, y, { maxWidth: widths[i] - 4 })
+        pdfText(pdf,cell, x, y, { maxWidth: widths[i] - 4 })
         x += widths[i]
       })
       y += 8
@@ -2366,7 +2452,7 @@ function addPartsTable(pdf, chunks, startY = 168) {
 
   if (remaining > 0) {
     setFont(pdf, 8, 'normal', BRAND.muted)
-    pdf.text(T.moreParts(remaining), PDF_PAGE.margin, 276)
+    pdfText(pdf,T.moreParts(remaining), PDF_PAGE.margin, 276)
   }
 }
 
@@ -2489,9 +2575,9 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
       addMetric(pdf, T.dimensions, `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm`, 70, 145, 70)
       addMetric(pdf, T.volume, `${(Math.abs(chunk.volume || computeVolume(chunk.geometry)) / 1000).toFixed(2)} cm3`, 146, 145, 40)
       setFont(pdf, 11, 'bold', BRAND.black)
-      pdf.text(T.partNotesTitle, PDF_PAGE.margin, 182)
+      pdfText(pdf,T.partNotesTitle, PDF_PAGE.margin, 182)
       setFont(pdf, 9, 'normal', BRAND.ink)
-      pdf.text(T.partNotes, PDF_PAGE.margin, 193, { maxWidth: 178 })
+      pdfText(pdf,T.partNotes, PDF_PAGE.margin, 193, { maxWidth: 178 })
     }
 
     if (keyChunks.length > 0) {
@@ -2518,9 +2604,9 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
       addMetric(pdf, T.keyTotalQty, T.keyQty(keyChunks.length), 146, 145, 40)
 
       setFont(pdf, 11, 'bold', BRAND.black)
-      pdf.text(T.keyGuideTitle, PDF_PAGE.margin, 182)
+      pdfText(pdf,T.keyGuideTitle, PDF_PAGE.margin, 182)
       setFont(pdf, 9, 'normal', BRAND.ink)
-      pdf.text(T.keyGuide(keyChunks.length), PDF_PAGE.margin, 193, { maxWidth: 178 })
+      pdfText(pdf,T.keyGuide(keyChunks.length), PDF_PAGE.margin, 193, { maxWidth: 178 })
     }
 
     for (let i = 0; i < ordered.length; i += 2) {
@@ -2546,7 +2632,7 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
         const caption = isFirst ? T.stepCaptionStart(chunk.label) : T.stepCaptionAdd(stepIndex + 1, chunk.label)
         addImageFrame(pdf, stepImage, PDF_PAGE.margin, y, 92, 80, caption)
         setFont(pdf, 12, 'bold', BRAND.black)
-        pdf.text(T.step(stepIndex + 1), 124, y + 12)
+        pdfText(pdf,T.step(stepIndex + 1), 124, y + 12)
         setFont(pdf, 9, 'normal', BRAND.ink)
         // First part is the base (nothing to attach to yet); every later part
         // joins the existing assembly, and if keys are used the key-insertion
@@ -2555,7 +2641,7 @@ export async function exportPdf(chunks, buildVolume, options = {}) {
         if (!isFirst) {
           lines.push(usesKeys ? T.stepKeyLine : T.stepConnectorLine)
         }
-        pdf.text(lines, 124, y + 24, { maxWidth: 62 })
+        pdfText(pdf,lines, 124, y + 24, { maxWidth: 62 })
       }
     }
   } finally {
