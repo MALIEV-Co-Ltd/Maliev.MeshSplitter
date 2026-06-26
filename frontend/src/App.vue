@@ -53,17 +53,6 @@
       </div>
     </header>
     <div class="workspace-grid">
-      <section class="col-left">
-        <MeshUploader v-if="!isMobile" :mesh-info="meshInfo" :loading="loading" :progress-label="progressLabel" :error="visibleError" :labels="uiCopy.uploader" @upload="onUpload" />
-        <PartList
-          :chunks="chunks"
-          :selected-chunk-index="selectedChunkIndex"
-          :compact="isMobile"
-          :labels="uiCopy.partList"
-          @select="onSelectChunk"
-        />
-      </section>
-
       <section class="col-center">
         <span class="canvas-version" aria-label="App version">v{{ appVersion }}</span>
         <Card class="preview-card h-full rounded-none border-x border-y-0 shadow-none">
@@ -122,7 +111,19 @@
         />
       </section>
 
-      <section class="col-right">
+      <div class="cols-stack">
+        <section class="col-left">
+          <MeshUploader v-if="!isMobile" :mesh-info="meshInfo" :loading="loading" :progress-label="progressLabel" :error="visibleError" :labels="uiCopy.uploader" @upload="onUpload" />
+          <PartList
+            :chunks="chunks"
+            :selected-chunk-index="selectedChunkIndex"
+            :compact="isMobile"
+            :labels="uiCopy.partList"
+            @select="onSelectChunk"
+          />
+        </section>
+
+        <section class="col-right">
         <template v-if="isMobile">
           <AccordionSection :title="uiCopy.buildVolume.title" :icon="BoxIcon" :open="openSection === 'volume'" @toggle="toggleSection('volume')">
             <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
@@ -146,7 +147,8 @@
             @export-package="onExportPackage"
           />
         </template>
-      </section>
+        </section>
+      </div>
     </div>
     <MobileActionBar
       v-if="isMobile"
@@ -239,7 +241,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon, Tags as TagsIcon, Box as BoxIcon, Ruler2 as RulerIcon, Layers2 as LayersIcon } from '@lucide/vue'
+import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon, Tags as TagsIcon, Box as BoxIcon, Ruler as RulerIcon, Layers2 as LayersIcon } from '@lucide/vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
