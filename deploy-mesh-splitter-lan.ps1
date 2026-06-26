@@ -105,6 +105,23 @@ $envGhcrUser = Get-EnvValueFromFile -FilePath $EnvFile -Key 'GHCR_USERNAME'
 $envGhcrToken = Get-EnvValueFromFile -FilePath $EnvFile -Key 'GHCR_TOKEN'
 if (-not $envGhcrUser -or -not $envGhcrToken) {
   Write-Output 'WARNING: GHCR_USERNAME or GHCR_TOKEN is not set in .env.mesh-splitter.local; private image pulls may fail in watchtower.'
+} else {
+  Write-Output 'Ensuring GHCR authentication for Docker daemon (for watchtower and local pulls)...'
+  try {
+    $secureToken = ConvertTo-SecureString $envGhcrToken -AsPlainText -Force
+    $credential = New-Object System.Management.Automation.PSCredential ($envGhcrUser, $secureToken)
+    $plainToken = $credential.GetNetworkCredential().Password
+    $null = echo $plainToken | docker login ghcr.io -u $envGhcrUser --password-stdin
+    Write-Output 'GHCR login succeeded.'
+  } catch {
+    Write-Warning 'GHCR login failed. Check GHCR_USERNAME/GHCR_TOKEN.'
+  }
+}
+
+if (Test-Path -Path '/root/.docker/config.json' -PathType Leaf) {
+  Write-Output 'Using Docker auth config at /root/.docker/config.json.'
+} else {
+  Write-Warning '/root/.docker/config.json is not present on NAS.'
 }
 
 Invoke-MeshSplitterCompose -Command $composeCmd -Arguments @('-f', $ComposeFile, '--env-file', $EnvFile, 'pull')
