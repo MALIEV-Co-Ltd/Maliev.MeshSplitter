@@ -82,7 +82,9 @@ curl -fsS "http://localhost:${PORT}/health"
 In DSM reverse proxy create a rule:
 
 - Source: host `mesh-splitter.local`, protocol `HTTPS`, port `443`, path `/`
-- Destination: host `127.0.0.1`, protocol `HTTP`, port `3000`, path `/tools/mesh-splitter`
+- Destination: host `127.0.0.1`, protocol `HTTP`, port `3000`
+- Keep destination path empty unless DSM explicitly requires it. The backend already
+  supports `/tools/mesh-splitter` internally via `MESH_PROXY_PREFIX`.
 
 Attach a certificate to `mesh-splitter.local` in DSM certificates.
 
@@ -205,4 +207,29 @@ docker inspect mesh-splitter --format='{{.State.StartedAt}}'
 
 echo "Watchtower pull/recreate logs:"
 docker logs mesh-splitter-watchtower --since 15m | grep -i "mesh-splitter"
+
+## 8) Zero-touch NAS update behavior
+
+`mesh-splitter-watchtower` checks GHCR every 60 seconds and redeploys `mesh-splitter`
+whenever `ghcr.io/maliev-co-ltd/maliev.meshsplitter:main` changes.  
+No inbound webhook from GitHub to your NAS is required.
+
+Commands after any startup:
+
+```bash
+cd /volume1/docker/mesh-splitter
+sudo docker compose -f docker-compose.lan.yml --env-file .env.mesh-splitter.local up -d --force-recreate
+```
+
+Commands after a `main` push:
+
+```bash
+sudo docker logs mesh-splitter-watchtower --since 15m | grep -i "mesh-splitter"
+sudo docker inspect mesh-splitter --format '{{.Config.Image}}'
+curl -k -H "Host: mesh-splitter.local" https://mesh-splitter.local/tools/mesh-splitter/health
+```
+
+If `/tools/mesh-splitter/app` still shows an old version in an open tab, force a hard
+refresh or open it in a fresh private/incognito tab. Browser caches can retain an
+old bundle briefly after an image refresh.
 ```

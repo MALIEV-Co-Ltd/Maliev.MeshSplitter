@@ -41,6 +41,31 @@ describe('HTTP API', () => {
     expect(body.creditPacks).toHaveLength(3)
   })
 
+  it('supports a custom mesh proxy prefix from options', async () => {
+    const prefixedServer = createServer({
+      devCustomerBypass: true,
+      shopifyAppProxySecret: 'proxy-secret',
+      shopifyWebhookSecret: 'webhook-secret',
+      shopifyApiKey: 'api-key',
+      shopifyApiSecret: 'api-secret',
+      shopifyScopes: 'read_orders',
+      meshProxyPrefix: '/mesh-splitter',
+      appUrl: 'https://mesh.example.com',
+      storefrontUrl: 'https://shop.example.com/tools/mesh-splitter',
+      customerLoginUrl: 'https://shop.example.com/account/login?return_url=%2Ftools%2Fmesh-splitter',
+      now: () => new Date('2026-06-21T12:00:00.000Z'),
+    })
+    await new Promise(resolve => prefixedServer.listen(0, resolve))
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${prefixedServer.address().port}/mesh-splitter/health`)
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({ ok: true })
+    } finally {
+      await new Promise(resolve => prefixedServer.close(resolve))
+    }
+  })
+
   it('returns the current customer credit account', async () => {
     const response = await fetch(`${baseUrl}/api/account`, {
       headers: { 'x-mesh-customer-id': 'local-customer' },
