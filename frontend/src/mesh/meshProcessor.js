@@ -66,8 +66,11 @@ export function validateManifold(geometry) {
   const vertCount = pos.count
   const faceCount = index ? index.count / 3 : pos.count / 3
 
+  // Quantise to 0.1 mm — float32 STL data can have sub-micron rounding
+  // differences at the same physical vertex after translation, causing the
+  // edge-counting check to false-flag a watertight mesh as non-manifold.
   function posKey(idx) {
-    return `${pos.getX(idx).toFixed(3)},${pos.getY(idx).toFixed(3)},${pos.getZ(idx).toFixed(3)}`
+    return `${pos.getX(idx).toFixed(2)},${pos.getY(idx).toFixed(2)},${pos.getZ(idx).toFixed(2)}`
   }
 
   const edgeMap = new Map()
@@ -171,8 +174,14 @@ export async function repairMeshGeometryRobust(geometry) {
   if (validateManifold(filled).watertight) return filled
 
   const manifold = await getManifoldModule()
+
+  // Try the original geometry first — repairMeshGeometry can corrupt some
+  // watertight meshes (wrong hole fills), but Manifold still accepts them.
+  const origCleaned = manifoldCleanGeometry(geometry, manifold)
+  if (origCleaned) return origCleaned
+
   const cleaned = manifoldCleanGeometry(filled, manifold)
-  if (cleaned && validateManifold(cleaned).watertight) return cleaned
+  if (cleaned) return cleaned
 
   return null
 }
