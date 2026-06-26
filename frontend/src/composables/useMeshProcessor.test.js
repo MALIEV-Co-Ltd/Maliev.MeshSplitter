@@ -260,6 +260,14 @@ describe('useMeshProcessor', () => {
         vertCount: geometry.attributes.position.count,
       })
 
+      // GPU scaling clones+scales the geometry before passing to splitMeshManifold
+      mockApplyScale.mockImplementation((geo, s) => {
+        const c = geo.clone()
+        c.scale(s, s, s)
+        c.computeBoundingBox()
+        return c
+      })
+
       const rawChunks = [
         { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
       ]
@@ -269,7 +277,7 @@ describe('useMeshProcessor', () => {
       await loadStl(createMockFile('dense.stl'))
       await split([250, 250, 250], [1, 1, 1])
 
-      expect(mockSplitMeshManifold.mock.calls[0][0].geometry).toBe(meshGeometry.value)
+      expect(mockSplitMeshManifold.mock.calls[0][0].geometry).not.toBe(meshGeometry.value)
       expect(chunks.value[0].geometry).toBe(geometry)
       expect(previewChunks.value[0].geometry).not.toBe(chunks.value[0].geometry)
       expect(previewChunks.value[0].geometry.attributes.position.count).toBeLessThan(chunks.value[0].geometry.attributes.position.count)
@@ -475,23 +483,23 @@ describe('useMeshProcessor', () => {
   })
 
   describe('setScaleFactor', () => {
-    it('regenerates working mesh from the uploaded source geometry', async () => {
+    it('updates meshInfo arithmetically without cloning geometry on GPU-side scaling', async () => {
       const geometry = createMockGeometry()
-      const scaled = new THREE.BoxGeometry(20, 20, 20)
-      scaled.computeBoundingBox()
       mockStlParse.mockReturnValue(geometry)
-      mockApplyScale.mockReturnValue(scaled)
       mockValidateManifold.mockReturnValue({
-        watertight: true, volume: 8000, euler: 2, faceCount: 12, vertCount: 24,
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
       })
 
       const { loadStl, setScaleFactor, scaleFactor, meshInfo } = useMeshProcessor()
       await loadStl(createMockFile('test.stl'))
       setScaleFactor(2)
 
-      expect(mockApplyScale).toHaveBeenCalledWith(expect.any(THREE.BufferGeometry), 2)
+      // setScaleFactor no longer clones geometry — meshInfo updates arithmetically
+      expect(mockApplyScale).not.toHaveBeenCalled()
       expect(scaleFactor.value).toBe(2)
-      expect(meshInfo.value.volume).toBe(8000)
+      expect(meshInfo.value.volume).toBe(1000 * 2 * 2 * 2)
+      expect(meshInfo.value.bounds.min).toEqual({ x: -10, y: -10, z: 0 })
+      expect(meshInfo.value.bounds.max).toEqual({ x: 10, y: 10, z: 20 })
     })
   })
 

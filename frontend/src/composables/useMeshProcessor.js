@@ -58,6 +58,7 @@ export function useMeshProcessor(options = {}) {
     Object.assign(progressLabels.value, { ...progressLabels.value, ...labels })
   }
   const scaleFactor = ref(1)
+  let originalVolume = 0
   // Default to the Bambu Lab X1C printable envelope (256x256x250, the
   // Bambu-Studio default Z). BuildVolumeConfig auto-selects the matching preset.
   const buildVolume = ref([256, 256, 250])
@@ -66,6 +67,7 @@ export function useMeshProcessor(options = {}) {
     const info = validateManifold(geometry)
     geometry.computeBoundingBox()
     const box = geometry.boundingBox
+    originalVolume = info.volume
 
     meshInfo.value = {
       filename,
@@ -200,14 +202,33 @@ export function useMeshProcessor(options = {}) {
     return normalized
   }
 
+  function updateMeshInfoArithmetic(scale) {
+    if (!sourceGeometry.value || !meshInfo.value) return
+    const geo = sourceGeometry.value
+    if (!geo.boundingBox) geo.computeBoundingBox()
+    const box = geo.boundingBox
+    const s = Number(scale)
+    meshInfo.value = {
+      ...meshInfo.value,
+      bounds: {
+        min: { x: box.min.x * s, y: box.min.y * s, z: box.min.z * s },
+        max: { x: box.max.x * s, y: box.max.y * s, z: box.max.z * s },
+      },
+      volume: originalVolume * s * s * s,
+    }
+  }
+
   function setScaleFactor(value) {
     if (!sourceGeometry.value || !meshInfo.value) return
     loading.value = true
     error.value = null
     try {
-      const scaled = applyScale(sourceGeometry.value, value)
       scaleFactor.value = Number(value)
-      setMeshState(scaled, meshInfo.value.filename)
+      updateMeshInfoArithmetic(Number(value))
+      splitChunks.value = []
+      chunks.value = []
+      disposePreviewChunks()
+      previewChunks.value = []
     } catch (e) {
       error.value = e.message
       throw e
@@ -221,7 +242,8 @@ export function useMeshProcessor(options = {}) {
     progressLabel.value = progressLabels.value.splitting
     error.value = null
     try {
-      const mesh = new THREE.Mesh(meshGeometry.value)
+      const scaledGeo = applyScale(meshGeometry.value, scaleFactor.value)
+      const mesh = new THREE.Mesh(scaledGeo)
       const rawChunks = await splitMeshManifold(mesh, bv, divisions)
       progressLabel.value = progressLabels.value.processing
       splitChunks.value = rawChunks.map((chunk, i) => ({
@@ -384,6 +406,7 @@ export function useMeshProcessor(options = {}) {
     error.value = null
     progressLabel.value = ''
     scaleFactor.value = 1
+    originalVolume = 0
     disposeThumbnailRenderer()
   }
 

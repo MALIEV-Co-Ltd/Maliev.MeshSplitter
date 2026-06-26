@@ -72,6 +72,7 @@
               :reapplying-connectors="reapplyingConnectors"
               :show-labels="showLabels"
               :problem-edges="problemEdges"
+              :scale-factor="scaleFactor"
               @connector-drag-start="onConnectorDragStart"
               @connector-drag-end="onConnectorDragEnd"
             />
