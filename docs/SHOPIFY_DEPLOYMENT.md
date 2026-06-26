@@ -15,8 +15,8 @@ The production package is Docker-ready. The repository includes:
 
 - `Dockerfile` for a single web service that serves the built frontend and the
   credit/session/webhook backend.
-- `.github/workflows/publish-container.yml` for publishing the production
-  container to GitHub Container Registry.
+- `.github/workflows/ci.yml` includes container publish (`:main`, `:latest`, and commit
+  hash tags) to GitHub Container Registry.
 - `render.yaml` for an optional Render Blueprint with one Docker web service and
   one Postgres database.
 - `shopify.app.example.toml` for the Shopify app proxy and paid-order webhook
@@ -38,7 +38,12 @@ The published container image is:
 ghcr.io/maliev-co-ltd/maliev.meshsplitter:main
 ```
 
-Commit-specific images are also tagged as `sha-<short-sha>`.
+Commit-specific images are also tagged as `sha-<sha>`.
+
+The local-network deployment image is the same repository and should use the `main` tag.
+
+For local deployment on your own network (DNS name `mesh-splitter.local`), see
+[`LOCAL_DEPLOYMENT.md`](../LOCAL_DEPLOYMENT.md).
 
 ## Google Cloud Run deployment
 
