@@ -12,6 +12,7 @@ import {
   splitMeshManifold,
   validateConnectorPosition,
   validateManifold,
+  yieldToMain,
 } from '../mesh/meshProcessor'
 import { allocatePreviewBudget, createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
 import { renderPartThumbnail, disposeThumbnailRenderer } from '../mesh/thumbnailRenderer'
@@ -115,19 +116,31 @@ export function useMeshProcessor(options = {}) {
     try {
       const buffer = await file.arrayBuffer()
       progressLabel.value = progressLabels.value.checking
+      await yieldToMain()
+      // Quick content check before handing to STLLoader — avoids cryptic
+      // RangeErrors when a non-STL file slips past the extension-only gate.
+      const headerBytes = new Uint8Array(buffer, 0, Math.min(80, buffer.byteLength))
+      const headerStr = Array.from(headerBytes, (b) => String.fromCodePoint(b)).join('').trim().toLowerCase()
+      const looksLikeStl = headerStr.startsWith('solid') || buffer.byteLength >= 84
+      if (!looksLikeStl) {
+        throw new Error('This file does not appear to be a valid STL file. Only binary and ASCII STL files are supported.')
+      }
       const loader = new STLLoader()
       const geometry = normalizeForPreview(loader.parse(buffer))
       geometry.computeBoundingBox()
       geometry.computeVertexNormals()
+      await yieldToMain()
       let workingGeometry = geometry
       let wasRepaired = false
       const initialInfo = validateManifold(workingGeometry)
       if (!initialInfo.watertight) {
         progressLabel.value = progressLabels.value.repairing
+        await yieldToMain()
         const repaired = await repairMeshGeometryRobust(workingGeometry)
         progressLabel.value = progressLabels.value.checking
         if (repaired) {
           const repairedInfo = validateManifold(repaired)
+          await yieldToMain()
           pendingOriginalGeometry = geometry
           repairPreview.value = {
             beforeUrl: renderPartThumbnail(geometry),
@@ -146,7 +159,7 @@ export function useMeshProcessor(options = {}) {
 
       sourceGeometry.value = markRaw(workingGeometry)
       scaleFactor.value = 1
-
+      await yieldToMain()
       return setMeshState(workingGeometry.clone(), file.name, { wasRepaired })
     } catch (e) {
       error.value = e.message
@@ -344,7 +357,12 @@ export function useMeshProcessor(options = {}) {
   // call this instead.
   function clearProblemEdges() {
     problemEdges.value = []
-    error.value = null
+    // When the loaded mesh itself is non-watertight (repair failed at load time),
+    // keep the error so the user knows why the split button stays disabled.
+    // Split-time errors on watertight meshes get cleared normally.
+    if (meshInfo.value?.is_watertight !== false) {
+      error.value = null
+    }
   }
 
   function clearMesh() {

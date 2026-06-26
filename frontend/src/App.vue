@@ -275,7 +275,7 @@ const appVersion = pkg.version
 // Mobile layout: a reactive breakpoint flag drives the accordion, the fixed
 // action bar, and which upload UI renders. Desktop is unaffected.
 const isMobile = useIsMobile()
-const openSection = ref('volume')
+const openSection = ref(null)
 function toggleSection(name) {
   openSection.value = openSection.value === name ? null : name
 }
@@ -464,10 +464,10 @@ const appTranslations = {
     exportPanel: {
       preparing: 'Preparing package...',
       downloadPackage: 'Download package (STL + PDF ZIP)',
-      costFree: 'Uses 1 free export · {n} left this month',
-      costCredit: 'Uses 1 credit',
-      costUnlocked: 'Already paid · re-download is free',
-      costSignIn: 'Sign in to export',
+      costFree: 'Free ({n})',
+        costCredit: 'Uses 1 credit',
+        costUnlocked: 'Already paid · re-download is free',
+        costSignIn: 'Sign in to export',
     },
     mobileActionBar: {
       splitMesh: 'Split',
@@ -613,10 +613,10 @@ const appTranslations = {
     exportPanel: {
       preparing: 'กำลังเตรียมแพ็กเกจ...',
       downloadPackage: 'ดาวน์โหลดแพ็กเกจ (STL + PDF ZIP)',
-      costFree: 'ใช้สิทธิ์ส่งออกฟรี 1 ครั้ง · เหลือ {n} ครั้งเดือนนี้',
-      costCredit: 'ใช้ 1 เครดิต',
-      costUnlocked: 'ชำระแล้ว · ดาวน์โหลดซ้ำฟรี',
-      costSignIn: 'เข้าสู่ระบบเพื่อส่งออก',
+      costFree: 'ฟรี ({n})',
+        costCredit: 'ใช้ 1 เครดิต',
+        costUnlocked: 'ชำระแล้ว · ดาวน์โหลดซ้ำฟรี',
+        costSignIn: 'เข้าสู่ระบบเพื่อส่งออก',
     },
     mobileActionBar: {
       splitMesh: 'แยก',

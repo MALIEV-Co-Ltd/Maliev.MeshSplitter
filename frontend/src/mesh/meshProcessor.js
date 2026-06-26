@@ -585,7 +585,7 @@ export function orderPartsByConnectivity(chunks) {
   )
 }
 
-function yieldToMain() {
+export function yieldToMain() {
   return new Promise(resolve => {
     requestAnimationFrame(() => setTimeout(resolve, 0))
   })

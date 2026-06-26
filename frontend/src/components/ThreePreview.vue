@@ -915,7 +915,14 @@ function frameToProblem() {
     if (child.geometry) box.expandByObject(child)
   })
   if (box.isEmpty()) return
+  // Save so fitCamera's overwrite doesn't tighten clipping planes to the
+  // tiny problem-edges bounds — the restored sphere keeps near/far generous.
+  const saved = framedSphere ? framedSphere.clone() : null
   fitCamera(box)
+  if (saved) {
+    framedSphere = saved
+    updateClippingPlanes()
+  }
 }
 
 defineExpose({ frameToProblem })

@@ -1152,8 +1152,9 @@
     text-transform: uppercase;
   }
 
-  .canvas-label {
+    .canvas-label {
     color: var(--signal-600);
+    display: none;
     left: 14px;
     top: 12px;
   }
@@ -2308,6 +2309,10 @@
       min-width: 0;
     }
 
+    .app-logo img {
+      display: none;
+    }
+
     .header-right {
       flex: none;
       margin-left: auto;
@@ -2329,7 +2334,7 @@
     .col-center {
       order: 0;
       flex: none;
-      height: 46dvh;
+      height: 38dvh;
       min-height: 0;
     }
 

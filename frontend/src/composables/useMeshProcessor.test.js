@@ -17,6 +17,7 @@ const {
   mockRepairMeshGeometryRobust,
   mockComputeProblemEdges,
   mockStlParse,
+  mockYieldToMain,
 } = vi.hoisted(() => ({
   mockValidateManifold: vi.fn(),
   mockComputeVolume: vi.fn(),
@@ -33,6 +34,7 @@ const {
   mockRepairMeshGeometryRobust: vi.fn(),
   mockComputeProblemEdges: vi.fn(),
   mockStlParse: vi.fn(),
+  mockYieldToMain: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('../mesh/meshProcessor', () => ({
@@ -51,6 +53,7 @@ vi.mock('../mesh/meshProcessor', () => ({
   prepareExportChunks: mockPrepareExportChunks,
   repairMeshGeometryRobust: mockRepairMeshGeometry,
   computeProblemEdges: mockRepairMeshGeometry,
+  yieldToMain: mockYieldToMain,
 }))
 
 vi.mock('three/addons/loaders/STLLoader.js', () => ({
@@ -75,7 +78,8 @@ function createTranslatedMockGeometry() {
 
 function createMockFile(name, content = 'stl data') {
   const file = new File([content], name, { type: 'application/sla' })
-  file.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(8))
+  // Minimum 84 bytes so the header check (buffer.byteLength >= 84) passes
+  file.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(84))
   return file
 }
 
