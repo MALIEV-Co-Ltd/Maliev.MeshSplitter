@@ -10,6 +10,7 @@ import {
   exportPackage,
   orderPartsByConnectivity,
   repairMeshGeometry,
+  repairMeshGeometryRobust,
   splitMeshManifold,
   validateConnectorPosition,
   validateExportChunks,
@@ -94,6 +95,38 @@ describe('splitMeshManifold', () => {
       expect(chunk.label).toMatch(/^P\d{2}-X0Y0Z0-B\d$/)
       expect(validateManifold(chunk.geometry).watertight).toBe(true)
     })
+  })
+
+  // Regression: a self-intersecting input (here two interpenetrating boxes,
+  // standing in for the bolt's recess shell that overlaps its own body) used to
+  // pass Manifold.ofMesh's topology check yet split into an exploded, multi-body
+  // "star". repairMeshGeometryRobust must resolve the self-intersection with a
+  // real boolean union so the result is a single watertight solid whose volume
+  // is the true union (NOT the double-counted naive sum), and splitting it must
+  // not fracture it into extra bodies.
+  it('resolves a self-intersecting mesh into a clean single-body solid', async () => {
+    const boxA = new THREE.BoxGeometry(20, 20, 20)
+    const boxB = new THREE.BoxGeometry(20, 20, 20).translate(10, 0, 0)
+    const selfIntersecting = mergeTestGeometries([boxA, boxB])
+
+    // Naive signed-volume double-counts the overlap (8000 + 8000 = 16000); the
+    // true union of the 30x20x20 envelope is 12000.
+    expect(computeVolume(selfIntersecting)).toBeCloseTo(16000, -2)
+
+    const repaired = await repairMeshGeometryRobust(selfIntersecting)
+    expect(repaired).not.toBeNull()
+    expect(validateManifold(repaired).watertight).toBe(true)
+    // Self-intersection resolved: volume collapses to the true union, well under
+    // the naive sum.
+    expect(computeVolume(repaired)).toBeGreaterThan(11000)
+    expect(computeVolume(repaired)).toBeLessThan(13000)
+
+    // Splitting the repaired solid must keep it as a single connected body, not
+    // explode it.
+    const chunks = await splitMeshManifold(new THREE.Mesh(repaired), [256, 256, 250], [1, 1, 1])
+    expect(chunks).toHaveLength(1)
+    expect(validateManifold(chunks[0].geometry).watertight).toBe(true)
+    expect(chunks[0].label).toMatch(/^P\d{2}-X0Y0Z0$/)
   })
 
   it('splits disconnected bodies before connector placement so each body can receive a connector', async () => {

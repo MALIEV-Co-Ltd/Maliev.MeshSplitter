@@ -9,8 +9,11 @@
       <div class="repair-dialog__previews">
         <div class="repair-dialog__preview">
           <div class="repair-dialog__preview-label">{{ labels.before }}</div>
-          <img v-if="preview.beforeUrl" :src="preview.beforeUrl" alt="Before repair" />
-          <div v-else class="repair-dialog__preview-empty" />
+          <div class="repair-dialog__canvas">
+            <RepairPreviewCanvas v-if="preview.beforeGeometry" :geometry="preview.beforeGeometry" :color="0xc0c0c0" />
+            <img v-else-if="preview.beforeUrl" :src="preview.beforeUrl" alt="Before repair" />
+            <div v-else class="repair-dialog__preview-empty" />
+          </div>
           <div class="repair-dialog__stats">
             {{ preview.beforeStats.faces.toLocaleString() }} {{ labels.faces }} &middot;
             {{ preview.beforeStats.verts.toLocaleString() }} {{ labels.verts }}
@@ -19,14 +22,18 @@
         <div class="repair-dialog__arrow">→</div>
         <div class="repair-dialog__preview">
           <div class="repair-dialog__preview-label repair-dialog__preview-label--after">{{ labels.after }}</div>
-          <img v-if="preview.afterUrl" :src="preview.afterUrl" alt="After repair" />
-          <div v-else class="repair-dialog__preview-empty" />
+          <div class="repair-dialog__canvas">
+            <RepairPreviewCanvas v-if="preview.afterGeometry" :geometry="preview.afterGeometry" :color="0x3b82f6" />
+            <img v-else-if="preview.afterUrl" :src="preview.afterUrl" alt="After repair" />
+            <div v-else class="repair-dialog__preview-empty" />
+          </div>
           <div class="repair-dialog__stats">
             {{ preview.afterStats.faces.toLocaleString() }} {{ labels.faces }} &middot;
             {{ preview.afterStats.verts.toLocaleString() }} {{ labels.verts }}
           </div>
         </div>
       </div>
+      <p v-if="preview.beforeGeometry" class="repair-dialog__hint">Drag to rotate each view</p>
 
       <div class="repair-dialog__actions">
         <Button class="repair-dialog__btn" @click="onConfirm">
@@ -40,6 +47,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { Button } from '@/components/ui/button'
+import RepairPreviewCanvas from './RepairPreviewCanvas.vue'
 
 const props = defineProps({
   preview: { type: Object, required: true },
@@ -74,9 +82,10 @@ function onConfirm() {
 .repair-dialog {
   background: transparent;
   border: none;
-  max-width: 720px;
+  max-height: 90vh;
+  max-width: 1100px;
   padding: 0;
-  width: 90vw;
+  width: 92vw;
 }
 .repair-dialog::backdrop {
   background: oklch(0 0 0 / 0.48);
@@ -86,7 +95,9 @@ function onConfirm() {
   border: 1px solid var(--steel-200);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  padding: 24px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
 }
 .repair-dialog__head h2 {
   font-size: 16px;
@@ -101,18 +112,22 @@ function onConfirm() {
 .repair-dialog__previews {
   align-items: center;
   display: flex;
-  gap: 16px;
+  gap: 24px;
   justify-content: center;
   margin-bottom: 20px;
 }
 .repair-dialog__preview {
   flex: 1;
-  max-width: 300px;
+  max-width: 460px;
   text-align: center;
 }
-.repair-dialog__preview img {
+.repair-dialog__canvas {
   border: 1px solid var(--steel-200);
   border-radius: var(--radius-sm);
+  height: 420px;
+  overflow: hidden;
+}
+.repair-dialog__preview img {
   display: block;
   height: auto;
   margin: 0 auto;
@@ -120,9 +135,13 @@ function onConfirm() {
 }
 .repair-dialog__preview-empty {
   background: var(--steel-100);
-  border: 1px solid var(--steel-200);
-  border-radius: var(--radius-sm);
-  height: 168px;
+  height: 100%;
+}
+.repair-dialog__hint {
+  color: var(--steel-400);
+  font-size: 11px;
+  margin: -12px 0 16px;
+  text-align: center;
 }
 .repair-dialog__preview-label {
   font-family: var(--font-mono);
@@ -147,10 +166,40 @@ function onConfirm() {
 }
 .repair-dialog__actions {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
 }
 .repair-dialog__btn {
-  max-width: 200px;
-  width: 100%;
+  width: auto;
+}
+
+@media (max-width: 700px) {
+  .repair-dialog {
+    max-height: 95vh;
+    width: 96vw;
+  }
+  .repair-dialog__panel {
+    max-height: 95vh;
+    padding: 18px;
+  }
+  .repair-dialog__previews {
+    flex-direction: column;
+    gap: 18px;
+  }
+  .repair-dialog__preview {
+    max-width: none;
+    width: 100%;
+  }
+  .repair-dialog__canvas {
+    height: 240px;
+  }
+  .repair-dialog__arrow {
+    transform: rotate(90deg);
+  }
+  .repair-dialog__actions {
+    justify-content: stretch;
+  }
+  .repair-dialog__btn {
+    width: 100%;
+  }
 }
 </style>

@@ -160,6 +160,8 @@ export function useMeshProcessor(options = {}) {
         repairPreview.value = {
           beforeUrl: renderPartThumbnail(geometry),
           afterUrl: renderPartThumbnail(repaired),
+          beforeGeometry: markRaw(geometry.clone()),
+          afterGeometry: markRaw(repaired.clone()),
           beforeStats: { faces: initialInfo.faceCount, verts: initialInfo.vertCount },
           afterStats: { faces: repairedInfo.faceCount, verts: repairedInfo.vertCount },
           filename: file.name,
