@@ -61,3 +61,13 @@ described in `docs/SHOPIFY_APP_PROXY_SETUP.md`.
 The included `Dockerfile` builds the frontend and runs the app as a single
 web service suitable for Render, Fly.io, Railway, or any container host with
 Postgres.
+
+## Local network deployment (Synology NAS)
+
+For home-lab LAN access with automatic `:main` updates on each `main` push:
+
+- Deploy using [docker-compose.lan.yml](docker-compose.lan.yml)
+- Use [deploy-mesh-splitter-lan.sh](deploy-mesh-splitter-lan.sh) for one-command pull/update/deploy.
+- Or use [deploy-mesh-splitter-lan.ps1](deploy-mesh-splitter-lan.ps1) from a NAS shell with PowerShell.
+- Use [LOCAL_DEPLOYMENT.md](LOCAL_DEPLOYMENT.md), including `verify-mesh-splitter-lan.sh` and `verify-mesh-splitter-lan.ps1`.
+- Validate with `curl https://mesh-splitter.local/health` after deployment

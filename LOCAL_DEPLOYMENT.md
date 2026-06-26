@@ -1,0 +1,208 @@
+# Local LAN deployment (Synology NAS)
+
+Use this flow to make Mesh Splitter available to all devices on your LAN at `https://mesh-splitter.local`.
+
+## 1) One-time host setup
+
+- Ensure NAS has a stable local IP and hostname `mesh-splitter`.
+- Ensure `mesh-splitter.local` resolves on the local network (Bonjour/mDNS is typical on Synology).
+- Install **Container Manager** in DSM.
+
+## 2) Prepare deployment files
+
+On the NAS, create a folder (for example `/volume1/docker/mesh-splitter`) and copy:
+
+- [`docker-compose.lan.yml`](docker-compose.lan.yml)
+- [`.env.mesh-splitter.local.example`](.env.mesh-splitter.local.example) (rename to `.env.mesh-splitter.local` and fill values)
+- [`deploy-mesh-splitter-lan.sh`](deploy-mesh-splitter-lan.sh)
+- [`deploy-mesh-splitter-lan.ps1`](deploy-mesh-splitter-lan.ps1)
+- [`verify-mesh-splitter-lan.sh`](verify-mesh-splitter-lan.sh)
+- [`verify-mesh-splitter-lan.ps1`](verify-mesh-splitter-lan.ps1)
+
+## 3) Fill `.env.mesh-splitter.local`
+
+```bash
+cp .env.mesh-splitter.local.example .env.mesh-splitter.local
+# edit required values
+```
+
+Required minimum values:
+
+- `SESSION_SECRET`
+- `SHOPIFY_APP_PROXY_SECRET`
+
+Optional:
+
+- `DATABASE_URL` to persist credits and sessions
+- `CREDIT_STORE=postgres` when you provide `DATABASE_URL`
+- `CORS_ALLOW_ORIGIN=https://mesh-splitter.local`
+
+## 4) Start the stack
+
+### 4a) NAS shell (Linux)
+
+```bash
+cd /volume1/docker/mesh-splitter
+chmod +x deploy-mesh-splitter-lan.sh
+chmod +x verify-mesh-splitter-lan.sh
+./deploy-mesh-splitter-lan.sh
+```
+
+> First-time bootstrap only (required for private GHCR image pull):
+> `sudo docker login ghcr.io`
+
+### 4b) NAS shell (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy-mesh-splitter-lan.ps1
+```
+
+### 4c) Manual compose (either shell style)
+
+```bash
+docker compose -f docker-compose.lan.yml --env-file .env.mesh-splitter.local up -d --force-recreate
+```
+
+or
+
+```bash
+docker-compose -f docker-compose.lan.yml --env-file .env.mesh-splitter.local up -d --force-recreate
+```
+
+Verify local container health:
+
+```bash
+PORT="${MESH_SPLITTER_HOST_PORT:-3000}"
+curl -fsS "http://localhost:${PORT}/health"
+# -> {"ok":true}
+```
+
+## 5) Expose HTTPS on `https://mesh-splitter.local`
+
+In DSM reverse proxy create a rule:
+
+- Source: host `mesh-splitter.local`, protocol `HTTPS`, port `443`, path `/`
+- Destination: host `127.0.0.1`, protocol `HTTP`, port `3000`, path `/tools/mesh-splitter`
+
+Attach a certificate to `mesh-splitter.local` in DSM certificates.
+
+Health and readiness on the LAN domain:
+
+```bash
+curl -k https://mesh-splitter.local/health
+# -> {"ok":true}
+```
+
+## 5b) One-shot end-to-end validation after deployment
+
+Run this set after first deploy, and again after a `main` push:
+
+```bash
+if ping -c 2 mesh-splitter.local >/dev/null 2>&1; then
+  echo "DNS hostname resolves."
+else
+  echo "mesh-splitter.local did not resolve yet. Ensure Bonjour/mDNS is working."
+  exit 1
+fi
+
+PORT="${MESH_SPLITTER_HOST_PORT:-3000}"
+curl -fsS "http://127.0.0.1:${PORT}/health"
+curl -k https://mesh-splitter.local/health
+```
+
+From NAS PowerShell:
+
+```powershell
+if (Test-Connection -Count 2 mesh-splitter.local -ErrorAction SilentlyContinue) {
+  Write-Output "DNS hostname resolves."
+} else {
+  Write-Error "mesh-splitter.local did not resolve yet. Ensure Bonjour/mDNS is working."
+  exit 1
+}
+
+$portEnv = [string]$env:MESH_SPLITTER_HOST_PORT
+if (-not [int]::TryParse($portEnv, [ref]$port)) { $port = 3000 }
+Invoke-WebRequest -Uri "http://127.0.0.1:$port/health" | Select-Object -ExpandProperty Content
+Invoke-WebRequest -Uri https://mesh-splitter.local/health -SkipCertificateCheck | Select-Object -ExpandProperty Content
+```
+
+Quick pre-checks when something looks down:
+
+- Ensure route resolves:
+  - `ping mesh-splitter.local`
+- Ensure DSM reverse proxy rule is active for host/path mapping.
+- Check container status:
+  - `docker compose -f docker-compose.lan.yml --env-file .env.mesh-splitter.local ps`
+
+If your NAS exposes only `docker-compose`, run:
+
+- `docker-compose -f docker-compose.lan.yml --env-file .env.mesh-splitter.local ps`
+
+## 6) Keep the version updated automatically
+
+This compose file uses Watchtower (`mesh-splitter-watchtower`) on the same stack:
+
+- Pulls `ghcr.io/maliev-co-ltd/maliev.meshsplitter:main` from GHCR.
+- Restarts `mesh-splitter` when the digest changes.
+- If watchtower fails to pull from GHCR, confirm your root Docker login cache is present
+  (run `docker login ghcr.io` as root on the NAS once). This compose mounts `/root/.docker`
+  into the watchtower container to reuse that auth for private image pulls.
+
+Manual refresh fallback:
+
+```bash
+docker compose -f docker-compose.lan.yml --env-file .env.mesh-splitter.local pull
+docker compose -f docker-compose.lan.yml --env-file .env.mesh-splitter.local up -d --force-recreate
+```
+
+## 7) Verify `:main` refresh after main deployment
+
+After a `main` push (CI publishes `ghcr.io/maliev-co-ltd/maliev.meshsplitter:main`),
+watch for Watchtower updates:
+
+```bash
+docker logs mesh-splitter-watchtower --since 10m | grep -i "mesh-splitter"
+```
+
+Expected behavior: you'll see the image pull/update events and then a container restart for `mesh-splitter`.
+
+### 7b) One-command post-deploy health check
+
+Use the verifier directly:
+
+```bash
+cd /volume1/docker/mesh-splitter
+./verify-mesh-splitter-lan.sh
+```
+
+or
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\verify-mesh-splitter-lan.ps1
+```
+
+The verifier expects the running container to match `MESH_SPLITTER_IMAGE` from your env file
+(default `ghcr.io/maliev-co-ltd/maliev.meshsplitter:main`).
+
+Optional quick validation after deployment:
+
+```bash
+docker compose -f docker-compose.lan.yml --env-file .env.mesh-splitter.local logs --tail 120 mesh-splitter
+curl -k https://mesh-splitter.local/health
+```
+
+Concrete one-shot check for tag refresh:
+
+```bash
+echo "Image now configured in compose:"
+docker inspect mesh-splitter --format='{{.Config.Image}}'
+
+echo "Container restart count:"
+docker inspect mesh-splitter --format='{{.RestartCount}}'
+
+echo "Container start time:"
+docker inspect mesh-splitter --format='{{.State.StartedAt}}'
+
+echo "Watchtower pull/recreate logs:"
+docker logs mesh-splitter-watchtower --since 15m | grep -i "mesh-splitter"
+```
