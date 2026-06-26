@@ -126,6 +126,21 @@ describe('SplitConfig', () => {
       diameter: 6,
     })
   })
+
+  it('hides the internal split button when showSplitButton is false', () => {
+    const wrapper = mount(SplitConfig, {
+      props: { v: [250, 250, 250], ok: true, showSplitButton: false },
+    })
+    expect(wrapper.find('.split-btn').exists()).toBe(false)
+  })
+
+  it('exposes requestSplit that runs the split flow (Key default emits directly)', () => {
+    const wrapper = mount(SplitConfig, {
+      props: { v: [250, 250, 250], ok: true },
+    })
+    wrapper.vm.requestSplit()
+    expect(wrapper.emitted('split')).toBeTruthy()
+  })
 })
 
 async function selectConnector(wrapper, label) {
