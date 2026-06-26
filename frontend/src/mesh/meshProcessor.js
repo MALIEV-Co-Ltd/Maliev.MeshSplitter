@@ -654,15 +654,6 @@ export function yieldToMain() {
 
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
-  const repaired = await repairMeshGeometryRobust(splitGeometry)
-  if (repaired === null) {
-    const boundaryData = computeProblemEdges(splitGeometry)
-    throw Object.assign(
-      new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'),
-      { boundaryData }
-    )
-  }
-  if (repaired !== splitGeometry) splitGeometry = repaired
 
   const [dx, dy, dz] = gridDivisions.map(Number)
   if (dx === 0 || dy === 0 || dz === 0) return []
@@ -672,11 +663,38 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
 
   const manifold = await getManifoldModule()
   const manifoldMesh = geometryToManifoldMesh(splitGeometry, manifold)
-  const solid = manifold.Manifold.ofMesh(manifoldMesh)
-  const status = solid.status()
+  let solid
+  try {
+    solid = manifold.Manifold.ofMesh(manifoldMesh)
+  } catch {
+    // ofMesh throws on non-manifold input — try repair
+  }
+  const status = solid ? solid.status() : 'NotManifold'
+
   if (status !== 'NoError') {
-    solid.delete?.()
-    throw new Error(`Input mesh is not manifold (${status})`)
+    solid?.delete?.()
+    // Geometry is not manifold — attempt repair as fallback
+    const repaired = await repairMeshGeometryRobust(splitGeometry)
+    if (repaired === null) {
+      const boundaryData = computeProblemEdges(splitGeometry)
+      throw Object.assign(
+        new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'),
+        { boundaryData }
+      )
+    }
+    if (repaired !== splitGeometry) splitGeometry = repaired
+    // Re-create the Manifold solid from the repaired geometry
+    const repairedMesh = geometryToManifoldMesh(splitGeometry, manifold)
+    try {
+      solid = manifold.Manifold.ofMesh(repairedMesh)
+    } catch (e) {
+      throw new Error(`Input mesh is not manifold (${e.message || e})`)
+    }
+    if (solid.status() !== 'NoError') {
+      const s = solid.status()
+      solid.delete?.()
+      throw new Error(`Input mesh is not manifold (${s})`)
+    }
   }
 
   splitGeometry.computeBoundingBox()
