@@ -110,3 +110,19 @@ if docker logs mesh-splitter-watchtower --since 10m 2>/dev/null | grep -Ei "unau
   exit 1
 fi
 echo "No recent watchtower auth errors detected."
+echo "Watchtower auth env check:"
+if docker inspect mesh-splitter-watchtower >/dev/null 2>&1; then
+  docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+    | grep -E '^REPO_(USER|PASS)=|^DOCKER_CONFIG=' \
+    | sed -E 's/^(REPO_PASS)=.*/\1=********/'
+fi
+echo "Watchtower auth config check:"
+if [ -r /root/.docker/config.json ]; then
+  if grep -q '"ghcr.io"' /root/.docker/config.json 2>/dev/null; then
+    echo "Found ghcr.io entry in /root/.docker/config.json."
+  else
+    echo "No ghcr.io auth entry found in /root/.docker/config.json."
+  fi
+else
+  echo "/root/.docker/config.json is not present on NAS."
+fi

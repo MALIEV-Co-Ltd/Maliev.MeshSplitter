@@ -44,6 +44,19 @@ ENV_GHCR_TOKEN="$(sed -n 's/^[[:space:]]*GHCR_TOKEN[[:space:]]*=//p' "${ENV_FILE
 if [ -z "${ENV_GHCR_USERNAME:-}" ] || [ -z "${ENV_GHCR_TOKEN:-}" ]; then
   echo "WARNING: GHCR_USERNAME or GHCR_TOKEN is not set in .env.mesh-splitter.local."
   echo "Without GHCR credentials, private image pulls may fail in watchtower."
+else
+  echo "Ensuring GHCR authentication for Docker daemon (for watchtower and local pulls)..."
+  if printf '%s' "${ENV_GHCR_TOKEN}" | docker login ghcr.io -u "${ENV_GHCR_USERNAME}" --password-stdin >/dev/null 2>&1; then
+    echo "GHCR login succeeded."
+  else
+    echo "GHCR login failed. Check GHCR_USERNAME/GHCR_TOKEN."
+  fi
+fi
+
+if [ ! -r /root/.docker/config.json ]; then
+  echo "WARNING: /root/.docker/config.json not found after login attempt."
+else
+  echo "Using Docker auth config at /root/.docker/config.json."
 fi
 
 cd "${INSTALL_DIR}"

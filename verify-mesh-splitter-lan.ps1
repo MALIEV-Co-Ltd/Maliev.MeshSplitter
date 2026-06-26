@@ -84,6 +84,42 @@ if (-not $expectedImage) {
   $expectedImage = 'ghcr.io/maliev-co-ltd/maliev.meshsplitter:main'
 }
 
+function Get-EnvValue {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Key
+  )
+  $line = Get-Content -Path $Path | Where-Object { $_ -match "^\s*$([regex]::Escape($Key))\s*=\s*" } | Select-Object -First 1
+  if ($line -and $line -match "^\s*$([regex]::Escape($Key))\s*=\s*(.+)$") {
+    return ($Matches[1] -split '#')[0].Trim().Trim("'", '"')
+  }
+  return ''
+}
+
+$ghcrUser = Get-EnvValue -Path $EnvFile -Key 'GHCR_USERNAME'
+$ghcrToken = Get-EnvValue -Path $EnvFile -Key 'GHCR_TOKEN'
+
+if ($ghcrUser -and $ghcrToken) {
+  Write-Output 'Ensuring GHCR authentication for Docker daemon (for watchtower and local pulls)...'
+  $secureToken = ConvertTo-SecureString $ghcrToken -AsPlainText -Force
+  $cred = New-Object System.Management.Automation.PSCredential ($ghcrUser, $secureToken)
+  try {
+    $plainToken = $cred.GetNetworkCredential().Password
+    $null = echo $plainToken | docker login ghcr.io -u $ghcrUser --password-stdin
+    Write-Output 'GHCR login succeeded.'
+  } catch {
+    Write-Warning 'GHCR login failed. Check GHCR_USERNAME/GHCR_TOKEN.'
+  }
+} else {
+  Write-Warning 'GHCR_USERNAME or GHCR_TOKEN is not set in .env file. Watchtower pull may fail for private GHCR images.'
+}
+
+if (Test-Path '/root/.docker/config.json') {
+  Write-Output 'Using Docker auth config at /root/.docker/config.json.'
+} else {
+  Write-Warning '/root/.docker/config.json is not present on NAS.'
+}
+
 Push-Location -Path $InstallDir
 
 Invoke-MeshSplitterCompose -Command $composeCmd -Arguments @('-f', $ComposeFile, '--env-file', $EnvFile, 'ps')
@@ -154,6 +190,10 @@ if (Get-Command Invoke-WebRequest -ErrorAction SilentlyContinue) {
 if (Get-Command docker -ErrorAction SilentlyContinue) {
   Write-Output 'Watchtower activity (last 10m):'
   docker logs mesh-splitter-watchtower --since 10m 2>$null | Select-String -Pattern 'mesh-splitter' -SimpleMatch | ForEach-Object { $_.Line }
+  Write-Output 'Watchtower auth/error signals (if any):'
+  docker logs mesh-splitter-watchtower --since 10m 2>$null |
+    Select-String -Pattern 'unauthorized|403|auth.*not present' |
+    ForEach-Object { $_.Line }
 }
 
 Pop-Location
