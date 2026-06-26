@@ -20,7 +20,7 @@
         <img :src="logoUrl" alt="MALIEV" />
         <span>Mesh Splitter</span>
       </a>
-      <div class="app-status" aria-label="Workflow status">
+      <div v-if="!isMobile" class="app-status" aria-label="Workflow status">
         <span class="status-chip" :class="{ ok: meshInfo?.is_watertight }">
           <span class="dot"></span>{{ meshInfo?.is_watertight ? uiCopy.watertight : uiCopy.awaitingMesh }}
         </span>
@@ -35,6 +35,11 @@
         </span>
       </div>
       <div class="header-right">
+        <button v-if="isMobile" type="button" class="status-chip credit-chip credit-chip--action" :title="uiCopy.getCredits" @click="showCreditDialog">
+          <Loader2Icon v-if="showCreditSpinner" :size="12" :stroke-width="2" class="coin-icon animate-spin" />
+          <CoinsIcon v-else :size="12" :stroke-width="1.75" class="coin-icon" />
+          {{ creditChipText }}
+        </button>
         <Button variant="ghost" size="icon-sm" :aria-label="uiCopy.toggleTheme" @click="toggleTheme">
           <SunIcon v-if="isDark" :size="16" :stroke-width="1.75" />
           <MoonIcon v-else :size="16" :stroke-width="1.75" />
@@ -42,17 +47,18 @@
         <Button variant="ghost" size="sm" class="language-toggle" @click="toggleLocale">
           {{ locale === 'th' ? 'EN' : 'ไทย' }}
         </Button>
-        <Button variant="outline" size="sm" @click="showCreditDialog">
+        <Button v-if="!isMobile" variant="outline" size="sm" @click="showCreditDialog">
           {{ uiCopy.buyCredits }}
         </Button>
       </div>
     </header>
     <div class="workspace-grid">
       <section class="col-left">
-        <MeshUploader :mesh-info="meshInfo" :loading="loading" :progress-label="progressLabel" :error="visibleError" :labels="uiCopy.uploader" @upload="onUpload" />
+        <MeshUploader v-if="!isMobile" :mesh-info="meshInfo" :loading="loading" :progress-label="progressLabel" :error="visibleError" :labels="uiCopy.uploader" @upload="onUpload" />
         <PartList
           :chunks="chunks"
           :selected-chunk-index="selectedChunkIndex"
+          :compact="isMobile"
           :labels="uiCopy.partList"
           @select="onSelectChunk"
         />
@@ -82,7 +88,8 @@
             />
           </CardContent>
         </Card>
-        <div v-if="meshInfo" class="canvas-inspector" aria-label="Mesh details">
+        <CanvasUploadOverlay v-if="isMobile" :has-mesh="!!meshInfo" :labels="uiCopy.uploader" @upload="onUpload" />
+        <div v-if="meshInfo && !isMobile" class="canvas-inspector" aria-label="Mesh details">
           <div class="canvas-inspector__head">
             <span>{{ uiCopy.meshDetails }}</span>
             <span>{{ meshInfo.is_watertight ? uiCopy.watertight : uiCopy.checkMesh }}</span>
@@ -116,18 +123,42 @@
       </section>
 
       <section class="col-right">
-        <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
-        <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
-        <SplitConfig :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
-        <ExportPanel
-          :has-chunks="chunks.length > 0 && canSplitMesh"
-          :loading="loading || exportingPackage"
-          :cost="exportCost"
-          :labels="uiCopy.exportPanel"
-          @export-package="onExportPackage"
-        />
+        <template v-if="isMobile">
+          <AccordionSection :title="uiCopy.buildVolume.title" :icon="BoxIcon" :open="openSection === 'volume'" @toggle="toggleSection('volume')">
+            <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
+          </AccordionSection>
+          <AccordionSection :title="uiCopy.scaleConfig.title" :icon="RulerIcon" :open="openSection === 'scale'" @toggle="toggleSection('scale')">
+            <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
+          </AccordionSection>
+          <AccordionSection :title="uiCopy.splitConfig.title" :icon="LayersIcon" :open="openSection === 'split'" @toggle="toggleSection('split')">
+            <SplitConfig ref="splitConfigRef" :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" :show-split-button="false" @split="onSplit" />
+          </AccordionSection>
+        </template>
+        <template v-else>
+          <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
+          <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
+          <SplitConfig :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
+          <ExportPanel
+            :has-chunks="chunks.length > 0 && canSplitMesh"
+            :loading="loading || exportingPackage"
+            :cost="exportCost"
+            :labels="uiCopy.exportPanel"
+            @export-package="onExportPackage"
+          />
+        </template>
       </section>
     </div>
+    <MobileActionBar
+      v-if="isMobile"
+      :can-split="canSplitMesh"
+      :has-chunks="chunks.length > 0 && canSplitMesh"
+      :loading="loading || exportingPackage || splitAuthorizing"
+      :progress-label="progressLabel"
+      :cost="exportCost"
+      :labels="uiCopy.mobileActionBar"
+      @split="onMobileSplit"
+      @export-package="onExportPackage"
+    />
     <dialog ref="creditDialog" class="credit-modal" @click.self="closeCreditDialog">
       <div class="credit-modal__panel">
         <header class="credit-modal__head">
@@ -208,11 +239,12 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon, Tags as TagsIcon } from '@lucide/vue'
+import { Coins as CoinsIcon, Loader2 as Loader2Icon, X as XIcon, Sun as SunIcon, Moon as MoonIcon, Tags as TagsIcon, Box as BoxIcon, Ruler2 as RulerIcon, Layers2 as LayersIcon } from '@lucide/vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useMeshProcessor } from './composables/useMeshProcessor'
 import { useCredits } from './composables/useCredits'
+import { useIsMobile } from './composables/useIsMobile'
 import logoWordmarkBlack from './assets/logos/maliev-wordmark-black.svg'
 import logoWordmarkWhite from './assets/logos/maliev-wordmark-white.svg'
 
@@ -225,6 +257,9 @@ import ThreePreview from './components/ThreePreview.vue'
 import PartList from './components/PartList.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import NonManifoldErrorDialog from './components/NonManifoldErrorDialog.vue'
+import AccordionSection from './components/AccordionSection.vue'
+import MobileActionBar from './components/MobileActionBar.vue'
+import CanvasUploadOverlay from './components/CanvasUploadOverlay.vue'
 import PublicLanding from './components/PublicLanding.vue'
 import { calculateAutoDivisions } from './mesh/splitPlanning'
 import { exportIdempotencyKey } from './lib/exportIdentity'
@@ -234,6 +269,18 @@ import pkg from '../package.json'
 // Shown small in the canvas corner so we can see at a glance which release is
 // live in production. Bundled at build time from the frontend package version.
 const appVersion = pkg.version
+
+// Mobile layout: a reactive breakpoint flag drives the accordion, the fixed
+// action bar, and which upload UI renders. Desktop is unaffected.
+const isMobile = useIsMobile()
+const openSection = ref('volume')
+function toggleSection(name) {
+  openSection.value = openSection.value === name ? null : name
+}
+const splitConfigRef = ref(null)
+function onMobileSplit() {
+  splitConfigRef.value?.requestSplit()
+}
 
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
@@ -420,6 +467,11 @@ const appTranslations = {
       costUnlocked: 'Already paid · re-download is free',
       costSignIn: 'Sign in to export',
     },
+    mobileActionBar: {
+      splitMesh: 'Split',
+      export: 'Export',
+      working: 'Working…',
+    },
     loginRequired: {
       eyebrow: 'Free account required',
       title: 'Sign in to export your split package',
@@ -563,6 +615,11 @@ const appTranslations = {
       costCredit: 'ใช้ 1 เครดิต',
       costUnlocked: 'ชำระแล้ว · ดาวน์โหลดซ้ำฟรี',
       costSignIn: 'เข้าสู่ระบบเพื่อส่งออก',
+    },
+    mobileActionBar: {
+      splitMesh: 'แยก',
+      export: 'ส่งออก',
+      working: 'กำลังทำงาน…',
     },
     loginRequired: {
       eyebrow: 'ต้องมีบัญชีฟรี',
