@@ -10,6 +10,10 @@ concurrency:
   group: mesh-splitter-production-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   test-build:
     runs-on: windows-latest
@@ -38,10 +42,87 @@ jobs:
         run: npm run build
         working-directory: frontend
 
+  publish-container:
+    name: Publish container image
+    runs-on: ubuntu-latest
+    needs: auto-version-bump
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - name: Read bumped package version
+        id: bumped-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push :main / :latest
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/maliev-co-ltd/maliev.meshsplitter:${{ steps.bumped-version.outputs.version }}
+            ghcr.io/maliev-co-ltd/maliev.meshsplitter:main
+            ghcr.io/maliev-co-ltd/maliev.meshsplitter:latest
+            ghcr.io/maliev-co-ltd/maliev.meshsplitter:sha-${{ github.sha }}
+
+  auto-version-bump:
+    name: Auto bump versions for main deployment
+    runs-on: ubuntu-latest
+    needs: test-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Bump patch versions and sync frontend/backend packages
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Keep package versions aligned so UI, backend metadata, and release tags move together.
+          npm version patch --no-git-tag-version
+          ROOT_VERSION=$(node -p "require('./package.json').version")
+          ROOT_VERSION="$ROOT_VERSION" node -e "
+            const fs = require('fs');
+            const version = process.env.ROOT_VERSION;
+            ['frontend/package.json', 'backend/package.json'].forEach((file) => {
+              const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+              pkg.version = version;
+              fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\\n');
+            });
+          "
+
+          if git diff --quiet -- package.json frontend/package.json backend/package.json; then
+            echo "No version changes detected. Nothing to commit."
+            exit 0
+          fi
+
+          git add package.json frontend/package.json backend/package.json
+          git commit -m "chore(release): auto bump version to ${ROOT_VERSION} [skip ci]"
+          git push origin HEAD:main
+
   deploy-production:
     name: Deploy production
     runs-on: ubuntu-latest
-    needs: test-build
+    needs: auto-version-bump
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
@@ -51,6 +132,9 @@ jobs:
       url: https://shop.maliev.com/tools/mesh-splitter
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
