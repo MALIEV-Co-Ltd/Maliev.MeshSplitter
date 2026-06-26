@@ -2329,7 +2329,7 @@
     .col-center {
       order: 0;
       flex: none;
-      height: 56vh;
+      height: 46dvh;
       min-height: 0;
     }
 
