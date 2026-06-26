@@ -368,6 +368,7 @@ function showOriginal(geometry, divisions) {
     meshGroup.add(gridOverlay)
   }
   meshGroup.scale.set(props.scaleFactor, props.scaleFactor, props.scaleFactor)
+  const box = new THREE.Box3().expandByObject(meshGroup)
   // The build-volume + support-safe-zone box only makes sense when the whole
   // model fits a single build volume (1x1x1). Once it has to be split, a lone
   // box floating inside a larger model reads as broken — the cut planes above
