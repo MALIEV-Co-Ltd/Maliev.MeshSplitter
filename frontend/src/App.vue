@@ -639,7 +639,13 @@ const appTranslations = {
   },
 }
 const uiCopy = computed(() => appTranslations[locale.value] || appTranslations.en)
-const visibleError = computed(() => problemEdges.value.length > 0 ? '' : (error.value || (hasCreditAccount.value ? creditError.value : '') || ''))
+const visibleError = computed(() => {
+  // When the mesh is watertight, problem edges on the 3D view are a visual cue
+  // and the text error can be suppressed. But if the mesh itself is non-watertight,
+  // the user needs to see the error to understand why the split button is disabled.
+  if (meshInfo.value?.is_watertight !== false && problemEdges.value.length > 0) return ''
+  return error.value || (hasCreditAccount.value ? creditError.value : '') || ''
+})
 // A loaded mesh is splittable only once it is watertight. Load already attempts
 // automatic repair, so a mesh that is still non-watertight is non-repairable —
 // splitting it would just fail, so Split (and therefore Export) stay disabled.
