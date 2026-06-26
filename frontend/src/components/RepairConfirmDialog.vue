@@ -15,6 +15,9 @@
             {{ preview.beforeStats.faces.toLocaleString() }} {{ labels.faces }} &middot;
             {{ preview.beforeStats.verts.toLocaleString() }} {{ labels.verts }}
           </div>
+          <Button variant="outline" class="repair-dialog__btn" @click="onCancel">
+            {{ labels.keepOriginal }}
+          </Button>
         </div>
         <div class="repair-dialog__arrow">→</div>
         <div class="repair-dialog__preview">
@@ -25,16 +28,10 @@
             {{ preview.afterStats.faces.toLocaleString() }} {{ labels.faces }} &middot;
             {{ preview.afterStats.verts.toLocaleString() }} {{ labels.verts }}
           </div>
+          <Button class="repair-dialog__btn" @click="onConfirm">
+            {{ labels.useRepaired }}
+          </Button>
         </div>
-      </div>
-
-      <div class="repair-dialog__actions">
-        <Button variant="outline" class="justify-center" @click="onCancel">
-          {{ labels.keepOriginal }}
-        </Button>
-        <Button class="justify-center" @click="onConfirm">
-          {{ labels.useRepaired }}
-        </Button>
       </div>
     </div>
   </dialog>
@@ -153,13 +150,8 @@ function onCancel() {
   font-size: 24px;
   flex-shrink: 0;
 }
-.repair-dialog__actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
-.repair-dialog__actions .btn {
-  flex: 1;
-  max-width: 200px;
+.repair-dialog__btn {
+  margin-top: 12px;
+  width: 100%;
 }
 </style>
