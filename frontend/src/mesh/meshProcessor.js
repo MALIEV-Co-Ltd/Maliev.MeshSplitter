@@ -196,15 +196,31 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
 export async function repairMeshGeometryRobust(geometry) {
   const welded = weldGeometry(geometry, 1e-4)
   const components = splitDisconnectedComponents(welded)
+  console.log('[repair] input:', {
+    indexed: !!geometry.index,
+    verts: geometry.attributes.position.count,
+    faces: geometry.index ? geometry.index.count / 3 : geometry.attributes.position.count / 3,
+    weldedVerts: welded.attributes.position.count,
+    weldedFaces: welded.index ? welded.index.count / 3 : welded.attributes.position.count / 3,
+    components: components.length,
+  })
   if (components.length > 1) {
     const manifold = await getManifoldModule()
 
     try {
       const solids = []
-      for (const comp of components) {
+      for (let i = 0; i < components.length; i++) {
+        const comp = components[i]
         const mesh = geometryToManifoldMesh(comp, manifold)
         const solid = manifold.Manifold.ofMesh(mesh)
-        if (solid.status() === 'NoError' && !solid.isEmpty()) {
+        const status = solid.status()
+        const empty = solid.isEmpty()
+        console.log(`[repair] component ${i}:`, {
+          verts: comp.attributes.position.count,
+          faces: comp.index ? comp.index.count / 3 : comp.attributes.position.count / 3,
+          status, empty,
+        })
+        if (status === 'NoError' && !empty) {
           solids.push(solid)
         } else {
           solid?.delete?.()
@@ -215,24 +231,37 @@ export async function repairMeshGeometryRobust(geometry) {
         let result = solids[0]
         for (let i = 1; i < solids.length; i++) {
           const unioned = result.union(solids[i])
+          console.log(`[repair] union ${i}:`, {
+            status: unioned.status(),
+            empty: unioned.isEmpty(),
+            numVert: unioned.numVert(),
+            numTri: unioned.numTri(),
+          })
           result.delete?.()
           solids[i].delete?.()
           result = unioned
         }
-        const cleaned = manifoldMeshToGeometry(result.getMesh())
+        const resultMesh = result.getMesh()
+        console.log('[repair] final union result:', {
+          numVert: resultMesh.numVert,
+          numTri: resultMesh.numTri,
+        })
+        const cleaned = manifoldMeshToGeometry(resultMesh)
         result.delete?.()
         cleaned.computeBoundingBox()
         cleaned.computeVertexNormals()
         return cleaned
       }
 
+      console.log('[repair] fewer than 2 valid solids, skipping union')
       solids.forEach((s) => s?.delete?.())
-    } catch {
-      // Component union failed — fall through
+    } catch (e) {
+      console.log('[repair] union failed:', e.message)
     }
   }
 
   const info = validateManifold(geometry)
+  console.log('[repair] validateManifold:', { watertight: info.watertight, volume: info.volume, euler: info.euler })
   if (info.watertight) return geometry
 
   const filled = repairMeshGeometry(geometry)
@@ -666,7 +695,17 @@ export function yieldToMain() {
 
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
+  console.log('[split] input geometry:', {
+    indexed: !!splitGeometry.index,
+    verts: splitGeometry.attributes.position.count,
+    faces: splitGeometry.index ? splitGeometry.index.count / 3 : splitGeometry.attributes.position.count / 3,
+  })
   const repaired = await repairMeshGeometryRobust(splitGeometry)
+  console.log('[split] repair result:', {
+    sameRef: repaired === splitGeometry,
+    null: repaired === null,
+    verts: repaired ? repaired.attributes.position.count : 'N/A',
+  })
   if (repaired === null) {
     const boundaryData = computeProblemEdges(splitGeometry)
     throw Object.assign(
