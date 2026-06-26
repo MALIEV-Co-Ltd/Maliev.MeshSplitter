@@ -215,14 +215,20 @@ export async function repairMeshGeometryRobust(geometry) {
         let result = solids[0]
         for (let i = 1; i < solids.length; i++) {
           const unioned = result.add(solids[i])
+          console.log(`[repair] union ${i}:`, { status: unioned.status(), empty: unioned.isEmpty(), numVert: unioned.numVert(), numTri: unioned.numTri() })
           result.delete?.()
           solids[i].delete?.()
           result = unioned
         }
-        const cleaned = manifoldMeshToGeometry(result.getMesh())
+        const unionStatus = result.status()
+        const resultMesh = result.getMesh()
+        console.log('[repair] final:', { status: unionStatus, numVert: resultMesh.numVert, numTri: resultMesh.numTri })
+        const cleaned = manifoldMeshToGeometry(resultMesh)
         result.delete?.()
         cleaned.computeBoundingBox()
         cleaned.computeVertexNormals()
+        const cleanedInfo = validateManifold(cleaned)
+        console.log('[repair] cleaned validateManifold:', { watertight: cleanedInfo.watertight, volume: cleanedInfo.volume, euler: cleanedInfo.euler, faces: cleanedInfo.faceCount, verts: cleanedInfo.vertCount })
         return cleaned
       }
 
