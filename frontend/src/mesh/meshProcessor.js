@@ -70,7 +70,10 @@ export function validateManifold(geometry) {
   // differences at the same physical vertex after translation, causing the
   // edge-counting check to false-flag a watertight mesh as non-manifold.
   function posKey(idx) {
-    return `${pos.getX(idx).toFixed(2)},${pos.getY(idx).toFixed(2)},${pos.getZ(idx).toFixed(2)}`
+    const x = pos.getX(idx)
+    const y = pos.getY(idx)
+    const z = pos.getZ(idx)
+    return `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`
   }
 
   const edgeMap = new Map()
