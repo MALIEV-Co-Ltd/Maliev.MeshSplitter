@@ -236,7 +236,7 @@
         </div>
       </div>
     </dialog>
-    <RepairConfirmDialog v-if="repairPreview" :preview="repairPreview" :labels="uiCopy.repairDialog" @confirm="acceptRepair" @cancel="rejectRepair" />
+    <RepairConfirmDialog v-if="repairPreview" :preview="repairPreview" :labels="uiCopy.repairDialog" @confirm="acceptRepair" />
   </main>
 </template>
 
@@ -288,7 +288,7 @@ function onMobileSplit() {
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
   connectorPositions, reapplyingConnectors, problemEdges,
-  loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, rejectRepair, error, scaleFactor, buildVolume,
+  loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, error, scaleFactor, buildVolume,
   loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
   prepareExport, buildExportPackage, saveBlob, clearProblemEdges,
 } = useMeshProcessor()
@@ -389,8 +389,7 @@ const appTranslations = {
       after: 'After repair',
       faces: 'faces',
       verts: 'verts',
-      keepOriginal: 'Keep original',
-      useRepaired: 'Use repaired mesh',
+      acknowledge: 'Acknowledge',
     },
     errorDialog: {
       title: 'Cannot split mesh',
@@ -536,8 +535,7 @@ const appTranslations = {
       after: 'หลังซ่อม',
       faces: 'หน้า',
       verts: 'จุด',
-      keepOriginal: 'ใช้ต้นฉบับ',
-      useRepaired: 'ใช้เมชที่ซ่อมแล้ว',
+      acknowledge: 'ตกลง',
     },
     errorDialog: {
       title: 'ไม่สามารถตัดโมเดลได้',

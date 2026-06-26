@@ -1,5 +1,5 @@
 <template>
-  <dialog ref="dialogEl" class="repair-dialog" @click.self="onCancel">
+  <dialog ref="dialogEl" class="repair-dialog">
     <div class="repair-dialog__panel">
       <header class="repair-dialog__head">
         <h2>{{ labels.title }}</h2>
@@ -15,9 +15,6 @@
             {{ preview.beforeStats.faces.toLocaleString() }} {{ labels.faces }} &middot;
             {{ preview.beforeStats.verts.toLocaleString() }} {{ labels.verts }}
           </div>
-          <Button variant="outline" class="repair-dialog__btn" @click="onCancel">
-            {{ labels.keepOriginal }}
-          </Button>
         </div>
         <div class="repair-dialog__arrow">→</div>
         <div class="repair-dialog__preview">
@@ -28,10 +25,13 @@
             {{ preview.afterStats.faces.toLocaleString() }} {{ labels.faces }} &middot;
             {{ preview.afterStats.verts.toLocaleString() }} {{ labels.verts }}
           </div>
-          <Button class="repair-dialog__btn" @click="onConfirm">
-            {{ labels.useRepaired }}
-          </Button>
         </div>
+      </div>
+
+      <div class="repair-dialog__actions">
+        <Button class="repair-dialog__btn" @click="onConfirm">
+          {{ labels.acknowledge }}
+        </Button>
       </div>
     </div>
   </dialog>
@@ -52,13 +52,12 @@ const props = defineProps({
       after: 'After repair',
       faces: 'faces',
       verts: 'verts',
-      keepOriginal: 'Keep original',
-      useRepaired: 'Use repaired mesh',
+      acknowledge: 'Acknowledge',
     }),
   },
 })
 
-const emit = defineEmits(['confirm', 'cancel'])
+const emit = defineEmits(['confirm'])
 
 const dialogEl = ref(null)
 
@@ -68,10 +67,6 @@ onMounted(() => {
 
 function onConfirm() {
   emit('confirm')
-}
-
-function onCancel() {
-  emit('cancel')
 }
 </script>
 
@@ -150,8 +145,12 @@ function onCancel() {
   font-size: 24px;
   flex-shrink: 0;
 }
+.repair-dialog__actions {
+  display: flex;
+  justify-content: center;
+}
 .repair-dialog__btn {
-  margin-top: 12px;
+  max-width: 200px;
   width: 100%;
 }
 </style>
