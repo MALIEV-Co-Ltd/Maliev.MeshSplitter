@@ -23,8 +23,8 @@
         </span>
         <div class="pl-info">
           <span class="pl-label">Key x{{ keyChunks.length }}</span>
-          <span class="pl-meta">{{ keyMetaLine }}</span>
-          <span class="pl-meta pl-vol">{{ keyVolumeLabel }}</span>
+          <span v-if="!compact" class="pl-meta">{{ keyMetaLine }}</span>
+          <span v-if="!compact" class="pl-meta pl-vol">{{ keyVolumeLabel }}</span>
         </div>
         <span class="pl-idx">K</span>
       </div>
@@ -42,8 +42,8 @@
         </span>
         <div class="pl-info">
           <span class="pl-label">{{ chunk.label }}</span>
-          <span class="pl-meta">{{ metaLine(chunk) }}</span>
-          <span class="pl-meta pl-vol">{{ volumeLabel(chunk) }}</span>
+          <span v-if="!compact" class="pl-meta">{{ metaLine(chunk) }}</span>
+          <span v-if="!compact" class="pl-meta pl-vol">{{ volumeLabel(chunk) }}</span>
         </div>
         <span class="pl-idx">{{ chunk.index + 1 }}</span>
       </div>
@@ -58,6 +58,7 @@ import { Boxes as BoxesIcon } from '@lucide/vue'
 const props = defineProps({
   chunks: { type: Array, default: () => [] },
   selectedChunkIndex: { type: Number, default: null },
+  compact: { type: Boolean, default: false },
   labels: {
     type: Object,
     default: () => ({
