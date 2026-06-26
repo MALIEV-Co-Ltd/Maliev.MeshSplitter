@@ -113,11 +113,10 @@ echo "No recent watchtower auth errors detected."
 echo "Watchtower auth env check:"
 if docker inspect mesh-splitter-watchtower >/dev/null 2>&1; then
   docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
-    | grep -E '^REPO_(USER|PASS)=|^DOCKER_CONFIG=' \
-    | sed -E 's/^(REPO_PASS)=.*/\1=********/'
+    | grep -E '^DOCKER_CONFIG='
   echo "Watchtower mount check:"
   docker inspect mesh-splitter-watchtower --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}' | \
-    grep '/config.json' || true
+    grep '/root/.docker' || true
 fi
 echo "Watchtower auth config check:"
 if [ -r /root/.docker/config.json ]; then

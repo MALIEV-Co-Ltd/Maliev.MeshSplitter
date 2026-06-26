@@ -194,6 +194,13 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
   docker logs mesh-splitter-watchtower --since 10m 2>$null |
     Select-String -Pattern 'unauthorized|403|auth.*not present' |
     ForEach-Object { $_.Line }
+  Write-Output 'Watchtower env & mount checks:'
+  docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>$null |
+    Where-Object { $_ -match '^DOCKER_CONFIG=' } |
+    ForEach-Object { $_ }
+  docker inspect mesh-splitter-watchtower --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}' 2>$null |
+    Select-String -Pattern '/root/.docker' |
+    ForEach-Object { $_.Line }
 }
 
 Pop-Location
