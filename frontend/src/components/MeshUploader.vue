@@ -25,7 +25,7 @@
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
-        @click="fileInput?.click()"
+        @click="browse()"
       >
         <div class="drop-icon">
           <UploadIcon :size="18" :stroke-width="1.75" />
@@ -48,7 +48,7 @@
             </span>
           </div>
         </div>
-        <Button variant="outline" size="sm" class="w-full justify-center gap-2" :disabled="loading" @click="fileInput?.click()">
+        <Button variant="outline" size="sm" class="w-full justify-center gap-2" :disabled="loading" @click="browse()">
           <UploadIcon :size="14" :stroke-width="1.75" />
           {{ labels.replace }}
         </Button>
@@ -65,10 +65,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
 import { File as FileIcon, Upload as UploadIcon } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useFileUpload } from '@/composables/useFileUpload'
 
 const props = defineProps({
   meshInfo: { type: Object, default: null },
@@ -98,34 +98,7 @@ const props = defineProps({
 
 const emit = defineEmits(['upload'])
 
-const dragOver = ref(false)
-const fileInput = ref(null)
-
-async function onDrop(e) {
-  dragOver.value = false
-  const file = e.dataTransfer?.files?.[0]
-  if (file) await handleFile(file)
-}
-
-async function onFileSelected(e) {
-  const file = e.target?.files?.[0]
-  if (file) await handleFile(file)
-}
-
-const localError = ref('')
-
-function handleFile(file) {
-  if (!file.name.toLowerCase().endsWith('.stl')) {
-    localError.value = props.labels.selectStl
-    return
-  }
-  if (file.size > 200 * 1024 * 1024) {
-    localError.value = props.labels.fileTooLarge
-    return
-  }
-  localError.value = ''
-  emit('upload', file)
-}
+const { fileInput, dragOver, localError, browse, onFileSelected, onDrop } = useFileUpload(emit, props.labels)
 </script>
 
 <style scoped>

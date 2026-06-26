@@ -66,4 +66,17 @@ describe('PartList', () => {
     expect(metaLines[0].text()).not.toContain('faces')
     expect(metaLines[1].text()).toBe('2070.4 cm³ · 29,912 faces')
   })
+
+  it('hides volume and faces lines in compact mode', () => {
+    const wrapper = mount(PartList, {
+      props: {
+        compact: true,
+        chunks: [
+          { index: 0, label: 'P01', volume: 2070400, faces: 29912, dims: { x: 153, y: 154, z: 158 }, color: 0xff0000 },
+        ],
+      },
+    })
+    expect(wrapper.find('.pl-label').text()).toBe('P01')
+    expect(wrapper.findAll('.pl-meta')).toHaveLength(0)
+  })
 })

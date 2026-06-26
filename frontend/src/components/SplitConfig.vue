@@ -29,7 +29,7 @@
           </Button>
         </div>
       </div>
-      <Button class="split-btn w-full justify-center" :disabled="!ok || loading" @click="onSplit">
+      <Button v-if="showSplitButton" class="split-btn w-full justify-center" :disabled="!ok || loading" @click="onSplit">
         <span v-if="loading" class="split-spinner" />
         {{ loading ? (progressLabel || labels.working) : labels.splitMesh }}
       </Button>
@@ -50,6 +50,7 @@ const props = defineProps({
   divisions: { type: Array, default: () => [2, 2, 1] },
   loading: { type: Boolean, default: false },
   progressLabel: { type: String, default: '' },
+  showSplitButton: { type: Boolean, default: true },
   labels: {
     type: Object,
     default: () => ({
@@ -97,4 +98,11 @@ function onSplit() {
   }
   emitSplit()
 }
+
+// Lets an external trigger (the mobile action bar) run the same split flow,
+// including the "no connector selected" warning, so the logic lives in one place.
+function requestSplit() {
+  onSplit()
+}
+defineExpose({ requestSplit })
 </script>
