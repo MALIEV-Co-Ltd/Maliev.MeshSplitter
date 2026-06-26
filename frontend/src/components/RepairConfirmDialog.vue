@@ -156,7 +156,7 @@ function onCancel() {
 .repair-dialog__actions {
   display: flex;
   gap: 10px;
-  justify-content: flex-end;
+  justify-content: center;
 }
 .repair-dialog__actions .btn {
   flex: 1;
