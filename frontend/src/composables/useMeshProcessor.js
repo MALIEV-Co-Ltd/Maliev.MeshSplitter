@@ -7,7 +7,6 @@ import {
   computeConnectorPositions,
   computeProblemEdges,
   exportPackage,
-  isWatertightAuthoritative,
   prepareExportChunks,
   repairMeshGeometryRobust,
   splitMeshManifold,
@@ -141,42 +140,35 @@ export function useMeshProcessor(options = {}) {
       let workingGeometry = geometry
       let wasRepaired = false
       const initialInfo = validateManifold(workingGeometry)
-      // The cheap heuristic only false-flags in one direction (a closed mesh as
-      // non-watertight). So trust a "watertight: true", but when it says
-      // non-watertight, confirm against the authoritative manifold kernel before
-      // bothering the user with a repair they don't need.
-      let watertight = initialInfo.watertight
-      if (!watertight) {
-        progressLabel.value = progressLabels.value.checking
-        await yieldToMain()
-        watertight = await isWatertightAuthoritative(workingGeometry)
-      }
 
-      if (!watertight) {
-        progressLabel.value = progressLabels.value.repairing
-        await yieldToMain()
-        const repaired = await repairMeshGeometryRobust(workingGeometry)
-        progressLabel.value = progressLabels.value.checking
-        if (repaired) {
-          const repairedInfo = validateManifold(repaired)
-          await yieldToMain()
-          pendingOriginalGeometry = geometry
-          repairPreview.value = {
-            beforeUrl: renderPartThumbnail(geometry),
-            afterUrl: renderPartThumbnail(repaired),
-            beforeStats: { faces: initialInfo.faceCount, verts: initialInfo.vertCount },
-            afterStats: { faces: repairedInfo.faceCount, verts: repairedInfo.vertCount },
-            filename: file.name,
-          }
-          workingGeometry = repaired
-          wasRepaired = true
-          // The repair output comes out of the manifold kernel (or a welded mesh
-          // the heuristic already accepted), so it is watertight by construction.
-          watertight = true
-        } else {
+      progressLabel.value = progressLabels.value.repairing
+      await yieldToMain()
+      const repaired = await repairMeshGeometryRobust(workingGeometry)
+      progressLabel.value = progressLabels.value.checking
+
+      let watertight
+      if (repaired == null) {
+        watertight = initialInfo.watertight
+        if (repaired === null) {
           problemEdges.value = computeProblemEdges(geometry)
           error.value = 'Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'
         }
+      } else if (repaired !== workingGeometry) {
+        const repairedInfo = validateManifold(repaired)
+        await yieldToMain()
+        pendingOriginalGeometry = geometry
+        repairPreview.value = {
+          beforeUrl: renderPartThumbnail(geometry),
+          afterUrl: renderPartThumbnail(repaired),
+          beforeStats: { faces: initialInfo.faceCount, verts: initialInfo.vertCount },
+          afterStats: { faces: repairedInfo.faceCount, verts: repairedInfo.vertCount },
+          filename: file.name,
+        }
+        workingGeometry = repaired
+        wasRepaired = true
+        watertight = true
+      } else {
+        watertight = true
       }
 
       sourceGeometry.value = markRaw(workingGeometry)

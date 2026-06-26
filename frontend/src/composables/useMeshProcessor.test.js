@@ -88,7 +88,7 @@ function createMockFile(name, content = 'stl data') {
 
 describe('useMeshProcessor', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   describe('initial state', () => {
@@ -203,19 +203,17 @@ describe('useMeshProcessor', () => {
       mockValidateManifold.mockReturnValue({
         watertight: false, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
       })
-      // ...but the authoritative kernel confirms it is a valid solid.
-      mockIsWatertightAuthoritative.mockResolvedValue(true)
+      // repairMeshGeometryRobust finds a single watertight body — returns same ref
+      mockRepairMeshGeometry.mockImplementation(async (geo) => geo)
 
       const { loadStl, meshInfo, repairPreview, error } = useMeshProcessor()
       await loadStl(createMockFile('falsepositive.stl'))
 
-      expect(mockIsWatertightAuthoritative).toHaveBeenCalledOnce()
       // Split is gated on is_watertight — it MUST be true here.
       expect(meshInfo.value.is_watertight).toBe(true)
       expect(meshInfo.value.was_repaired).toBe(false)
-      // No repair was needed, so no dialog and no repair attempt.
+      // No repair was needed, so no dialog.
       expect(repairPreview.value).toBeNull()
-      expect(mockRepairMeshGeometry).not.toHaveBeenCalled()
       expect(error.value).toBeNull()
     })
 

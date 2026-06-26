@@ -39,6 +39,9 @@ export function createServer(options = {}) {
   const sessionSecret = options.sessionSecret || process.env.SESSION_SECRET || shopifyAppProxySecret
   const exportAuthSecret = options.exportAuthSecret || process.env.EXPORT_AUTH_SECRET || sessionSecret || shopifyApiSecret || shopifyAppProxySecret
   const frontendDistDir = options.frontendDistDir || process.env.FRONTEND_DIST_DIR || defaultFrontendDistDir()
+  const meshProxyPrefix = normalizeProxyPrefix(
+    options.meshProxyPrefix || process.env.MESH_PROXY_PREFIX || '/tools/mesh-splitter',
+  )
 
   // Staff free-credit policy: customers whose Shopify email is on a staff domain
   // (e.g. maliev.com) get a larger monthly free allowance. The app proxy never
@@ -95,6 +98,7 @@ export function createServer(options = {}) {
         storefrontUrl,
         customerLoginUrl,
         exchangeShopifyCode,
+        meshProxyPrefix,
         sessionSecret,
         exportAuthSecret,
         frontendDistDir,
@@ -107,12 +111,10 @@ export function createServer(options = {}) {
   })
 }
 
-const MESH_PROXY_PREFIX = '/tools/mesh-splitter'
-
 async function route(context) {
-  const { request, response, ledger, shopifyWebhookSecret, adminSecret } = context
+  const { request, response, ledger, shopifyWebhookSecret, adminSecret, meshProxyPrefix } = context
   const url = new URL(request.url, 'http://localhost')
-  const requestPath = normalizeRequestPath(url.pathname)
+  const requestPath = normalizeRequestPath(url.pathname, meshProxyPrefix)
 
   if (request.method === 'GET' && requestPath === '/auth') {
     return startShopifyOAuth(context, url)
@@ -636,11 +638,20 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   })
 }
 
-function normalizeRequestPath(pathname) {
+function normalizeRequestPath(pathname, meshProxyPrefix = '/') {
   if (!pathname || typeof pathname !== 'string') return '/'
-  if (pathname === MESH_PROXY_PREFIX) return '/'
-  if (pathname.startsWith(`${MESH_PROXY_PREFIX}/`)) return pathname.slice(MESH_PROXY_PREFIX.length)
+  if (meshProxyPrefix === '/') return pathname
+  if (pathname === meshProxyPrefix) return '/'
+  if (pathname.startsWith(`${meshProxyPrefix}/`)) return pathname.slice(meshProxyPrefix.length)
   return pathname
+}
+
+function normalizeProxyPrefix(rawPrefix) {
+  if (typeof rawPrefix !== 'string') return '/tools/mesh-splitter'
+  const trimmed = rawPrefix.trim()
+  if (!trimmed || trimmed === '/') return '/'
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash.slice(0, -1) : withLeadingSlash
 }
 
 function serializeSessionCookie(value) {

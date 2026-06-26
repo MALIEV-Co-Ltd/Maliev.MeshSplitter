@@ -189,9 +189,52 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
   return repaired
 }
 
-// Try Three.js hole-fill first; if that fails, fall back to the authoritative
-// manifold-3d engine for a clean round-trip repair.
+// Try manifold-3d union of disconnected components first so intersecting
+// bodies (e.g. bolt thread + head) get a correct boolean merge instead of
+// having their intersection boundaries treated as holes. Falls back to
+// Three.js hole-fill then manifold round-trip when union is not applicable.
 export async function repairMeshGeometryRobust(geometry) {
+  const welded = geometry.index ? geometry : weldGeometry(geometry, 1e-4)
+  const components = splitDisconnectedComponents(welded)
+  if (components.length > 1) {
+    const manifold = await getManifoldModule()
+
+    try {
+      const solids = []
+      for (const comp of components) {
+        const mesh = geometryToManifoldMesh(comp, manifold)
+        const solid = manifold.Manifold.ofMesh(mesh)
+        if (solid.status() === 'NoError' && !solid.isEmpty()) {
+          solids.push(solid)
+        } else {
+          solid?.delete?.()
+        }
+      }
+
+      if (solids.length >= 2) {
+        let result = solids[0]
+        for (let i = 1; i < solids.length; i++) {
+          const unioned = result.union(solids[i])
+          result.delete?.()
+          solids[i].delete?.()
+          result = unioned
+        }
+        const cleaned = manifoldMeshToGeometry(result.getMesh())
+        result.delete?.()
+        cleaned.computeBoundingBox()
+        cleaned.computeVertexNormals()
+        return cleaned
+      }
+
+      solids.forEach((s) => s?.delete?.())
+    } catch {
+      // Component union failed — fall through
+    }
+  }
+
+  const info = validateManifold(geometry)
+  if (info.watertight) return geometry
+
   const filled = repairMeshGeometry(geometry)
   const filledInfo = validateManifold(filled)
   if (filledInfo.watertight) return filled
@@ -623,18 +666,15 @@ export function yieldToMain() {
 
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
-  const info = validateManifold(splitGeometry)
-  if (!info.watertight) {
-    const repaired = await repairMeshGeometryRobust(splitGeometry)
-    if (!repaired) {
-      const boundaryData = computeProblemEdges(splitGeometry)
-      throw Object.assign(
-        new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'),
-        { boundaryData }
-      )
-    }
-    splitGeometry = repaired
+  const repaired = await repairMeshGeometryRobust(splitGeometry)
+  if (repaired === null) {
+    const boundaryData = computeProblemEdges(splitGeometry)
+    throw Object.assign(
+      new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'),
+      { boundaryData }
+    )
   }
+  if (repaired !== splitGeometry) splitGeometry = repaired
 
   const [dx, dy, dz] = gridDivisions.map(Number)
   if (dx === 0 || dy === 0 || dz === 0) return []
