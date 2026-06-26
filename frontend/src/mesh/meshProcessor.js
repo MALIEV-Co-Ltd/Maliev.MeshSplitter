@@ -196,42 +196,27 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
 export async function repairMeshGeometryRobust(geometry) {
   const welded = weldGeometry(geometry, 1e-4)
   const components = splitDisconnectedComponents(welded)
+
+  // If we have multiple disjoint watertight bodies, pass them to Manifold
+  // as a single mesh — Manifold.ofMesh handles disjoint solids natively.
+  // Do NOT boolean-union them; that destroys geometry (collapses internal
+  // structures). Just pass the welded geometry through to Manifold and let
+  // it validate/clean.
   if (components.length > 1) {
     const manifold = await getManifoldModule()
-
     try {
-      const solids = []
-      for (const comp of components) {
-        const mesh = geometryToManifoldMesh(comp, manifold)
-        const solid = manifold.Manifold.ofMesh(mesh)
-        if (solid.status() === 'NoError' && !solid.isEmpty()) {
-          solids.push(solid)
-        } else {
-          solid?.delete?.()
-        }
+      const mesh = geometryToManifoldMesh(welded, manifold)
+      const solid = manifold.Manifold.ofMesh(mesh)
+      if (solid.status() === 'NoError' && !solid.isEmpty()) {
+        const cleaned = manifoldMeshToGeometry(solid.getMesh())
+        solid.delete?.()
+        cleaned.computeBoundingBox()
+        cleaned.computeVertexNormals()
+        return cleaned
       }
-
-      if (solids.length >= 2) {
-        let result = solids[0]
-        for (let i = 1; i < solids.length; i++) {
-          const unioned = result.add(solids[i])
-          result.delete?.()
-          solids[i].delete?.()
-          result = unioned
-        }
-        if (result.status() === 'NoError' && !result.isEmpty()) {
-          const cleaned = manifoldMeshToGeometry(result.getMesh())
-          result.delete?.()
-          cleaned.computeBoundingBox()
-          cleaned.computeVertexNormals()
-          return cleaned
-        }
-        result.delete?.()
-      }
-
-      solids.forEach((s) => s?.delete?.())
+      solid.delete?.()
     } catch {
-      // Component union failed — fall through
+      // Manifold round-trip failed — fall through to hole-fill
     }
   }
 
