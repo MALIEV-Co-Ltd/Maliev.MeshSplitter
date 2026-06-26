@@ -222,6 +222,67 @@ describe('computeConnectorPositions', () => {
       expect(entry.position[['x', 'y', 'z'][otherAxes[1]]]).toBeLessThanOrEqual(faceBounds.maxB)
     })
   })
+
+  // Regression: on a concave/curved cut face the connector footprint can extend
+  // past the real material polygon while its center is still inside, so the
+  // peg/socket protrudes through the exterior surface. A torus's annular cut
+  // faces reproduce this deterministically (a plain sphere's convex disks do
+  // not); assert no placed connector's footprint pokes outside the model
+  // (independent ray-parity point-in-mesh oracle against the source mesh).
+  function makeInsideTest(geometry) {
+    const probe = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+    probe.updateMatrixWorld()
+    const ray = new THREE.Raycaster()
+    const dir = new THREE.Vector3(0.3, 0.5, 0.811).normalize()
+    return (p) => {
+      ray.set(p, dir)
+      ray.far = Infinity
+      return ray.intersectObject(probe, false).length % 2 === 1
+    }
+  }
+
+  function footprintSpan(axis, pegX, pegY) {
+    return axis === 2 ? [pegX, pegY] : [pegY, pegX]
+  }
+
+  // Footprint samples (corners + edge midpoints) at the cut plane and ±depth.
+  function connectorSamples(entry) {
+    const px = entry.keyPeg ? entry.keyPeg.pegX : entry.radius * 2
+    const py = entry.keyPeg ? entry.keyPeg.pegY : entry.radius * 2
+    const [spanU, spanV] = footprintSpan(entry.axis, px, py)
+    const hu = spanU / 2, hv = spanV / 2
+    const c = entry.position
+    const grid = [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]
+    const pts = []
+    for (const sa of [-1, 0, 1]) {
+      for (const [su, sv] of grid) {
+        const p = new THREE.Vector3(c.x, c.y, c.z)
+        p.setComponent(entry.axis, p.getComponent(entry.axis) + sa * entry.depth)
+        p.setComponent(entry.otherAxes[0], p.getComponent(entry.otherAxes[0]) + su * hu)
+        p.setComponent(entry.otherAxes[1], p.getComponent(entry.otherAxes[1]) + sv * hv)
+        pts.push(p)
+      }
+    }
+    return pts
+  }
+
+  it('does not place connectors that protrude through a curved (torus) surface', async () => {
+    const torus = new THREE.TorusGeometry(40, 18, 24, 48)
+    torus.computeVertexNormals()
+    torus.computeBoundingBox()
+    const chunks = await splitMeshManifold(new THREE.Mesh(torus), [256, 256, 250], [2, 2, 3])
+    const manifest = await computeConnectorPositions(chunks, {
+      type: 'Key', depth: 5, clearance: 0.3, perFace: 2, keyWidth: 6, keyHeight: 3.5,
+    })
+
+    // The fix must not reject every connector — the cut faces still have ample
+    // interior area for safe placement.
+    expect(manifest.length).toBeGreaterThan(0)
+
+    const inside = makeInsideTest(torus)
+    const protruding = manifest.filter((entry) => connectorSamples(entry).some((p) => !inside(p)))
+    expect(protruding).toHaveLength(0)
+  }, 60000)
 })
 
 describe('addConnectorsManifold', () => {

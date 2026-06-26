@@ -510,6 +510,34 @@
     margin-top: 2px;
   }
 
+  /* Compact Replace control that sits in the Mesh File panel header (right of
+     the title), reclaiming the row the full-width button used to occupy. */
+  .mesh-replace-btn {
+    align-items: center;
+    background: oklch(var(--card));
+    border: 1px solid var(--steel-300);
+    border-radius: var(--radius-sm);
+    color: oklch(var(--primary));
+    cursor: pointer;
+    display: inline-flex;
+    flex: none;
+    font-size: 11px;
+    font-weight: 600;
+    gap: 5px;
+    height: 26px;
+    padding: 0 10px;
+    white-space: nowrap;
+  }
+
+  .mesh-replace-btn:hover {
+    background: var(--steel-100);
+  }
+
+  .mesh-replace-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
   .spec-row {
     border-bottom: 1px solid var(--steel-100);
     display: flex;
@@ -2347,12 +2375,20 @@
       overflow-y: auto;
     }
 
+    /* The parts list + accordion share one scroll region (.cols-stack). They
+       must keep their natural height: with the default flex-shrink, the bounded
+       .cols-stack would squeeze .col-left below its content height, and because
+       the rows are overflow:visible they'd escape the box and paint over the
+       accordion instead of scrolling. flex: none preserves height so the shared
+       region scrolls (its overflow-y: auto) rather than overlapping. */
     .col-left,
     .col-right {
+      flex: none;
       overflow: visible;
     }
 
     .parts-panel {
+      flex: none;
       max-height: none;
       min-height: 0;
       overflow: visible;

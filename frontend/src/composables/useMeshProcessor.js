@@ -7,6 +7,7 @@ import {
   computeConnectorPositions,
   computeProblemEdges,
   exportPackage,
+  isWatertightAuthoritative,
   prepareExportChunks,
   repairMeshGeometryRobust,
   splitMeshManifold,
@@ -65,16 +66,20 @@ export function useMeshProcessor(options = {}) {
 
   function setMeshState(geometry, filename, options = {}) {
     const info = validateManifold(geometry)
-    console.log('[DEBUG] setMeshState validateManifold:', info, 'wasRepaired:', options.wasRepaired)
     geometry.computeBoundingBox()
     const box = geometry.boundingBox
     originalVolume = info.volume
+
+    // The cheap validateManifold heuristic can false-flag a genuinely closed
+    // mesh as non-watertight (it over-counts edges on dense meshes). When the
+    // caller has an authoritative answer from the manifold kernel, it wins.
+    const watertight = typeof options.watertight === 'boolean' ? options.watertight : info.watertight
 
     meshInfo.value = {
       filename,
       verts: info.vertCount,
       faces: info.faceCount,
-      is_watertight: info.watertight,
+      is_watertight: watertight,
       was_repaired: Boolean(options.wasRepaired),
       volume: info.volume,
       bounds: {
@@ -136,16 +141,24 @@ export function useMeshProcessor(options = {}) {
       let workingGeometry = geometry
       let wasRepaired = false
       const initialInfo = validateManifold(workingGeometry)
-      console.log('[DEBUG] initial validateManifold:', initialInfo)
-      if (!initialInfo.watertight) {
+      // The cheap heuristic only false-flags in one direction (a closed mesh as
+      // non-watertight). So trust a "watertight: true", but when it says
+      // non-watertight, confirm against the authoritative manifold kernel before
+      // bothering the user with a repair they don't need.
+      let watertight = initialInfo.watertight
+      if (!watertight) {
+        progressLabel.value = progressLabels.value.checking
+        await yieldToMain()
+        watertight = await isWatertightAuthoritative(workingGeometry)
+      }
+
+      if (!watertight) {
         progressLabel.value = progressLabels.value.repairing
         await yieldToMain()
         const repaired = await repairMeshGeometryRobust(workingGeometry)
         progressLabel.value = progressLabels.value.checking
-        console.log('[DEBUG] repairMeshGeometryRobust returned:', repaired ? 'geometry' : 'null')
         if (repaired) {
           const repairedInfo = validateManifold(repaired)
-          console.log('[DEBUG] validateManifold(repaired):', repairedInfo)
           await yieldToMain()
           pendingOriginalGeometry = geometry
           repairPreview.value = {
@@ -157,6 +170,9 @@ export function useMeshProcessor(options = {}) {
           }
           workingGeometry = repaired
           wasRepaired = true
+          // The repair output comes out of the manifold kernel (or a welded mesh
+          // the heuristic already accepted), so it is watertight by construction.
+          watertight = true
         } else {
           problemEdges.value = computeProblemEdges(geometry)
           error.value = 'Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'
@@ -166,7 +182,7 @@ export function useMeshProcessor(options = {}) {
       sourceGeometry.value = markRaw(workingGeometry)
       scaleFactor.value = 1
       await yieldToMain()
-      return setMeshState(workingGeometry.clone(), file.name, { wasRepaired })
+      return setMeshState(workingGeometry.clone(), file.name, { wasRepaired, watertight })
     } catch (e) {
       error.value = e.message
       throw e

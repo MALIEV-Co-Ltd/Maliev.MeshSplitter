@@ -382,7 +382,6 @@ const appTranslations = {
     viaStore: 'via the MALIEV Shopify store.',
     exportUnit: 'export',
     creditPacksLoading: 'Credit packs load when connected to the MALIEV store.',
-    connectorsApplied: 'Connectors applied',
     repairDialog: {
       title: 'Mesh repair required',
       body: 'The mesh is not watertight and has been automatically repaired. Review the result below.',
@@ -530,7 +529,6 @@ const appTranslations = {
     viaStore: 'ผ่านร้าน MALIEV Shopify',
     exportUnit: 'การส่งออก',
     creditPacksLoading: 'แพ็กเครดิตจะโหลดเมื่อเชื่อมต่อร้าน MALIEV',
-    connectorsApplied: 'เพิ่มตัวต่อเรียบร้อย',
     repairDialog: {
       title: 'จำเป็นต้องซ่อมเมช',
       body: 'เมชไม่ปิดผิว ระบบได้ซ่อมอัตโนมัติแล้ว ตรวจสอบผลลัพธ์ด้านล่าง',

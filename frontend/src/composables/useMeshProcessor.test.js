@@ -16,6 +16,7 @@ const {
   mockPrepareExportChunks,
   mockRepairMeshGeometryRobust,
   mockComputeProblemEdges,
+  mockIsWatertightAuthoritative,
   mockStlParse,
   mockYieldToMain,
 } = vi.hoisted(() => ({
@@ -33,6 +34,7 @@ const {
   mockPrepareExportChunks: vi.fn(),
   mockRepairMeshGeometryRobust: vi.fn(),
   mockComputeProblemEdges: vi.fn(),
+  mockIsWatertightAuthoritative: vi.fn(),
   mockStlParse: vi.fn(),
   mockYieldToMain: vi.fn(() => Promise.resolve()),
 }))
@@ -53,6 +55,7 @@ vi.mock('../mesh/meshProcessor', () => ({
   prepareExportChunks: mockPrepareExportChunks,
   repairMeshGeometryRobust: mockRepairMeshGeometry,
   computeProblemEdges: mockRepairMeshGeometry,
+  isWatertightAuthoritative: mockIsWatertightAuthoritative,
   yieldToMain: mockYieldToMain,
 }))
 
@@ -185,6 +188,74 @@ describe('useMeshProcessor', () => {
       expect(previewMeshGeometry.value).not.toBe(meshGeometry.value)
       expect(previewMeshGeometry.value.attributes.position.count).toBeLessThan(meshGeometry.value.attributes.position.count)
       expect(meshGeometry.value.attributes.position.count).toBe(geometry.attributes.position.count)
+    })
+  })
+
+  describe('watertight gate (authoritative kernel)', () => {
+    // Regression: the cheap validateManifold heuristic over-counts edges on
+    // dense meshes and false-flags a genuinely closed solid as non-watertight.
+    // When it does, the manifold kernel is the authority — the mesh must be
+    // treated as watertight (Split enabled) and NOT routed into repair.
+    it('treats a heuristic false-positive as watertight without repair', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      // Heuristic says non-watertight...
+      mockValidateManifold.mockReturnValue({
+        watertight: false, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      // ...but the authoritative kernel confirms it is a valid solid.
+      mockIsWatertightAuthoritative.mockResolvedValue(true)
+
+      const { loadStl, meshInfo, repairPreview, error } = useMeshProcessor()
+      await loadStl(createMockFile('falsepositive.stl'))
+
+      expect(mockIsWatertightAuthoritative).toHaveBeenCalledOnce()
+      // Split is gated on is_watertight — it MUST be true here.
+      expect(meshInfo.value.is_watertight).toBe(true)
+      expect(meshInfo.value.was_repaired).toBe(false)
+      // No repair was needed, so no dialog and no repair attempt.
+      expect(repairPreview.value).toBeNull()
+      expect(mockRepairMeshGeometry).not.toHaveBeenCalled()
+      expect(error.value).toBeNull()
+    })
+
+    it('marks a genuinely repaired mesh as watertight (accept path enables Split)', async () => {
+      const geometry = createMockGeometry()
+      const repaired = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      // Heuristic flags the original AND the repaired result as non-watertight
+      // (the over-count survives welding) — the gate must not trust it.
+      mockValidateManifold.mockReturnValue({
+        watertight: false, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      // Authoritative kernel agrees the ORIGINAL is bad, so repair runs.
+      mockIsWatertightAuthoritative.mockResolvedValue(false)
+      mockRepairMeshGeometry.mockResolvedValue(repaired)
+
+      const { loadStl, meshInfo, repairPreview } = useMeshProcessor()
+      await loadStl(createMockFile('needsrepair.stl'))
+
+      // Repair ran and produced a manifold-by-construction result, so the mesh
+      // is watertight even though the heuristic still says otherwise.
+      expect(mockRepairMeshGeometry).toHaveBeenCalled()
+      expect(repairPreview.value).not.toBeNull()
+      expect(meshInfo.value.is_watertight).toBe(true)
+      expect(meshInfo.value.was_repaired).toBe(true)
+    })
+
+    it('skips the authoritative check when the heuristic already passes', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+
+      const { loadStl, meshInfo } = useMeshProcessor()
+      await loadStl(createMockFile('clean.stl'))
+
+      // A watertight heuristic result is trusted directly — no kernel round-trip.
+      expect(mockIsWatertightAuthoritative).not.toHaveBeenCalled()
+      expect(meshInfo.value.is_watertight).toBe(true)
     })
   })
 

@@ -5,9 +5,13 @@
         <FileIcon />
         {{ labels.title }}
       </div>
-      <Badge v-if="meshInfo" :variant="meshInfo.is_watertight ? 'success' : 'destructive'">
-        {{ meshInfo.is_watertight ? labels.watertight : labels.notWatertight }}
-      </Badge>
+      <!-- Watertight status is already shown in the top status bar and the
+        canvas mesh-details panel, so it isn't repeated here. Once a mesh is
+        loaded this slot holds the compact Replace control instead. -->
+      <button v-if="meshInfo" type="button" class="mesh-replace-btn" :disabled="loading" @click="browse()">
+        <UploadIcon :size="13" :stroke-width="1.75" />
+        {{ labels.replace }}
+      </button>
     </div>
     <div class="pnl-body">
       <input
@@ -48,10 +52,6 @@
             </span>
           </div>
         </div>
-        <Button variant="outline" size="sm" class="w-full justify-center gap-2" :disabled="loading" @click="browse()">
-          <UploadIcon :size="14" :stroke-width="1.75" />
-          {{ labels.replace }}
-        </Button>
       </div>
 
       <p v-if="loading && !meshInfo" class="mt-3 text-sm text-signal flex items-center gap-2">
@@ -66,8 +66,6 @@
 
 <script setup>
 import { File as FileIcon, Upload as UploadIcon } from '@lucide/vue'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { useFileUpload } from '@/composables/useFileUpload'
 
 const props = defineProps({

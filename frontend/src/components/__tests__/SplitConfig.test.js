@@ -70,7 +70,7 @@ describe('SplitConfig', () => {
       type: 'Key',
       depth: 5,
       clearance: 0.3,
-      perFace: 1,
+      perFace: 2,
       keyWidth: 6,
       keyHeight: 3.5,
     })
@@ -122,7 +122,7 @@ describe('SplitConfig', () => {
       type: 'Dowel',
       depth: 5,
       clearance: 0.3,
-      perFace: 1,
+      perFace: 2,
       diameter: 6,
     })
   })
