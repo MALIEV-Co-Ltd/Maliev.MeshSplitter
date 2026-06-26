@@ -103,8 +103,25 @@ function Get-EnvValueFromFile {
 
 $envGhcrUser = Get-EnvValueFromFile -FilePath $EnvFile -Key 'GHCR_USERNAME'
 $envGhcrToken = Get-EnvValueFromFile -FilePath $EnvFile -Key 'GHCR_TOKEN'
+$envRepoUser = Get-EnvValueFromFile -FilePath $EnvFile -Key 'REPO_USER'
+$envRepoPass = Get-EnvValueFromFile -FilePath $EnvFile -Key 'REPO_PASS'
+
+if (-not $envRepoUser -and $envGhcrUser) {
+  $envRepoUser = $envGhcrUser
+}
+if (-not $envRepoPass -and $envGhcrToken) {
+  $envRepoPass = $envGhcrToken
+}
+
+if ($envRepoUser) { $env:REPO_USER = $envRepoUser }
+if ($envRepoPass) { $env:REPO_PASS = $envRepoPass }
+
 if (-not $envGhcrUser -or -not $envGhcrToken) {
-  Write-Output 'WARNING: GHCR_USERNAME or GHCR_TOKEN is not set in .env.mesh-splitter.local; private image pulls may fail in watchtower.'
+  if (-not $env:REPO_USER -or -not $env:REPO_PASS) {
+    Write-Output 'WARNING: GHCR_USERNAME or GHCR_TOKEN is not set in .env.mesh-splitter.local; private image pulls may fail in watchtower.'
+  } else {
+    Write-Output 'Using REPO_USER/REPO_PASS override for watchtower auth.'
+  }
 } else {
   Write-Output 'Ensuring GHCR authentication for Docker daemon (for watchtower and local pulls)...'
   try {

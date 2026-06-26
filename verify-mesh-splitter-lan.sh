@@ -123,6 +123,13 @@ echo "Watchtower auth env check:"
 if docker inspect mesh-splitter-watchtower >/dev/null 2>&1; then
   docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
     | grep -E '^DOCKER_CONFIG='
+  WATCH_REPO_USER="$(docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | awk -F '=' '/^REPO_USER=/{print $2}' | head -n1)"
+  WATCH_REPO_PASS="$(docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | awk -F '=' '/^REPO_PASS=/{print $2}' | head -n1)"
+  if [ -n "${WATCH_REPO_USER}" ] && [ -n "${WATCH_REPO_PASS}" ]; then
+    echo "Watchtower REPO credentials are present in container env (values intentionally not shown)."
+  else
+    echo "Watchtower container does not currently have REPO_USER/REPO_PASS env values."
+  fi
   echo "Watchtower mount check:"
   docker inspect mesh-splitter-watchtower --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}' | \
     grep -E '(/root/.docker|/config)' || true

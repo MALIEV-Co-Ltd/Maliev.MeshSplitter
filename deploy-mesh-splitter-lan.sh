@@ -40,10 +40,25 @@ fi
 
 ENV_GHCR_USERNAME="$(sed -n 's/^[[:space:]]*GHCR_USERNAME[[:space:]]*=//p' "${ENV_FILE}" | sed 's/[[:space:]]*#.*$//' | tr -d '\r"' | tr -d "'" | tr -d ' ' | head -n1)"
 ENV_GHCR_TOKEN="$(sed -n 's/^[[:space:]]*GHCR_TOKEN[[:space:]]*=//p' "${ENV_FILE}" | sed 's/[[:space:]]*#.*$//' | tr -d '\r"' | tr -d "'" | tr -d ' ' | head -n1)"
+ENV_REPO_USER="$(sed -n 's/^[[:space:]]*REPO_USER[[:space:]]*=//p' "${ENV_FILE}" | sed 's/[[:space:]]*#.*$//' | tr -d '\r"' | tr -d "'" | tr -d ' ' | head -n1)"
+ENV_REPO_PASS="$(sed -n 's/^[[:space:]]*REPO_PASS[[:space:]]*=//p' "${ENV_FILE}" | sed 's/[[:space:]]*#.*$//' | tr -d '\r"' | tr -d "'" | tr -d ' ' | head -n1)"
+
+if [ -z "${ENV_REPO_USER:-}" ] && [ -n "${ENV_GHCR_USERNAME:-}" ]; then
+  ENV_REPO_USER="${ENV_GHCR_USERNAME}"
+fi
+if [ -z "${ENV_REPO_PASS:-}" ] && [ -n "${ENV_GHCR_TOKEN:-}" ]; then
+  ENV_REPO_PASS="${ENV_GHCR_TOKEN}"
+fi
+export REPO_USER="${ENV_REPO_USER:-}"
+export REPO_PASS="${ENV_REPO_PASS:-}"
 
 if [ -z "${ENV_GHCR_USERNAME:-}" ] || [ -z "${ENV_GHCR_TOKEN:-}" ]; then
-  echo "WARNING: GHCR_USERNAME or GHCR_TOKEN is not set in .env.mesh-splitter.local."
-  echo "Without GHCR credentials, private image pulls may fail in watchtower."
+  if [ -z "${REPO_USER:-}" ] || [ -z "${REPO_PASS:-}" ]; then
+    echo "WARNING: GHCR_USERNAME or GHCR_TOKEN is not set in .env.mesh-splitter.local."
+    echo "Without GHCR credentials, private image pulls may fail in watchtower."
+  else
+    echo "Using REPO_USER/REPO_PASS override for watchtower auth."
+  fi
 else
   echo "Ensuring GHCR authentication for Docker daemon (for watchtower and local pulls)..."
   if printf '%s' "${ENV_GHCR_TOKEN}" | docker login ghcr.io -u "${ENV_GHCR_USERNAME}" --password-stdin >/dev/null 2>&1; then

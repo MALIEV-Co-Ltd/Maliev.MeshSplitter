@@ -43,8 +43,8 @@ services:
       - --label-enable
     environment:
       # Fallback registry auth envs (legacy Watchtower behavior).
-      REPO_USER: ${GHCR_USERNAME}
-      REPO_PASS: ${GHCR_TOKEN}
+      REPO_USER: ${REPO_USER}
+      REPO_PASS: ${REPO_PASS}
       DOCKER_CONFIG: /config
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -50,6 +50,7 @@ chmod +x verify-mesh-splitter-lan.sh
 
 > First-time bootstrap for private GHCR image pull:
 > - Set `GHCR_USERNAME` and `GHCR_TOKEN` (PAT with `read:packages`) in `.env.mesh-splitter.local`
+> - `REPO_USER`/`REPO_PASS` may also be set explicitly; the deploy script maps `GHCR_*` to `REPO_*` automatically.
 > - Then start the stack. No SSH trigger is needed after that.
 
 ### 4b) NAS shell (PowerShell)
@@ -149,6 +150,7 @@ This compose file uses Watchtower (`mesh-splitter-watchtower`) on the same stack
 - Restarts `mesh-splitter` when the digest changes.
 - If watchtower fails to pull from GHCR, confirm either:
   - `GHCR_USERNAME` + `GHCR_TOKEN` are set in `.env.mesh-splitter.local`, or
+  - `REPO_USER` + `REPO_PASS` are set in `.env.mesh-splitter.local`, or
   - `/root/.docker/config.json` contains valid GHCR auth for the NAS daemon user.
   This compose maps `config.json` to `/config/config.json` and sets `DOCKER_CONFIG=/config` in watchtower.
 
