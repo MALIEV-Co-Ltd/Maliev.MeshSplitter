@@ -65,6 +65,7 @@ export function useMeshProcessor(options = {}) {
 
   function setMeshState(geometry, filename, options = {}) {
     const info = validateManifold(geometry)
+    console.log('[DEBUG] setMeshState validateManifold:', info, 'wasRepaired:', options.wasRepaired)
     geometry.computeBoundingBox()
     const box = geometry.boundingBox
     originalVolume = info.volume
@@ -135,13 +136,16 @@ export function useMeshProcessor(options = {}) {
       let workingGeometry = geometry
       let wasRepaired = false
       const initialInfo = validateManifold(workingGeometry)
+      console.log('[DEBUG] initial validateManifold:', initialInfo)
       if (!initialInfo.watertight) {
         progressLabel.value = progressLabels.value.repairing
         await yieldToMain()
         const repaired = await repairMeshGeometryRobust(workingGeometry)
         progressLabel.value = progressLabels.value.checking
+        console.log('[DEBUG] repairMeshGeometryRobust returned:', repaired ? 'geometry' : 'null')
         if (repaired) {
           const repairedInfo = validateManifold(repaired)
+          console.log('[DEBUG] validateManifold(repaired):', repairedInfo)
           await yieldToMain()
           pendingOriginalGeometry = geometry
           repairPreview.value = {

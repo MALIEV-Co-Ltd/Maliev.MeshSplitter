@@ -100,6 +100,11 @@ export function validateManifold(geometry) {
   }
 
   const watertight = Array.from(edgeMap.values()).every(c => c === 2)
+  if (!watertight) {
+    let c1 = 0, c2 = 0, c3 = 0
+    for (const c of edgeMap.values()) { if (c === 1) c1++; else if (c === 2) c2++; else c3++ }
+    console.log('[DEBUG] validateManifold edge counts — once:', c1, ' twice:', c2, ' 3+:', c3)
+  }
   const edgeCount = edgeMap.size
   const uniqueVerts = new Set()
   for (let i = 0; i < pos.count; i++) {
@@ -174,18 +179,22 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
 // manifold-3d engine for a clean round-trip repair.
 export async function repairMeshGeometryRobust(geometry) {
   const filled = repairMeshGeometry(geometry)
-  if (validateManifold(filled).watertight) return filled
+  const filledInfo = validateManifold(filled)
+  console.log('[DEBUG] repairMeshGeometry -> validateManifold:', filledInfo)
+  if (filledInfo.watertight) return filled
 
   const manifold = await getManifoldModule()
+  console.log('[DEBUG] Manifold module loaded, trying manifoldCleanGeometry')
 
-  // Try the original geometry first — repairMeshGeometry can corrupt some
-  // watertight meshes (wrong hole fills), but Manifold still accepts them.
   const origCleaned = manifoldCleanGeometry(geometry, manifold)
+  console.log('[DEBUG] manifoldCleanGeometry(original):', origCleaned ? 'success' : 'failed')
   if (origCleaned) return origCleaned
 
   const cleaned = manifoldCleanGeometry(filled, manifold)
+  console.log('[DEBUG] manifoldCleanGeometry(filled):', cleaned ? 'success' : 'failed')
   if (cleaned) return cleaned
 
+  console.log('[DEBUG] ALL repair attempts failed')
   return null
 }
 
