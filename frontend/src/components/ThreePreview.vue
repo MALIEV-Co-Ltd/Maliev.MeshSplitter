@@ -25,6 +25,7 @@ const props = defineProps({
   reapplyingConnectors: { type: Boolean, default: false },
   showLabels: { type: Boolean, default: true },
   problemEdges: { type: Array, default: () => [] },
+  scaleFactor: { type: Number, default: 1 },
 })
 
 const emit = defineEmits(['connector-drag-start', 'connector-drag-end'])
@@ -186,7 +187,6 @@ function clearScene() {
     axisLines = null
   }
   if (gridOverlay) {
-    scene.remove(gridOverlay)
     gridOverlay = null
   }
   if (buildVolumeOverlay) {
@@ -361,9 +361,14 @@ function showOriginal(geometry, divisions) {
   const mat = createCadSurfaceMaterial(0xc0c0c0)
   const mesh = new THREE.Mesh(geom, mat)
   meshGroup.add(mesh)
-  const box = new THREE.Box3().expandByObject(mesh)
   scene.add(meshGroup)
   drawGridOverlay(geometry, divisions)
+  if (gridOverlay) {
+    scene.remove(gridOverlay)
+    meshGroup.add(gridOverlay)
+  }
+  meshGroup.scale.set(props.scaleFactor, props.scaleFactor, props.scaleFactor)
+  const box = new THREE.Box3().expandByObject(meshGroup)
   // The build-volume + support-safe-zone box only makes sense when the whole
   // model fits a single build volume (1x1x1). Once it has to be split, a lone
   // box floating inside a larger model reads as broken — the cut planes above
@@ -902,9 +907,30 @@ watch(() => props.isDark, () => {
     rimLight.intensity = rim
   }
   if (grid) setGrid(lastGridExtent)
-  if (gridOverlay && props.meshGeometry && (!props.chunks || props.chunks.length === 0)) {
+  if (props.meshGeometry && (!props.chunks || props.chunks.length === 0)) {
+    if (gridOverlay) {
+      gridOverlay = null
+    }
     drawGridOverlay(props.meshGeometry, props.divisions)
+    if (gridOverlay && meshGroup) {
+      scene.remove(gridOverlay)
+      meshGroup.add(gridOverlay)
+    }
   }
+  requestRender()
+})
+
+watch(() => props.scaleFactor, (s) => {
+  if (!meshGroup) return
+  if (props.chunks?.length > 0) return
+  meshGroup.scale.set(s, s, s)
+  if (framedSphere) {
+    const box = new THREE.Box3().expandByObject(meshGroup)
+    const newSphere = new THREE.Sphere()
+    box.getBoundingSphere(newSphere)
+    framedSphere.radius = Math.max(framedSphere.radius, newSphere.radius)
+  }
+  updateClippingPlanes()
   requestRender()
 })
 
@@ -915,7 +941,14 @@ function frameToProblem() {
     if (child.geometry) box.expandByObject(child)
   })
   if (box.isEmpty()) return
+  // Save so fitCamera's overwrite doesn't tighten clipping planes to the
+  // tiny problem-edges bounds — the restored sphere keeps near/far generous.
+  const saved = framedSphere ? framedSphere.clone() : null
   fitCamera(box)
+  if (saved) {
+    framedSphere = saved
+    updateClippingPlanes()
+  }
 }
 
 defineExpose({ frameToProblem })

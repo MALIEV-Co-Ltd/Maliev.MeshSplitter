@@ -108,7 +108,7 @@ const props = defineProps({
       type: 'Key',
       depth: 5,
       clearance: 0.3,
-      perFace: 1,
+      perFace: 2,
       keyWidth: 6,
       keyHeight: 3.5,
     }),
@@ -141,7 +141,7 @@ const emit = defineEmits(['update:modelValue'])
 const diameter = ref(6)
 const depth = ref(5)
 const clearance = ref(0.3)
-const perFace = ref(1)
+const perFace = ref(2)
 const mortiseWidth = ref(6)
 const mortiseThickness = ref(4)
 const keyWidth = ref(6)

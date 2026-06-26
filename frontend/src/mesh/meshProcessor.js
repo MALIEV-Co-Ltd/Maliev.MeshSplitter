@@ -66,8 +66,14 @@ export function validateManifold(geometry) {
   const vertCount = pos.count
   const faceCount = index ? index.count / 3 : pos.count / 3
 
+  // Quantise to 0.1 mm — float32 STL data can have sub-micron rounding
+  // differences at the same physical vertex after translation, causing the
+  // edge-counting check to false-flag a watertight mesh as non-manifold.
   function posKey(idx) {
-    return `${pos.getX(idx).toFixed(3)},${pos.getY(idx).toFixed(3)},${pos.getZ(idx).toFixed(3)}`
+    const x = pos.getX(idx)
+    const y = pos.getY(idx)
+    const z = pos.getZ(idx)
+    return `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`
   }
 
   const edgeMap = new Map()
@@ -113,6 +119,25 @@ export function validateManifold(geometry) {
 
 export function computeVolume(geometry) {
   return computeVolumeImpl(geometry)
+}
+
+// Authoritative watertight/manifold check using the manifold-3d kernel — the
+// same engine that performs the actual split. The cheap validateManifold
+// heuristic quantizes vertex positions to a 0.01 mm grid to count shared edges,
+// which over-counts edges on dense organic meshes and false-flags a genuinely
+// closed solid as non-manifold. When the heuristic is unsure, defer to this:
+// if the kernel can build a valid solid from the mesh, it is splittable.
+export async function isWatertightAuthoritative(geometry) {
+  let solid
+  try {
+    const manifold = await getManifoldModule()
+    solid = manifold.Manifold.ofMesh(geometryToManifoldMesh(geometry, manifold))
+    return solid.status() === 'NoError' && !solid.isEmpty()
+  } catch {
+    return false
+  } finally {
+    solid?.delete?.()
+  }
 }
 
 export function repairMeshGeometry(geometry, tolerance = 1e-4) {
@@ -168,11 +193,16 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
 // manifold-3d engine for a clean round-trip repair.
 export async function repairMeshGeometryRobust(geometry) {
   const filled = repairMeshGeometry(geometry)
-  if (validateManifold(filled).watertight) return filled
+  const filledInfo = validateManifold(filled)
+  if (filledInfo.watertight) return filled
 
   const manifold = await getManifoldModule()
+
+  const origCleaned = manifoldCleanGeometry(geometry, manifold)
+  if (origCleaned) return origCleaned
+
   const cleaned = manifoldCleanGeometry(filled, manifold)
-  if (cleaned && validateManifold(cleaned).watertight) return cleaned
+  if (cleaned) return cleaned
 
   return null
 }
@@ -443,7 +473,7 @@ function geometryToManifoldMesh(geometry, manifold) {
     const x = pos.getX(i)
     const y = pos.getY(i)
     const z = pos.getZ(i)
-    const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`
+    const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`
     let mapped = vertexMap.get(key)
     if (mapped === undefined) {
       mapped = vertexMap.size
@@ -585,7 +615,7 @@ export function orderPartsByConnectivity(chunks) {
   )
 }
 
-function yieldToMain() {
+export function yieldToMain() {
   return new Promise(resolve => {
     requestAnimationFrame(() => setTimeout(resolve, 0))
   })
@@ -1007,17 +1037,41 @@ export async function computeConnectorPositions(chunks, config = {}) {
         radius = fit.radius
       }
 
+      const trianglesA = collectCutFaceTriangles(cleanChunks[i].geometry, axis, planeValue, interBox, faceTolerance)
+      const trianglesB = collectCutFaceTriangles(cleanChunks[j].geometry, axis, planeValue, interBox, faceTolerance)
+
       const candidates = findSharedCutFaceCandidates(
+        trianglesA, trianglesB,
         cleanChunks[i].geometry, cleanChunks[j].geometry,
-        axis, center.getComponent(axis), interBox, otherAxes,
+        axis, planeValue, interBox, otherAxes,
         Math.max(radius * 1.75, faceTolerance * 4), faceTolerance,
         radius + clearance + faceTolerance,
       )
       if (candidates.length === 0) continue
 
+      // Footprint half-extents in the cut-face plane, grown by clearance so the
+      // socket (peg + clearance, the volume actually carved from each part) is
+      // validated, not just the peg. A connector is only viable where this whole
+      // footprint sits on real cut-face material of BOTH parts.
+      let footHalfU, footHalfV
+      if (type === 'key') {
+        const [spanU, spanV] = footprintSpan(axis, keyPeg.pegX, keyPeg.pegY)
+        footHalfU = spanU / 2 + clearance
+        footHalfV = spanV / 2 + clearance
+      } else {
+        footHalfU = radius + clearance
+        footHalfV = radius + clearance
+      }
+
       const viablePositions = []
       const depthByPosition = new Map()
       for (const pos of candidates) {
+        if (
+          !footprintInsideCutFace(pos, otherAxes, footHalfU, footHalfV, trianglesA, faceTolerance) ||
+          !footprintInsideCutFace(pos, otherAxes, footHalfU, footHalfV, trianglesB, faceTolerance)
+        ) {
+          continue
+        }
         const wall = Math.min(
           localWallThicknessAroundFootprint(raycaster, raycastMeshes[i], bbA, pos, axis, otherAxes, planeValue, faceTolerance, radius),
           localWallThicknessAroundFootprint(raycaster, raycastMeshes[j], bbB, pos, axis, otherAxes, planeValue, faceTolerance, radius),
@@ -1267,9 +1321,29 @@ function fitConnectorToSharedFace(type, {
   }
 }
 
-function findSharedCutFaceCandidates(geometryA, geometryB, axis, plane, interBox, otherAxes, matchDistance, tolerance, edgeMargin) {
-  const trianglesA = collectCutFaceTriangles(geometryA, axis, plane, interBox, tolerance)
-  const trianglesB = collectCutFaceTriangles(geometryB, axis, plane, interBox, tolerance)
+// Every candidate center already sits on cut-face material of both parts, but a
+// connector also occupies a footprint around that center. On a curved/irregular
+// cut face the footprint can extend past the true material polygon while the
+// center is still inside — the depth raycast can't catch this (it measures axis
+// depth and gets spurious hits on curved geometry), so the peg/socket ends up
+// protruding through the exterior surface. Require the whole footprint (corners
+// + edge midpoints, at socket size) to land on cut-face material so the
+// connector — and the slot carved for it — stay inside both parts.
+function footprintInsideCutFace(pos, otherAxes, halfU, halfV, triangles, tolerance) {
+  if (triangles.length === 0) return false
+  const u = pos.getComponent(otherAxes[0])
+  const v = pos.getComponent(otherAxes[1])
+  const offsets = [
+    [-1, -1], [1, -1], [-1, 1], [1, 1],
+    [-1, 0], [1, 0], [0, -1], [0, 1],
+  ]
+  for (const [su, sv] of offsets) {
+    if (!pointOnCutTriangles(u + su * halfU, v + sv * halfV, triangles, tolerance)) return false
+  }
+  return true
+}
+
+function findSharedCutFaceCandidates(trianglesA, trianglesB, geometryA, geometryB, axis, plane, interBox, otherAxes, matchDistance, tolerance, edgeMargin) {
   if (trianglesA.length === 0 || trianglesB.length === 0) return []
 
   const minU = interBox.min.getComponent(otherAxes[0]) + edgeMargin

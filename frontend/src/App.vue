@@ -72,6 +72,7 @@
               :reapplying-connectors="reapplyingConnectors"
               :show-labels="showLabels"
               :problem-edges="problemEdges"
+              :scale-factor="scaleFactor"
               @connector-drag-start="onConnectorDragStart"
               @connector-drag-end="onConnectorDragEnd"
             />
@@ -275,7 +276,7 @@ const appVersion = pkg.version
 // Mobile layout: a reactive breakpoint flag drives the accordion, the fixed
 // action bar, and which upload UI renders. Desktop is unaffected.
 const isMobile = useIsMobile()
-const openSection = ref('volume')
+const openSection = ref(null)
 function toggleSection(name) {
   openSection.value = openSection.value === name ? null : name
 }
@@ -381,7 +382,6 @@ const appTranslations = {
     viaStore: 'via the MALIEV Shopify store.',
     exportUnit: 'export',
     creditPacksLoading: 'Credit packs load when connected to the MALIEV store.',
-    connectorsApplied: 'Connectors applied',
     repairDialog: {
       title: 'Mesh repair required',
       body: 'The mesh is not watertight and has been automatically repaired. Review the result below.',
@@ -464,10 +464,10 @@ const appTranslations = {
     exportPanel: {
       preparing: 'Preparing package...',
       downloadPackage: 'Download package (STL + PDF ZIP)',
-      costFree: 'Uses 1 free export · {n} left this month',
-      costCredit: 'Uses 1 credit',
-      costUnlocked: 'Already paid · re-download is free',
-      costSignIn: 'Sign in to export',
+      costFree: 'Free ({n})',
+        costCredit: 'Uses 1 credit',
+        costUnlocked: 'Already paid · re-download is free',
+        costSignIn: 'Sign in to export',
     },
     mobileActionBar: {
       splitMesh: 'Split',
@@ -529,7 +529,6 @@ const appTranslations = {
     viaStore: 'ผ่านร้าน MALIEV Shopify',
     exportUnit: 'การส่งออก',
     creditPacksLoading: 'แพ็กเครดิตจะโหลดเมื่อเชื่อมต่อร้าน MALIEV',
-    connectorsApplied: 'เพิ่มตัวต่อเรียบร้อย',
     repairDialog: {
       title: 'จำเป็นต้องซ่อมเมช',
       body: 'เมชไม่ปิดผิว ระบบได้ซ่อมอัตโนมัติแล้ว ตรวจสอบผลลัพธ์ด้านล่าง',
@@ -613,10 +612,10 @@ const appTranslations = {
     exportPanel: {
       preparing: 'กำลังเตรียมแพ็กเกจ...',
       downloadPackage: 'ดาวน์โหลดแพ็กเกจ (STL + PDF ZIP)',
-      costFree: 'ใช้สิทธิ์ส่งออกฟรี 1 ครั้ง · เหลือ {n} ครั้งเดือนนี้',
-      costCredit: 'ใช้ 1 เครดิต',
-      costUnlocked: 'ชำระแล้ว · ดาวน์โหลดซ้ำฟรี',
-      costSignIn: 'เข้าสู่ระบบเพื่อส่งออก',
+      costFree: 'ฟรี ({n})',
+        costCredit: 'ใช้ 1 เครดิต',
+        costUnlocked: 'ชำระแล้ว · ดาวน์โหลดซ้ำฟรี',
+        costSignIn: 'เข้าสู่ระบบเพื่อส่งออก',
     },
     mobileActionBar: {
       splitMesh: 'แยก',
@@ -638,7 +637,13 @@ const appTranslations = {
   },
 }
 const uiCopy = computed(() => appTranslations[locale.value] || appTranslations.en)
-const visibleError = computed(() => problemEdges.value.length > 0 ? '' : (error.value || (hasCreditAccount.value ? creditError.value : '') || ''))
+const visibleError = computed(() => {
+  // When the mesh is watertight, problem edges on the 3D view are a visual cue
+  // and the text error can be suppressed. But if the mesh itself is non-watertight,
+  // the user needs to see the error to understand why the split button is disabled.
+  if (meshInfo.value?.is_watertight !== false && problemEdges.value.length > 0) return ''
+  return error.value || (hasCreditAccount.value ? creditError.value : '') || ''
+})
 // A loaded mesh is splittable only once it is watertight. Load already attempts
 // automatic repair, so a mesh that is still non-watertight is non-repairable —
 // splitting it would just fail, so Split (and therefore Export) stay disabled.

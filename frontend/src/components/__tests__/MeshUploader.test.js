@@ -19,10 +19,11 @@ describe('MeshUploader', () => {
       }
     })
     expect(wrapper.text()).toContain('test.stl')
+    // Replace control moved into the panel header once a mesh is loaded.
     expect(wrapper.text()).toContain('Replace file')
-    // The dropzone no longer repeats a "watertight" banner — that status lives
-    // in the header badge — so it should not appear in the loaded summary.
-    expect(wrapper.text()).not.toContain('Watertight mesh loaded')
+    // Watertight status is shown in the top status bar and canvas mesh-details,
+    // not duplicated here, so no "Watertight" label appears in this panel.
+    expect(wrapper.text()).not.toContain('Watertight')
     // The drop prompt is replaced by the summary once a mesh is loaded.
     expect(wrapper.text()).not.toContain('Drag & drop')
   })

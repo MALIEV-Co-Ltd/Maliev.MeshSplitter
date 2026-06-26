@@ -7,11 +7,13 @@ import {
   computeConnectorPositions,
   computeProblemEdges,
   exportPackage,
+  isWatertightAuthoritative,
   prepareExportChunks,
   repairMeshGeometryRobust,
   splitMeshManifold,
   validateConnectorPosition,
   validateManifold,
+  yieldToMain,
 } from '../mesh/meshProcessor'
 import { allocatePreviewBudget, createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
 import { renderPartThumbnail, disposeThumbnailRenderer } from '../mesh/thumbnailRenderer'
@@ -57,6 +59,7 @@ export function useMeshProcessor(options = {}) {
     Object.assign(progressLabels.value, { ...progressLabels.value, ...labels })
   }
   const scaleFactor = ref(1)
+  let originalVolume = 0
   // Default to the Bambu Lab X1C printable envelope (256x256x250, the
   // Bambu-Studio default Z). BuildVolumeConfig auto-selects the matching preset.
   const buildVolume = ref([256, 256, 250])
@@ -65,12 +68,18 @@ export function useMeshProcessor(options = {}) {
     const info = validateManifold(geometry)
     geometry.computeBoundingBox()
     const box = geometry.boundingBox
+    originalVolume = info.volume
+
+    // The cheap validateManifold heuristic can false-flag a genuinely closed
+    // mesh as non-watertight (it over-counts edges on dense meshes). When the
+    // caller has an authoritative answer from the manifold kernel, it wins.
+    const watertight = typeof options.watertight === 'boolean' ? options.watertight : info.watertight
 
     meshInfo.value = {
       filename,
       verts: info.vertCount,
       faces: info.faceCount,
-      is_watertight: info.watertight,
+      is_watertight: watertight,
       was_repaired: Boolean(options.wasRepaired),
       volume: info.volume,
       bounds: {
@@ -115,19 +124,42 @@ export function useMeshProcessor(options = {}) {
     try {
       const buffer = await file.arrayBuffer()
       progressLabel.value = progressLabels.value.checking
+      await yieldToMain()
+      // Quick content check before handing to STLLoader — avoids cryptic
+      // RangeErrors when a non-STL file slips past the extension-only gate.
+      const headerBytes = new Uint8Array(buffer, 0, Math.min(80, buffer.byteLength))
+      const headerStr = Array.from(headerBytes, (b) => String.fromCodePoint(b)).join('').trim().toLowerCase()
+      const looksLikeStl = headerStr.startsWith('solid') || buffer.byteLength >= 84
+      if (!looksLikeStl) {
+        throw new Error('This file does not appear to be a valid STL file. Only binary and ASCII STL files are supported.')
+      }
       const loader = new STLLoader()
       const geometry = normalizeForPreview(loader.parse(buffer))
       geometry.computeBoundingBox()
       geometry.computeVertexNormals()
+      await yieldToMain()
       let workingGeometry = geometry
       let wasRepaired = false
       const initialInfo = validateManifold(workingGeometry)
-      if (!initialInfo.watertight) {
+      // The cheap heuristic only false-flags in one direction (a closed mesh as
+      // non-watertight). So trust a "watertight: true", but when it says
+      // non-watertight, confirm against the authoritative manifold kernel before
+      // bothering the user with a repair they don't need.
+      let watertight = initialInfo.watertight
+      if (!watertight) {
+        progressLabel.value = progressLabels.value.checking
+        await yieldToMain()
+        watertight = await isWatertightAuthoritative(workingGeometry)
+      }
+
+      if (!watertight) {
         progressLabel.value = progressLabels.value.repairing
+        await yieldToMain()
         const repaired = await repairMeshGeometryRobust(workingGeometry)
         progressLabel.value = progressLabels.value.checking
         if (repaired) {
           const repairedInfo = validateManifold(repaired)
+          await yieldToMain()
           pendingOriginalGeometry = geometry
           repairPreview.value = {
             beforeUrl: renderPartThumbnail(geometry),
@@ -138,6 +170,9 @@ export function useMeshProcessor(options = {}) {
           }
           workingGeometry = repaired
           wasRepaired = true
+          // The repair output comes out of the manifold kernel (or a welded mesh
+          // the heuristic already accepted), so it is watertight by construction.
+          watertight = true
         } else {
           problemEdges.value = computeProblemEdges(geometry)
           error.value = 'Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'
@@ -146,8 +181,8 @@ export function useMeshProcessor(options = {}) {
 
       sourceGeometry.value = markRaw(workingGeometry)
       scaleFactor.value = 1
-
-      return setMeshState(workingGeometry.clone(), file.name, { wasRepaired })
+      await yieldToMain()
+      return setMeshState(workingGeometry.clone(), file.name, { wasRepaired, watertight })
     } catch (e) {
       error.value = e.message
       throw e
@@ -187,14 +222,33 @@ export function useMeshProcessor(options = {}) {
     return normalized
   }
 
+  function updateMeshInfoArithmetic(scale) {
+    if (!sourceGeometry.value || !meshInfo.value) return
+    const geo = sourceGeometry.value
+    if (!geo.boundingBox) geo.computeBoundingBox()
+    const box = geo.boundingBox
+    const s = Number(scale)
+    meshInfo.value = {
+      ...meshInfo.value,
+      bounds: {
+        min: { x: box.min.x * s, y: box.min.y * s, z: box.min.z * s },
+        max: { x: box.max.x * s, y: box.max.y * s, z: box.max.z * s },
+      },
+      volume: originalVolume * s * s * s,
+    }
+  }
+
   function setScaleFactor(value) {
     if (!sourceGeometry.value || !meshInfo.value) return
     loading.value = true
     error.value = null
     try {
-      const scaled = applyScale(sourceGeometry.value, value)
       scaleFactor.value = Number(value)
-      setMeshState(scaled, meshInfo.value.filename)
+      updateMeshInfoArithmetic(Number(value))
+      splitChunks.value = []
+      chunks.value = []
+      disposePreviewChunks()
+      previewChunks.value = []
     } catch (e) {
       error.value = e.message
       throw e
@@ -208,7 +262,8 @@ export function useMeshProcessor(options = {}) {
     progressLabel.value = progressLabels.value.splitting
     error.value = null
     try {
-      const mesh = new THREE.Mesh(meshGeometry.value)
+      const scaledGeo = applyScale(meshGeometry.value, scaleFactor.value)
+      const mesh = new THREE.Mesh(scaledGeo)
       const rawChunks = await splitMeshManifold(mesh, bv, divisions)
       progressLabel.value = progressLabels.value.processing
       splitChunks.value = rawChunks.map((chunk, i) => ({
@@ -344,7 +399,12 @@ export function useMeshProcessor(options = {}) {
   // call this instead.
   function clearProblemEdges() {
     problemEdges.value = []
-    error.value = null
+    // When the loaded mesh itself is non-watertight (repair failed at load time),
+    // keep the error so the user knows why the split button stays disabled.
+    // Split-time errors on watertight meshes get cleared normally.
+    if (meshInfo.value?.is_watertight !== false) {
+      error.value = null
+    }
   }
 
   function clearMesh() {
@@ -366,6 +426,7 @@ export function useMeshProcessor(options = {}) {
     error.value = null
     progressLabel.value = ''
     scaleFactor.value = 1
+    originalVolume = 0
     disposeThumbnailRenderer()
   }
 

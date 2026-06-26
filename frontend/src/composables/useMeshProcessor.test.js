@@ -16,7 +16,9 @@ const {
   mockPrepareExportChunks,
   mockRepairMeshGeometryRobust,
   mockComputeProblemEdges,
+  mockIsWatertightAuthoritative,
   mockStlParse,
+  mockYieldToMain,
 } = vi.hoisted(() => ({
   mockValidateManifold: vi.fn(),
   mockComputeVolume: vi.fn(),
@@ -32,7 +34,9 @@ const {
   mockPrepareExportChunks: vi.fn(),
   mockRepairMeshGeometryRobust: vi.fn(),
   mockComputeProblemEdges: vi.fn(),
+  mockIsWatertightAuthoritative: vi.fn(),
   mockStlParse: vi.fn(),
+  mockYieldToMain: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('../mesh/meshProcessor', () => ({
@@ -51,6 +55,8 @@ vi.mock('../mesh/meshProcessor', () => ({
   prepareExportChunks: mockPrepareExportChunks,
   repairMeshGeometryRobust: mockRepairMeshGeometry,
   computeProblemEdges: mockRepairMeshGeometry,
+  isWatertightAuthoritative: mockIsWatertightAuthoritative,
+  yieldToMain: mockYieldToMain,
 }))
 
 vi.mock('three/addons/loaders/STLLoader.js', () => ({
@@ -75,7 +81,8 @@ function createTranslatedMockGeometry() {
 
 function createMockFile(name, content = 'stl data') {
   const file = new File([content], name, { type: 'application/sla' })
-  file.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(8))
+  // Minimum 84 bytes so the header check (buffer.byteLength >= 84) passes
+  file.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(84))
   return file
 }
 
@@ -184,6 +191,74 @@ describe('useMeshProcessor', () => {
     })
   })
 
+  describe('watertight gate (authoritative kernel)', () => {
+    // Regression: the cheap validateManifold heuristic over-counts edges on
+    // dense meshes and false-flags a genuinely closed solid as non-watertight.
+    // When it does, the manifold kernel is the authority — the mesh must be
+    // treated as watertight (Split enabled) and NOT routed into repair.
+    it('treats a heuristic false-positive as watertight without repair', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      // Heuristic says non-watertight...
+      mockValidateManifold.mockReturnValue({
+        watertight: false, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      // ...but the authoritative kernel confirms it is a valid solid.
+      mockIsWatertightAuthoritative.mockResolvedValue(true)
+
+      const { loadStl, meshInfo, repairPreview, error } = useMeshProcessor()
+      await loadStl(createMockFile('falsepositive.stl'))
+
+      expect(mockIsWatertightAuthoritative).toHaveBeenCalledOnce()
+      // Split is gated on is_watertight — it MUST be true here.
+      expect(meshInfo.value.is_watertight).toBe(true)
+      expect(meshInfo.value.was_repaired).toBe(false)
+      // No repair was needed, so no dialog and no repair attempt.
+      expect(repairPreview.value).toBeNull()
+      expect(mockRepairMeshGeometry).not.toHaveBeenCalled()
+      expect(error.value).toBeNull()
+    })
+
+    it('marks a genuinely repaired mesh as watertight (accept path enables Split)', async () => {
+      const geometry = createMockGeometry()
+      const repaired = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      // Heuristic flags the original AND the repaired result as non-watertight
+      // (the over-count survives welding) — the gate must not trust it.
+      mockValidateManifold.mockReturnValue({
+        watertight: false, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+      // Authoritative kernel agrees the ORIGINAL is bad, so repair runs.
+      mockIsWatertightAuthoritative.mockResolvedValue(false)
+      mockRepairMeshGeometry.mockResolvedValue(repaired)
+
+      const { loadStl, meshInfo, repairPreview } = useMeshProcessor()
+      await loadStl(createMockFile('needsrepair.stl'))
+
+      // Repair ran and produced a manifold-by-construction result, so the mesh
+      // is watertight even though the heuristic still says otherwise.
+      expect(mockRepairMeshGeometry).toHaveBeenCalled()
+      expect(repairPreview.value).not.toBeNull()
+      expect(meshInfo.value.is_watertight).toBe(true)
+      expect(meshInfo.value.was_repaired).toBe(true)
+    })
+
+    it('skips the authoritative check when the heuristic already passes', async () => {
+      const geometry = createMockGeometry()
+      mockStlParse.mockReturnValue(geometry)
+      mockValidateManifold.mockReturnValue({
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
+      })
+
+      const { loadStl, meshInfo } = useMeshProcessor()
+      await loadStl(createMockFile('clean.stl'))
+
+      // A watertight heuristic result is trusted directly — no kernel round-trip.
+      expect(mockIsWatertightAuthoritative).not.toHaveBeenCalled()
+      expect(meshInfo.value.is_watertight).toBe(true)
+    })
+  })
+
   describe('split', () => {
     it('creates chunks with colors', async () => {
       const geometry = createMockGeometry()
@@ -256,6 +331,14 @@ describe('useMeshProcessor', () => {
         vertCount: geometry.attributes.position.count,
       })
 
+      // GPU scaling clones+scales the geometry before passing to splitMeshManifold
+      mockApplyScale.mockImplementation((geo, s) => {
+        const c = geo.clone()
+        c.scale(s, s, s)
+        c.computeBoundingBox()
+        return c
+      })
+
       const rawChunks = [
         { index: 0, geometry, label: 'P00', volume: 500, centroid: new THREE.Vector3(0, 0, 0) },
       ]
@@ -265,7 +348,7 @@ describe('useMeshProcessor', () => {
       await loadStl(createMockFile('dense.stl'))
       await split([250, 250, 250], [1, 1, 1])
 
-      expect(mockSplitMeshManifold.mock.calls[0][0].geometry).toBe(meshGeometry.value)
+      expect(mockSplitMeshManifold.mock.calls[0][0].geometry).not.toBe(meshGeometry.value)
       expect(chunks.value[0].geometry).toBe(geometry)
       expect(previewChunks.value[0].geometry).not.toBe(chunks.value[0].geometry)
       expect(previewChunks.value[0].geometry.attributes.position.count).toBeLessThan(chunks.value[0].geometry.attributes.position.count)
@@ -471,23 +554,23 @@ describe('useMeshProcessor', () => {
   })
 
   describe('setScaleFactor', () => {
-    it('regenerates working mesh from the uploaded source geometry', async () => {
+    it('updates meshInfo arithmetically without cloning geometry on GPU-side scaling', async () => {
       const geometry = createMockGeometry()
-      const scaled = new THREE.BoxGeometry(20, 20, 20)
-      scaled.computeBoundingBox()
       mockStlParse.mockReturnValue(geometry)
-      mockApplyScale.mockReturnValue(scaled)
       mockValidateManifold.mockReturnValue({
-        watertight: true, volume: 8000, euler: 2, faceCount: 12, vertCount: 24,
+        watertight: true, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
       })
 
       const { loadStl, setScaleFactor, scaleFactor, meshInfo } = useMeshProcessor()
       await loadStl(createMockFile('test.stl'))
       setScaleFactor(2)
 
-      expect(mockApplyScale).toHaveBeenCalledWith(expect.any(THREE.BufferGeometry), 2)
+      // setScaleFactor no longer clones geometry — meshInfo updates arithmetically
+      expect(mockApplyScale).not.toHaveBeenCalled()
       expect(scaleFactor.value).toBe(2)
-      expect(meshInfo.value.volume).toBe(8000)
+      expect(meshInfo.value.volume).toBe(1000 * 2 * 2 * 2)
+      expect(meshInfo.value.bounds.min).toEqual({ x: -10, y: -10, z: 0 })
+      expect(meshInfo.value.bounds.max).toEqual({ x: 10, y: 10, z: 20 })
     })
   })
 

@@ -18,7 +18,7 @@ describe('ConnectorConfig', () => {
       type: 'Key',
       depth: 5,
       clearance: 0.3,
-      perFace: 1,
+      perFace: 2,
       keyWidth: 6,
       keyHeight: 3.5,
     })
@@ -33,7 +33,7 @@ describe('ConnectorConfig', () => {
       type: 'Dowel',
       depth: 5,
       clearance: 0.3,
-      perFace: 1,
+      perFace: 2,
       diameter: 6,
     })
   })
@@ -47,7 +47,7 @@ describe('ConnectorConfig', () => {
       type: 'Mortise & Tenon',
       depth: 5,
       clearance: 0.3,
-      perFace: 1,
+      perFace: 2,
       tenonWidth: 6,
       tenonThickness: 4,
     })
@@ -62,7 +62,7 @@ describe('ConnectorConfig', () => {
       type: 'Key',
       depth: 5,
       clearance: 0.3,
-      perFace: 1,
+      perFace: 2,
       keyWidth: 6,
       keyHeight: 3.5,
     })
