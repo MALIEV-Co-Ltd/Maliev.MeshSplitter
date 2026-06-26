@@ -104,3 +104,9 @@ fi
 
 echo "Watchtower activity (last 10m):"
 docker logs mesh-splitter-watchtower --since 10m 2>/dev/null | grep -i "mesh-splitter" || true
+echo "Watchtower auth errors (if any):"
+if docker logs mesh-splitter-watchtower --since 10m 2>/dev/null | grep -Ei "unauthorized|403|auth.*not present" >/dev/null; then
+  echo "Detected auth errors in watchtower logs. Check GHCR credentials or /root/.docker/config.json."
+  exit 1
+fi
+echo "No recent watchtower auth errors detected."

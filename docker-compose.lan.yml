@@ -25,8 +25,8 @@ services:
     labels:
       com.centurylinklabs.watchtower.enable: "true"
       com.centurylinklabs.watchtower.scope: "mesh-splitter"
-    # When run with a private GHCR package, run `docker login ghcr.io`
-    # with the same NAS Docker credential before starting this stack.
+    # For private GHCR access, provide GHCR_USERNAME/GHCR_TOKEN in the env file
+    # or run `docker login ghcr.io` as the same NAS Docker user before starting.
 
   mesh-splitter-watchtower:
     image: containrrr/watchtower:latest
