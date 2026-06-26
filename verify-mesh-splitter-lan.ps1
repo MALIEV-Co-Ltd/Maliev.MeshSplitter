@@ -195,12 +195,34 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
     Select-String -Pattern 'unauthorized|403|auth.*not present' |
     ForEach-Object { $_.Line }
   Write-Output 'Watchtower env & mount checks:'
-  docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>$null |
+  $watchtowerEnv = docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>$null
+  $watchtowerMounts = docker inspect mesh-splitter-watchtower --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}' 2>$null
+  $watchTowerRepoUser = $watchtowerEnv | Where-Object { $_ -like 'REPO_USER=*' } | Select-Object -First 1
+  $watchTowerRepoPass = $watchtowerEnv | Where-Object { $_ -like 'REPO_PASS=*' } | Select-Object -First 1
+
+  if ($watchTowerRepoUser -and $watchTowerRepoPass) {
+    Write-Output 'Watchtower REPO credentials are present in container env (values intentionally not shown).'
+  } else {
+    Write-Output 'Watchtower container does not currently have REPO_USER/REPO_PASS env values.'
+  }
+
+  $watchtowerEnv |
     Where-Object { $_ -match '^DOCKER_CONFIG=' } |
     ForEach-Object { $_ }
-  docker inspect mesh-splitter-watchtower --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}' 2>$null |
-    Select-String -Pattern '/root/.docker' |
+  Write-Output 'Watchtower mount check:'
+  $watchtowerMounts |
+    Select-String -Pattern '/root/.docker|/config' |
     ForEach-Object { $_.Line }
+
+  if (docker exec mesh-splitter-watchtower test -r /config/config.json 2>$null) {
+    if (docker exec mesh-splitter-watchtower grep -q '"ghcr.io"' /config/config.json 2>$null) {
+      Write-Output 'Found ghcr.io entry in watchtower container /config/config.json.'
+    } else {
+      Write-Output 'No ghcr.io auth entry found in watchtower container /config/config.json.'
+    }
+  } else {
+    Write-Output '/config/config.json not available inside watchtower container.'
+  }
 }
 
 Pop-Location
