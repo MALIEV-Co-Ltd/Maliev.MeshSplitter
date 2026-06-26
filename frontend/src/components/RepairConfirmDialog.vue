@@ -123,6 +123,7 @@ function onCancel() {
   border-radius: var(--radius-sm);
   display: block;
   height: auto;
+  margin: 0 auto;
   max-width: 100%;
 }
 .repair-dialog__preview-empty {
