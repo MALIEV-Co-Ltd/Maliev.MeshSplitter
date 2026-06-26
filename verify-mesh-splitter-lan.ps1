@@ -98,6 +98,10 @@ function Get-EnvValue {
 
 $ghcrUser = Get-EnvValue -Path $EnvFile -Key 'GHCR_USERNAME'
 $ghcrToken = Get-EnvValue -Path $EnvFile -Key 'GHCR_TOKEN'
+$envRepoUser = Get-EnvValue -Path $EnvFile -Key 'REPO_USER'
+$envRepoPass = Get-EnvValue -Path $EnvFile -Key 'REPO_PASS'
+if (-not $envRepoUser -and $ghcrUser) { $envRepoUser = $ghcrUser }
+if (-not $envRepoPass -and $ghcrToken) { $envRepoPass = $ghcrToken }
 
 if ($ghcrUser -and $ghcrToken) {
   Write-Output 'Ensuring GHCR authentication for Docker daemon (for watchtower and local pulls)...'
@@ -111,7 +115,11 @@ if ($ghcrUser -and $ghcrToken) {
     Write-Warning 'GHCR login failed. Check GHCR_USERNAME/GHCR_TOKEN.'
   }
 } else {
-  Write-Warning 'GHCR_USERNAME or GHCR_TOKEN is not set in .env file. Watchtower pull may fail for private GHCR images.'
+  if ($envRepoUser -and $envRepoPass) {
+    Write-Output 'Using REPO_USER/REPO_PASS override for watchtower auth.'
+  } else {
+    Write-Warning 'GHCR_USERNAME/GHCR_TOKEN and REPO_USER/REPO_PASS are not set. Watchtower pull may fail for private GHCR images.'
+  }
 }
 
 if (Test-Path '/root/.docker/config.json') {
