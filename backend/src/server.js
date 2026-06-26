@@ -107,27 +107,30 @@ export function createServer(options = {}) {
   })
 }
 
+const MESH_PROXY_PREFIX = '/tools/mesh-splitter'
+
 async function route(context) {
   const { request, response, ledger, shopifyWebhookSecret, adminSecret } = context
   const url = new URL(request.url, 'http://localhost')
+  const requestPath = normalizeRequestPath(url.pathname)
 
-  if (request.method === 'GET' && url.pathname === '/auth') {
+  if (request.method === 'GET' && requestPath === '/auth') {
     return startShopifyOAuth(context, url)
   }
 
-  if (request.method === 'GET' && url.pathname === '/auth/callback') {
+  if (request.method === 'GET' && requestPath === '/auth/callback') {
     return finishShopifyOAuth(context, url)
   }
 
-  if (request.method === 'GET' && url.pathname === '/health') {
+  if (request.method === 'GET' && requestPath === '/health') {
     return sendJson(response, 200, { ok: true })
   }
 
-  if (request.method === 'GET' && url.pathname === '/api/pricing') {
+  if (request.method === 'GET' && requestPath === '/api/pricing') {
     return sendJson(response, 200, serializePricing())
   }
 
-  if (request.method === 'POST' && url.pathname === '/api/admin/reset-credits') {
+  if (request.method === 'POST' && requestPath === '/api/admin/reset-credits') {
     const adminBody = await readJson(request)
     return resetCredits({
       request,
@@ -138,7 +141,7 @@ async function route(context) {
     })
   }
 
-  if (request.method === 'GET' && url.pathname === '/api/account') {
+  if (request.method === 'GET' && requestPath === '/api/account') {
     const identity = resolveOptionalIdentity(context, url)
     if (!identity) {
       return sendJson(response, 200, { authenticated: false, account: null })
@@ -148,7 +151,7 @@ async function route(context) {
     return sendJson(response, 200, { authenticated: true, account })
   }
 
-  if (request.method === 'POST' && url.pathname === '/api/exports/complete') {
+  if (request.method === 'POST' && requestPath === '/api/exports/complete') {
     const identity = resolveIdentity(context, url)
     const body = await readJson(request)
     const authorization = verifyExportAuthorization(body.authorizationToken || body.token, {
@@ -176,11 +179,11 @@ async function route(context) {
 
   if (
     request.method === 'POST'
-    && (url.pathname === '/api/exports' || url.pathname === '/api/generations')
+    && (requestPath === '/api/exports' || requestPath === '/api/generations')
   ) {
     const identity = resolveIdentity(context, url)
     const body = await readJson(request)
-    const requestType = url.pathname === '/api/exports' ? 'export' : 'generation'
+    const requestType = requestPath === '/api/exports' ? 'export' : 'generation'
     const freeLimit = await context.resolveFreeLimit(identity)
     const transaction = await ledger.consumeExport(identity.customerId, {
       idempotencyKey: body.idempotencyKey,
@@ -199,7 +202,7 @@ async function route(context) {
     return sendJson(response, 201, { transaction, account: transaction.account, authorization })
   }
 
-  if (request.method === 'POST' && url.pathname === '/webhooks/shopify/orders-paid') {
+  if (request.method === 'POST' && requestPath === '/webhooks/shopify/orders-paid') {
     const rawBody = await readRaw(request)
     const hmac = request.headers['x-shopify-hmac-sha256']
     if (!verifyShopifyWebhookHmac(rawBody, hmac, shopifyWebhookSecret)) {
@@ -211,9 +214,9 @@ async function route(context) {
     return sendJson(response, 200, result)
   }
 
-  if (request.method === 'GET' && !url.pathname.startsWith('/api/')) {
+  if (request.method === 'GET' && !requestPath.startsWith('/api/')) {
     const query = Object.fromEntries(url.searchParams.entries())
-    if (query.shop && !query.signature && !url.pathname.startsWith('/assets/')) {
+    if (query.shop && !query.signature && !requestPath.startsWith('/assets/')) {
       return startShopifyOAuth(context, url)
     }
     if (query.signature) {
@@ -224,7 +227,7 @@ async function route(context) {
         response.setHeader('Set-Cookie', serializeSessionCookie(session))
       }
     }
-    return serveFrontend(response, context.frontendDistDir, url.pathname)
+    return serveFrontend(response, context.frontendDistDir, requestPath)
   }
 
   return sendJson(response, 404, { error: 'Not found' })
@@ -551,9 +554,14 @@ async function serveFrontend(response, frontendDistDir, requestPath) {
   }
 
   const normalizedPath = requestPath === '/' ? '/index.html' : requestPath
-  const candidate = path.normalize(path.join(frontendDistDir, normalizedPath))
+  const normalizedAssetPath = normalizedPath.startsWith('/')
+    ? normalizedPath.slice(1)
+    : normalizedPath
+  const candidate = path.normalize(path.join(frontendDistDir, normalizedAssetPath))
   const distRoot = path.normalize(frontendDistDir)
-  const filePath = candidate.startsWith(distRoot) ? candidate : path.join(distRoot, 'index.html')
+  const candidateRelative = path.relative(distRoot, candidate)
+  const isValidCandidate = candidateRelative && !candidateRelative.startsWith('..') && !path.isAbsolute(candidateRelative)
+  const filePath = isValidCandidate ? candidate : path.join(distRoot, 'index.html')
   const assetRequest = normalizedPath.startsWith('/assets/')
 
   try {
@@ -626,6 +634,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   server.listen(port, () => {
     console.log(`MeshSplitter backend listening on :${port}`)
   })
+}
+
+function normalizeRequestPath(pathname) {
+  if (!pathname || typeof pathname !== 'string') return '/'
+  if (pathname === MESH_PROXY_PREFIX) return '/'
+  if (pathname.startsWith(`${MESH_PROXY_PREFIX}/`)) return pathname.slice(MESH_PROXY_PREFIX.length)
+  return pathname
 }
 
 function serializeSessionCookie(value) {
