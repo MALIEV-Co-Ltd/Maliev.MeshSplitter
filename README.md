@@ -70,6 +70,7 @@ For home-lab LAN access with automatic `:main` updates on each `main` push:
 - Use [deploy-mesh-splitter-lan.sh](deploy-mesh-splitter-lan.sh) for one-command pull/update/deploy.
 - Or use [deploy-mesh-splitter-lan.ps1](deploy-mesh-splitter-lan.ps1) from a NAS shell with PowerShell.
 - Use [LOCAL_DEPLOYMENT.md](LOCAL_DEPLOYMENT.md), including `verify-mesh-splitter-lan.sh` and `verify-mesh-splitter-lan.ps1`.
+- This is zero-touch on the NAS side: no incoming GitHub webhook or SSH trigger is required.
 - Validate with `curl https://mesh-splitter.local/health` after deployment
 
 Note: `start.ps1` starts the local development frontend only and does not reflect the

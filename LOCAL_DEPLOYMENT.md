@@ -144,6 +144,10 @@ If your NAS exposes only `docker-compose`, run:
 
 ## 6) Keep the version updated automatically
 
+This is zero-touch from GitHub’s side:
+- no incoming webhook or SSH is required from GitHub to your NAS.
+- watchtower polls GHCR on the NAS every 60 seconds and redeploys `mesh-splitter` when `:main` changes.
+
 This compose file uses Watchtower (`mesh-splitter-watchtower`) on the same stack:
 
 - Pulls `ghcr.io/maliev-co-ltd/maliev.meshsplitter:main` from GHCR.
