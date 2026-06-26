@@ -194,7 +194,8 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
 // having their intersection boundaries treated as holes. Falls back to
 // Three.js hole-fill then manifold round-trip when union is not applicable.
 export async function repairMeshGeometryRobust(geometry) {
-  const components = splitDisconnectedComponents(geometry)
+  const welded = geometry.index ? geometry : weldGeometry(geometry, 1e-4)
+  const components = splitDisconnectedComponents(welded)
   if (components.length > 1) {
     const manifold = await getManifoldModule()
 
