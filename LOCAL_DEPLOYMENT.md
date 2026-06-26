@@ -48,8 +48,9 @@ chmod +x verify-mesh-splitter-lan.sh
 ./deploy-mesh-splitter-lan.sh
 ```
 
-> First-time bootstrap only (required for private GHCR image pull):
-> `sudo docker login ghcr.io`
+> First-time bootstrap for private GHCR image pull:
+> - Set `GHCR_USERNAME` and `GHCR_TOKEN` (PAT with `read:packages`) in `.env.mesh-splitter.local`
+> - Then start the stack. No SSH trigger is needed after that.
 
 ### 4b) NAS shell (PowerShell)
 
@@ -146,9 +147,10 @@ This compose file uses Watchtower (`mesh-splitter-watchtower`) on the same stack
 
 - Pulls `ghcr.io/maliev-co-ltd/maliev.meshsplitter:main` from GHCR.
 - Restarts `mesh-splitter` when the digest changes.
-- If watchtower fails to pull from GHCR, confirm your root Docker login cache is present
-  (run `docker login ghcr.io` as root on the NAS once). This compose mounts `/root/.docker`
-  into the watchtower container to reuse that auth for private image pulls.
+- If watchtower fails to pull from GHCR, confirm either:
+  - `GHCR_USERNAME` + `GHCR_TOKEN` are set in `.env.mesh-splitter.local`, or
+  - `/root/.docker/config.json` contains valid GHCR auth for the NAS daemon user.
+  This compose mounts `/root/.docker` into the watchtower container when root login auth is used.
 
 Manual refresh fallback:
 
@@ -207,6 +209,7 @@ docker inspect mesh-splitter --format='{{.State.StartedAt}}'
 
 echo "Watchtower pull/recreate logs:"
 docker logs mesh-splitter-watchtower --since 15m | grep -i "mesh-splitter"
+```
 
 ## 8) Zero-touch NAS update behavior
 

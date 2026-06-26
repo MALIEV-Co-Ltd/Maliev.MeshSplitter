@@ -35,7 +35,15 @@ fi
 
 if [ ! -r /root/.docker/config.json ]; then
   echo "WARNING: /root/.docker/config.json not found; private GHCR pull may fail."
-  echo "Run once as root: docker login ghcr.io"
+  echo "If this file is unavailable, set GHCR_USERNAME + GHCR_TOKEN in .env.mesh-splitter.local."
+fi
+
+ENV_GHCR_USERNAME="$(sed -n 's/^[[:space:]]*GHCR_USERNAME[[:space:]]*=//p' "${ENV_FILE}" | sed 's/[[:space:]]*#.*$//' | tr -d '\r"' | tr -d "'" | tr -d ' ' | head -n1)"
+ENV_GHCR_TOKEN="$(sed -n 's/^[[:space:]]*GHCR_TOKEN[[:space:]]*=//p' "${ENV_FILE}" | sed 's/[[:space:]]*#.*$//' | tr -d '\r"' | tr -d "'" | tr -d ' ' | head -n1)"
+
+if [ -z "${ENV_GHCR_USERNAME:-}" ] || [ -z "${ENV_GHCR_TOKEN:-}" ]; then
+  echo "WARNING: GHCR_USERNAME or GHCR_TOKEN is not set in .env.mesh-splitter.local."
+  echo "Without GHCR credentials, private image pulls may fail in watchtower."
 fi
 
 cd "${INSTALL_DIR}"

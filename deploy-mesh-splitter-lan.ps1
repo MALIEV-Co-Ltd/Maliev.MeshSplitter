@@ -75,7 +75,7 @@ Push-Location -Path $InstallDir
 Write-Output "Using compose command: $($composeCmd -join ' ')"
 if (-not (Test-Path -Path '/root/.docker/config.json' -PathType Leaf)) {
   Write-Output 'WARNING: /root/.docker/config.json not found; private GHCR pull may fail.'
-  Write-Output 'Run once as root: docker login ghcr.io'
+  Write-Output 'If this file is unavailable, set GHCR_USERNAME + GHCR_TOKEN in .env.mesh-splitter.local.'
 }
 
 function Invoke-MeshSplitterCompose {
@@ -88,6 +88,23 @@ function Invoke-MeshSplitterCompose {
   } else {
     & $Command[0] $Command[1] @Arguments
   }
+}
+
+function Get-EnvValueFromFile {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [Parameter(Mandatory = $true)][string]$Key
+  )
+  $line = Get-Content -Path $FilePath | Where-Object { $_ -match "^\s*$([regex]::Escape($Key))\s*=" } | Select-Object -First 1
+  if (-not $line) { return $null }
+  $value = ($line -split '=', 2)[1]
+  return (($value -split '#', 2)[0]).Trim().Trim("'", '"')
+}
+
+$envGhcrUser = Get-EnvValueFromFile -FilePath $EnvFile -Key 'GHCR_USERNAME'
+$envGhcrToken = Get-EnvValueFromFile -FilePath $EnvFile -Key 'GHCR_TOKEN'
+if (-not $envGhcrUser -or -not $envGhcrToken) {
+  Write-Output 'WARNING: GHCR_USERNAME or GHCR_TOKEN is not set in .env.mesh-splitter.local; private image pulls may fail in watchtower.'
 }
 
 Invoke-MeshSplitterCompose -Command $composeCmd -Arguments @('-f', $ComposeFile, '--env-file', $EnvFile, 'pull')
