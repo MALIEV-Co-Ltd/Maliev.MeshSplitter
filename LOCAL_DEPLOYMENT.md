@@ -150,7 +150,7 @@ This compose file uses Watchtower (`mesh-splitter-watchtower`) on the same stack
 - If watchtower fails to pull from GHCR, confirm either:
   - `GHCR_USERNAME` + `GHCR_TOKEN` are set in `.env.mesh-splitter.local`, or
   - `/root/.docker/config.json` contains valid GHCR auth for the NAS daemon user.
-  This compose mounts `/root/.docker` into the watchtower container and sets `DOCKER_CONFIG=/root/.docker`.
+  This compose maps `config.json` to `/config/config.json` and sets `DOCKER_CONFIG=/config` in watchtower.
 
 Manual refresh fallback:
 

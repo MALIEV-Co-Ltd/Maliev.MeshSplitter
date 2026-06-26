@@ -58,6 +58,10 @@ echo
 if docker inspect mesh-splitter >/dev/null 2>&1; then
   RUNNING_IMAGE="$(docker inspect --format '{{.Config.Image}}' mesh-splitter)"
   echo "Running image: ${RUNNING_IMAGE}"
+  echo "Container image reference: $(docker inspect --format '{{.Image}}' mesh-splitter)"
+  echo "Image object: $(docker inspect --format '{{.Image}}' mesh-splitter)"
+  echo "Container started at: $(docker inspect --format '{{.State.StartedAt}}' mesh-splitter)"
+  echo "Container restart count: $(docker inspect --format '{{.RestartCount}}' mesh-splitter)"
   if [ "${RUNNING_IMAGE}" != "${EXPECTED_IMAGE}" ]; then
     echo "Running image does not match expected image: ${EXPECTED_IMAGE}"
     exit 1
@@ -110,16 +114,27 @@ if docker logs mesh-splitter-watchtower --since 10m 2>/dev/null | grep -Ei "unau
   exit 1
 fi
 echo "No recent watchtower auth errors detected."
+echo "Watchtower container image:"
+if docker inspect mesh-splitter-watchtower >/dev/null 2>&1; then
+  echo "Image: $(docker inspect --format '{{.Image}}' mesh-splitter-watchtower)"
+  echo "StartedAt: $(docker inspect --format '{{.State.StartedAt}}' mesh-splitter-watchtower)"
+fi
 echo "Watchtower auth env check:"
 if docker inspect mesh-splitter-watchtower >/dev/null 2>&1; then
   docker inspect mesh-splitter-watchtower --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
     | grep -E '^DOCKER_CONFIG='
   echo "Watchtower mount check:"
   docker inspect mesh-splitter-watchtower --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}' | \
-    grep '/root/.docker' || true
+    grep -E '(/root/.docker|/config)' || true
 fi
 echo "Watchtower auth config check:"
-if [ -r /root/.docker/config.json ]; then
+if docker exec mesh-splitter-watchtower test -r /config/config.json 2>/dev/null; then
+  if docker exec mesh-splitter-watchtower grep -q '"ghcr.io"' /config/config.json 2>/dev/null; then
+    echo "Found ghcr.io entry in watchtower container /config/config.json."
+  else
+    echo "No ghcr.io auth entry found in watchtower container /config/config.json."
+  fi
+elif [ -r /root/.docker/config.json ]; then
   if grep -q '"ghcr.io"' /root/.docker/config.json 2>/dev/null; then
     echo "Found ghcr.io entry in /root/.docker/config.json."
   else

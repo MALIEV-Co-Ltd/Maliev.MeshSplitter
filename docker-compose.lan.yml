@@ -32,6 +32,8 @@ services:
     image: containrrr/watchtower:latest
     container_name: mesh-splitter-watchtower
     restart: unless-stopped
+    env_file:
+      - .env.mesh-splitter.local
     command:
       - --interval
       - "60"
@@ -40,8 +42,11 @@ services:
       - mesh-splitter
       - --label-enable
     environment:
-      DOCKER_CONFIG: /root/.docker
+      # Fallback registry auth envs (legacy Watchtower behavior).
+      REPO_USER: ${GHCR_USERNAME}
+      REPO_PASS: ${GHCR_TOKEN}
+      DOCKER_CONFIG: /config
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # Required for host docker config auth (docker login on NAS user)
-      - /root/.docker:/root/.docker:ro
+      # Private GHCR fallback auth via mounted Docker config file.
+      - /root/.docker/config.json:/config/config.json:ro
