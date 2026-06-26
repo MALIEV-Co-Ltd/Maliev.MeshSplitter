@@ -189,9 +189,48 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
   return repaired
 }
 
-// Try Three.js hole-fill first; if that fails, fall back to the authoritative
-// manifold-3d engine for a clean round-trip repair.
+// Try manifold-3d union of disconnected components first so intersecting
+// bodies (e.g. bolt thread + head) get a correct boolean merge instead of
+// having their intersection boundaries treated as holes. Falls back to
+// Three.js hole-fill then manifold round-trip when union is not applicable.
 export async function repairMeshGeometryRobust(geometry) {
+  const components = splitDisconnectedComponents(geometry)
+  if (components.length > 1) {
+    const manifold = await getManifoldModule()
+
+    try {
+      const solids = []
+      for (const comp of components) {
+        const mesh = geometryToManifoldMesh(comp, manifold)
+        const solid = manifold.Manifold.ofMesh(mesh)
+        if (solid.status() === 'NoError' && !solid.isEmpty()) {
+          solids.push(solid)
+        } else {
+          solid?.delete?.()
+        }
+      }
+
+      if (solids.length >= 2) {
+        let result = solids[0]
+        for (let i = 1; i < solids.length; i++) {
+          const unioned = result.union(solids[i])
+          result.delete?.()
+          solids[i].delete?.()
+          result = unioned
+        }
+        const cleaned = manifoldMeshToGeometry(result.getMesh())
+        result.delete?.()
+        cleaned.computeBoundingBox()
+        cleaned.computeVertexNormals()
+        if (validateManifold(cleaned).watertight) return cleaned
+      }
+
+      solids.forEach((s) => s?.delete?.())
+    } catch {
+      // Component union failed — fall through to hole-filling
+    }
+  }
+
   const filled = repairMeshGeometry(geometry)
   const filledInfo = validateManifold(filled)
   if (filledInfo.watertight) return filled
