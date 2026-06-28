@@ -125,15 +125,22 @@ function requestRender() {
   })
 }
 
+// Collapse bursts of resize callbacks to one update per animation frame —
+// see the matching comment in ThreePreview.vue's onResize for why.
+let resizeFrame = null
 function onResize() {
-  if (!container.value || !renderer || !camera) return
-  const w = container.value.clientWidth
-  const h = container.value.clientHeight
-  if (!w || !h) return
-  camera.aspect = w / h
-  camera.updateProjectionMatrix()
-  renderer.setSize(w, h)
-  requestRender()
+  if (resizeFrame) return
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null
+    if (!container.value || !renderer || !camera) return
+    const w = container.value.clientWidth
+    const h = container.value.clientHeight
+    if (!w || !h) return
+    camera.aspect = w / h
+    camera.updateProjectionMatrix()
+    renderer.setSize(w, h)
+    requestRender()
+  })
 }
 
 let resizeObserver
@@ -152,6 +159,7 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   controls?.dispose()
   if (renderFrame) cancelAnimationFrame(renderFrame)
+  if (resizeFrame) cancelAnimationFrame(resizeFrame)
   clearMesh()
   renderer?.dispose()
 })

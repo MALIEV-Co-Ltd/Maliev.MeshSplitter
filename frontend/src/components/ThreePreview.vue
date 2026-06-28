@@ -768,15 +768,27 @@ function isConnectorPositionValid(position, entry) {
   return true
 }
 
+// A live window drag fires the native 'resize' event far faster than once per
+// frame, and each call below does a real WebGL framebuffer resize (renderer.
+// setSize) — collapsing bursts to one update per animation frame keeps a drag
+// smooth instead of queuing a backlog of full resize+render passes. This
+// matters more when the main thread also has other work competing for time
+// (e.g. a voxel repair worker saturating a CPU core), where the uncollapsed
+// per-event cost is far more likely to be visibly felt.
+let resizeFrame = null
 function onResize() {
-  if (!container.value || !renderer || !camera) return
-  const w = container.value.clientWidth
-  const h = container.value.clientHeight
-  camera.aspect = w / h
-  camera.updateProjectionMatrix()
-  applyPixelRatio()
-  renderer.setSize(w, h)
-  requestRender()
+  if (resizeFrame) return
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null
+    if (!container.value || !renderer || !camera) return
+    const w = container.value.clientWidth
+    const h = container.value.clientHeight
+    camera.aspect = w / h
+    camera.updateProjectionMatrix()
+    applyPixelRatio()
+    renderer.setSize(w, h)
+    requestRender()
+  })
 }
 
 onMounted(() => {
@@ -801,6 +813,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onPointerUp)
   controls?.dispose()
   if (renderFrame) cancelAnimationFrame(renderFrame)
+  if (resizeFrame) cancelAnimationFrame(resizeFrame)
   clearScene()
   if (problemEdgeOverlay) {
     disposeGroup(problemEdgeOverlay)

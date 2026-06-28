@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url'
 import malievLogoWhiteSvg from '../assets/logos/maliev-wordmark-white.svg?raw'
+import { voxelRemeshGeometry } from './voxelRemesh.js'
 
 let manifoldModulePromise
 
@@ -237,10 +238,72 @@ function dropInsignificantComponents(geometry) {
 // match to floating-point epsilon, so 1% cleanly separates the two.
 const SELF_INTERSECTION_VOLUME_TOLERANCE = 0.01
 
+// A shell where some edge is shared by THREE OR MORE triangles (e.g. an
+// internal membrane fused flush into the outer surface — a flange modeled as
+// a zero-thickness interface between two overlapping bodies) is genuinely
+// non-manifold, not merely self-intersecting. A boolean union cannot repair
+// this: Manifold's CSG kernel misinterprets inside/outside across the WHOLE
+// shell from it, corrupting unrelated features elsewhere on the same surface
+// (verified: even a bare ofMesh round-trip with no boolean at all mangles a
+// drive-socket recess far from the defective edges). Only rebuilding the
+// surface from a robust volumetric field — see voxelRemeshGeometry — resolves
+// it. A valence of 1 (a simple boundary edge / hole) is a DIFFERENT, already-
+// handled case — repairMeshGeometry's boundary-loop fill covers that — so it
+// must not trigger this bailout. Must run on the WELDED component: raw STL
+// triangles never share vertex indices, so every edge would trivially read as
+// valence 1.
+function hasNonManifoldEdges(geometry) {
+  const indices = geometry.index ? geometry.index.array : null
+  const triCount = indices ? indices.length / 3 : geometry.attributes.position.count / 3
+  const edgeCounts = new Map()
+  for (let f = 0; f < triCount; f += 1) {
+    const i0 = indices ? indices[f * 3] : f * 3
+    const i1 = indices ? indices[f * 3 + 1] : f * 3 + 1
+    const i2 = indices ? indices[f * 3 + 2] : f * 3 + 2
+    const tri = [i0, i1, i2]
+    for (let e = 0; e < 3; e += 1) {
+      const a = tri[e], b = tri[(e + 1) % 3]
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`
+      edgeCounts.set(key, (edgeCounts.get(key) || 0) + 1)
+    }
+  }
+  for (const count of edgeCounts.values()) {
+    if (count >= 3) return true
+  }
+  return false
+}
+
+// The volumetric voxel remesh (see voxelRemesh.js) is the only thing that
+// repairs genuinely non-manifold input correctly, but it can take anywhere
+// from several seconds to a few minutes on a badly broken mesh — far slower
+// than every other path here. Auto-running it would silently make every
+// upload pay that cost on the rare pathological file. Instead
+// repairMeshGeometryRobust bails out (returns null) for this case, and the
+// caller offers it as an explicit, opt-in "try advanced repair" action via
+// attemptVoxelRepair — typically run in a Web Worker so it can report live
+// progress without blocking the UI.
+export async function attemptVoxelRepair(geometry, options = {}) {
+  const manifold = await getManifoldModule()
+  return voxelRemeshGeometry(geometry, manifold, options)
+}
+
 export async function repairMeshGeometryRobust(geometry) {
   const manifold = await getManifoldModule()
   const welded = weldGeometry(geometry, 1e-4)
   const components = splitDisconnectedComponents(welded)
+
+  // Genuinely non-manifold input (some edge shared by other than exactly two
+  // triangles) cannot be fixed by a boolean union — see hasNonManifoldEdges.
+  // It is ALSO unsafe to fall through to the hole-fill/manifoldCleanGeometry
+  // chain below: manifoldCleanGeometry's ofMesh round-trip reports NoError for
+  // this defect while silently corrupting unrelated geometry elsewhere on the
+  // same shell (observed: a drive-socket recess mangled into a star, far from
+  // the actual defective edges). Bail out now so the caller can offer the
+  // slower, opt-in voxel remesh instead of a fast path that looks successful
+  // but is actually wrong.
+  if (components.some(hasNonManifoldEdges)) {
+    return null
+  }
 
   // Build one Manifold solid per connected component and decide, per the
   // volume test above, whether any shell self-intersects. ofMesh's NoError
@@ -622,7 +685,7 @@ export function applyScale(geometry, scaleFactor) {
   return scaled
 }
 
-async function getManifoldModule() {
+export async function getManifoldModule() {
   if (!manifoldModulePromise) {
     manifoldModulePromise = import('manifold-3d').then(async (mod) => {
       const wasmBinary = await loadManifoldWasmBinary()
