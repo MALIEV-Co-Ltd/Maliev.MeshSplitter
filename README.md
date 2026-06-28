@@ -62,16 +62,25 @@ The included `Dockerfile` builds the frontend and runs the app as a single
 web service suitable for Render, Fly.io, Railway, or any container host with
 Postgres.
 
-## Local network deployment (Synology NAS)
+## Local startup
 
-For home-lab LAN access with automatic `:main` updates on each `main` push:
+For local development and quick UI testing, use:
 
-- Deploy using [docker-compose.lan.yml](docker-compose.lan.yml)
-- Use [deploy-mesh-splitter-lan.sh](deploy-mesh-splitter-lan.sh) for one-command pull/update/deploy.
-- Or use [deploy-mesh-splitter-lan.ps1](deploy-mesh-splitter-lan.ps1) from a NAS shell with PowerShell.
-- Use [LOCAL_DEPLOYMENT.md](LOCAL_DEPLOYMENT.md), including `verify-mesh-splitter-lan.sh` and `verify-mesh-splitter-lan.ps1`.
-- Validate with `curl https://mesh-splitter.local/health` after deployment
+```powershell
+.\start.ps1
+```
 
-Note: `start.ps1` starts the local development frontend only and does not reflect the
-deployed NAS/container version. Use the NAS compose stack above for versioning checks
-against production/main deployment tags.
+`start.ps1` launches the frontend locally for development. It is intended for
+offline/local testing only and does not represent the production/container deployment.
+
+## Production deployment
+
+Production builds and releases are handled by CI. `.github/workflows/ci.yml`
+builds the app and publishes container images to GitHub Container Registry:
+
+- `ghcr.io/maliev-co-ltd/maliev.meshsplitter:main`
+- `ghcr.io/maliev-co-ltd/maliev.meshsplitter:latest`
+- commit SHA tags
+
+Deploy those images from CI to your production host (Cloud Run, Render, Fly, Railway,
+etc.) using your existing environment secret/configuration flow.

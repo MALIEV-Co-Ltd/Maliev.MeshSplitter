@@ -3,13 +3,16 @@ import * as THREE from 'three'
 import {
   addConnectorsManifold,
   applyScale,
+  attemptVoxelRepair,
   computeConnectorPositions,
   computeProblemEdges,
   computeVolume,
   exportStl,
   exportPackage,
+  isWatertightAuthoritative,
   orderPartsByConnectivity,
   repairMeshGeometry,
+  repairMeshGeometryRobust,
   splitMeshManifold,
   validateConnectorPosition,
   validateExportChunks,
@@ -95,6 +98,79 @@ describe('splitMeshManifold', () => {
       expect(validateManifold(chunk.geometry).watertight).toBe(true)
     })
   })
+
+  // Regression: a self-intersecting input (here two interpenetrating boxes,
+  // standing in for the bolt's recess shell that overlaps its own body) used to
+  // pass Manifold.ofMesh's topology check yet split into an exploded, multi-body
+  // "star". repairMeshGeometryRobust must resolve the self-intersection with a
+  // real boolean union so the result is a single watertight solid whose volume
+  // is the true union (NOT the double-counted naive sum), and splitting it must
+  // not fracture it into extra bodies.
+  it('resolves a self-intersecting mesh into a clean single-body solid', async () => {
+    const boxA = new THREE.BoxGeometry(20, 20, 20)
+    const boxB = new THREE.BoxGeometry(20, 20, 20).translate(10, 0, 0)
+    const selfIntersecting = mergeTestGeometries([boxA, boxB])
+
+    // Naive signed-volume double-counts the overlap (8000 + 8000 = 16000); the
+    // true union of the 30x20x20 envelope is 12000.
+    expect(computeVolume(selfIntersecting)).toBeCloseTo(16000, -2)
+
+    const repaired = await repairMeshGeometryRobust(selfIntersecting)
+    expect(repaired).not.toBeNull()
+    expect(validateManifold(repaired).watertight).toBe(true)
+    // Self-intersection resolved: volume collapses to the true union, well under
+    // the naive sum.
+    expect(computeVolume(repaired)).toBeGreaterThan(11000)
+    expect(computeVolume(repaired)).toBeLessThan(13000)
+
+    // Splitting the repaired solid must keep it as a single connected body, not
+    // explode it.
+    const chunks = await splitMeshManifold(new THREE.Mesh(repaired), [256, 256, 250], [1, 1, 1])
+    expect(chunks).toHaveLength(1)
+    expect(validateManifold(chunks[0].geometry).watertight).toBe(true)
+    expect(chunks[0].label).toMatch(/^P\d{2}-X0Y0Z0$/)
+  })
+
+  // Regression: a GENUINELY non-manifold input — two boxes sharing a flush
+  // face, welded into one connected component with a zero-thickness internal
+  // membrane (4 triangles meet at the shared face's edges instead of 2) — is
+  // the same defect pattern found in a real bolt's flange. Manifold.ofMesh
+  // reports NoError for this (it only certifies edge-valence topology in the
+  // common case, not this kind of internal membrane), so neither the
+  // boolean-union path nor the hole-fill fallback can detect or repair it.
+  // repairMeshGeometryRobust must bail out (null) rather than silently return
+  // the mangled manifoldCleanGeometry result; the voxel remesh is reached only
+  // through the explicit, opt-in attemptVoxelRepair.
+  it('declines to auto-repair a non-manifold internal membrane (opt-in voxel remesh required)', async () => {
+    const boxA = new THREE.BoxGeometry(10, 10, 10).translate(5, 5, 5)
+    const boxB = new THREE.BoxGeometry(10, 10, 10).translate(15, 5, 5)
+    const nonManifold = mergeTestGeometries([boxA, boxB])
+
+    expect(await repairMeshGeometryRobust(nonManifold)).toBeNull()
+  })
+
+  it('attemptVoxelRepair (opt-in) remeshes the same non-manifold membrane into a clean single solid', async () => {
+    const boxA = new THREE.BoxGeometry(10, 10, 10).translate(5, 5, 5)
+    const boxB = new THREE.BoxGeometry(10, 10, 10).translate(15, 5, 5)
+    const nonManifold = mergeTestGeometries([boxA, boxB])
+
+    const repaired = await attemptVoxelRepair(nonManifold)
+    expect(repaired).not.toBeNull()
+    // The voxel remesh is dense (marching cubes traces flat faces with many
+    // small triangles), which is exactly where validateManifold's cheap 0.01mm
+    // quantization heuristic over-counts edges and false-flags a genuinely
+    // closed mesh — defer to the manifold kernel, the authoritative check.
+    expect(await isWatertightAuthoritative(repaired)).toBe(true)
+
+    // True volume is 2000 (two 10x10x10 boxes touching, no overlap); the voxel
+    // remesh approximates this within its grid resolution.
+    expect(computeVolume(repaired)).toBeGreaterThan(1800)
+    expect(computeVolume(repaired)).toBeLessThan(2200)
+
+    const chunks = await splitMeshManifold(new THREE.Mesh(repaired), [256, 256, 250], [1, 1, 1])
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0].manifoldStatus).toBe('NoError')
+  }, 30000)
 
   it('splits disconnected bodies before connector placement so each body can receive a connector', async () => {
     const upperBeam = new THREE.BoxGeometry(80, 12, 20).translate(0, 24, 0)

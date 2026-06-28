@@ -13,7 +13,7 @@
       <p>{{ labels.body || 'The model has holes or gaps that could not be repaired automatically. Review the highlighted areas in the 3D view.' }}</p>
     </header>
 
-    <div class="nmf-panel__stats">
+    <div v-if="!voxelRepairRunning" class="nmf-panel__stats">
       <div v-if="boundaryHoles > 0" class="nmf-panel__stat">
         <span class="nmf-panel__stat-num">{{ boundaryHoles.toLocaleString() }}</span>
         <span class="nmf-panel__stat-label">{{ labels.holes || 'boundary holes' }}</span>
@@ -28,12 +28,45 @@
       </div>
     </div>
 
+    <!-- While the opt-in voxel repair runs, the stats above give way to a live
+         progress bar — it's the only thing meaningful to show during a
+         potentially multi-minute, off-main-thread repair. -->
+    <div v-if="voxelRepairRunning" class="nmf-panel__progress">
+      <div class="nmf-panel__progress-label">
+        {{ labels.advancedRepairRunning || 'Running advanced repair…' }}
+        <span class="nmf-panel__progress-pct">{{ Math.round(voxelRepairProgress * 100) }}%</span>
+      </div>
+      <div class="nmf-panel__progress-track" role="progressbar" :aria-valuenow="Math.round(voxelRepairProgress * 100)" aria-valuemin="0" aria-valuemax="100">
+        <div class="nmf-panel__progress-fill" :style="{ width: `${Math.max(2, voxelRepairProgress * 100)}%` }" />
+      </div>
+    </div>
+    <p v-else-if="canAttemptVoxelRepair" class="nmf-panel__voxel-hint">
+      {{ labels.advancedRepairBody || 'This can take a few minutes on a badly broken mesh. You can cancel at any time.' }}
+    </p>
+
     <div class="nmf-panel__actions">
-      <Button variant="outline" class="justify-center" @click="emit('dismiss')">
-        {{ labels.dismiss || 'Dismiss' }}
-      </Button>
-      <Button class="justify-center" @click="emit('view-problem')">
-        {{ labels.viewProblem || 'View on model' }}
+      <template v-if="voxelRepairRunning">
+        <Button variant="outline" class="justify-center" @click="emit('cancel-voxel-repair')">
+          {{ labels.cancelRepair || 'Cancel' }}
+        </Button>
+      </template>
+      <template v-else>
+        <!-- When basic repair has failed outright (canDismiss false), the mesh
+             genuinely cannot be split — dismissing would just strand the user
+             on a permanently disabled Split button with no clear next step.
+             They must continue with the opt-in advanced repair, or use
+             "Replace file" elsewhere in the panel to start over. -->
+        <Button v-if="canDismiss" variant="outline" class="justify-center" @click="emit('dismiss')">
+          {{ labels.dismiss || 'Dismiss' }}
+        </Button>
+        <Button class="justify-center" @click="emit('view-problem')">
+          {{ labels.viewProblem || 'View on model' }}
+        </Button>
+      </template>
+    </div>
+    <div v-if="!voxelRepairRunning && canAttemptVoxelRepair" class="nmf-panel__actions nmf-panel__actions--secondary">
+      <Button variant="outline" class="justify-center" @click="emit('attempt-voxel-repair')">
+        {{ labels.tryAdvancedRepair || 'Try advanced repair (slower)' }}
       </Button>
     </div>
   </div>
@@ -47,10 +80,14 @@ defineProps({
   boundaryHoles: { type: Number, default: 0 },
   boundaryEdges: { type: Number, default: 0 },
   nonManifoldEdges: { type: Number, default: 0 },
+  canAttemptVoxelRepair: { type: Boolean, default: false },
+  voxelRepairRunning: { type: Boolean, default: false },
+  voxelRepairProgress: { type: Number, default: 0 },
+  canDismiss: { type: Boolean, default: true },
   labels: { type: Object, default: () => ({}) },
 })
 
-const emit = defineEmits(['view-problem', 'dismiss'])
+const emit = defineEmits(['view-problem', 'dismiss', 'attempt-voxel-repair', 'cancel-voxel-repair'])
 </script>
 
 <style scoped>
@@ -121,5 +158,46 @@ const emit = defineEmits(['view-problem', 'dismiss'])
 .nmf-panel__actions :deep(button) {
   flex: 1;
   max-width: 180px;
+}
+.nmf-panel__actions--secondary {
+  margin-top: 10px;
+}
+.nmf-panel__actions--secondary :deep(button) {
+  max-width: none;
+}
+.nmf-panel__voxel-hint {
+  color: var(--steel-500);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: -4px 0 14px;
+  text-align: center;
+}
+.nmf-panel__progress {
+  margin-bottom: 16px;
+}
+.nmf-panel__progress-label {
+  color: var(--steel-600);
+  display: flex;
+  font-size: 12.5px;
+  font-weight: 600;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.nmf-panel__progress-pct {
+  color: var(--steel-500);
+  font-family: var(--font-mono);
+}
+.nmf-panel__progress-track {
+  background: var(--steel-100);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+.nmf-panel__progress-fill {
+  background: var(--signal-600);
+  border-radius: 999px;
+  height: 100%;
+  transition: width 0.2s ease-out;
 }
 </style>

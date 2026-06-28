@@ -40,10 +40,8 @@ ghcr.io/maliev-co-ltd/maliev.meshsplitter:main
 
 Commit-specific images are also tagged as `sha-<sha>`.
 
-The local-network deployment image is the same repository and should use the `main` tag.
-
-For local deployment on your own network (DNS name `mesh-splitter.local`), see
-[`LOCAL_DEPLOYMENT.md`](../LOCAL_DEPLOYMENT.md).
+For local-only UI validation, use `start.ps1` in the repo root. Production deployment
+uses the CI-published `main` image from GitHub Container Registry.
 
 ## Google Cloud Run deployment
 

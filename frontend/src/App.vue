@@ -106,9 +106,15 @@
           :boundary-holes="boundaryHoles"
           :boundary-edges="boundaryEdges"
           :non-manifold-edges="nonManifoldEdgeCount"
+          :can-attempt-voxel-repair="canAttemptVoxelRepair"
+          :voxel-repair-running="voxelRepairRunning"
+          :voxel-repair-progress="voxelRepairProgress"
+          :can-dismiss="canDismissProblemEdges"
           :labels="uiCopy.errorDialog"
           @view-problem="frameToProblemEdges"
           @dismiss="dismissProblemEdges"
+          @attempt-voxel-repair="runAdvancedRepair"
+          @cancel-voxel-repair="cancelAdvancedRepair"
         />
       </section>
 
@@ -236,7 +242,7 @@
         </div>
       </div>
     </dialog>
-    <RepairConfirmDialog v-if="repairPreview" :preview="repairPreview" :labels="uiCopy.repairDialog" @confirm="acceptRepair" @cancel="rejectRepair" />
+    <RepairConfirmDialog v-if="repairPreview" :preview="repairPreview" :labels="uiCopy.repairDialog" @confirm="acceptRepair" />
   </main>
 </template>
 
@@ -288,7 +294,8 @@ function onMobileSplit() {
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
   connectorPositions, reapplyingConnectors, problemEdges,
-  loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, rejectRepair, error, scaleFactor, buildVolume,
+  loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, error, scaleFactor, buildVolume,
+  canAttemptVoxelRepair, voxelRepairRunning, voxelRepairProgress, runAdvancedRepair, cancelAdvancedRepair,
   loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
   prepareExport, buildExportPackage, saveBlob, clearProblemEdges,
 } = useMeshProcessor()
@@ -368,6 +375,7 @@ const appTranslations = {
       loading: 'Loading file…',
       checking: 'Checking mesh…',
       repairing: 'Repairing mesh…',
+      advancedRepairing: 'Running advanced repair…',
       splitting: 'Splitting mesh…',
       processing: 'Processing chunks…',
       analyzing: 'Analyzing connectors…',
@@ -389,8 +397,7 @@ const appTranslations = {
       after: 'After repair',
       faces: 'faces',
       verts: 'verts',
-      keepOriginal: 'Keep original',
-      useRepaired: 'Use repaired mesh',
+      acknowledge: 'Acknowledge',
     },
     errorDialog: {
       title: 'Cannot split mesh',
@@ -400,6 +407,11 @@ const appTranslations = {
       nonManifold: 'non-manifold edges',
       dismiss: 'Dismiss',
       viewProblem: 'View on model',
+      tryAdvancedRepair: 'Try advanced repair (slower)',
+      advancedRepairBody: 'This can take a few minutes on a badly broken mesh. You can cancel at any time.',
+      advancedRepairRunning: 'Running advanced repair…',
+      cancelRepair: 'Cancel',
+      advancedRepairFailed: 'Advanced repair could not fix this mesh either. Try repairing it in your CAD or slicer before export.',
     },
     uploader: {
       title: 'Mesh file',
@@ -515,6 +527,7 @@ const appTranslations = {
       loading: 'กำลังโหลดไฟล์…',
       checking: 'กำลังตรวจสอบเมช…',
       repairing: 'กำลังซ่อมเมช…',
+      advancedRepairing: 'กำลังซ่อมแบบขั้นสูง…',
       splitting: 'กำลังแยกเมช…',
       processing: 'กำลังประมวลผลชิ้นงาน…',
       analyzing: 'กำลังวิเคราะห์ตำแหน่งตัวต่อ…',
@@ -536,8 +549,7 @@ const appTranslations = {
       after: 'หลังซ่อม',
       faces: 'หน้า',
       verts: 'จุด',
-      keepOriginal: 'ใช้ต้นฉบับ',
-      useRepaired: 'ใช้เมชที่ซ่อมแล้ว',
+      acknowledge: 'ตกลง',
     },
     errorDialog: {
       title: 'ไม่สามารถตัดโมเดลได้',
@@ -547,6 +559,11 @@ const appTranslations = {
       nonManifold: 'ขอบที่ไม่ปิดผิว',
       dismiss: 'ปิด',
       viewProblem: 'ดูบนโมเดล',
+      tryAdvancedRepair: 'ลองซ่อมแบบขั้นสูง (ช้ากว่า)',
+      advancedRepairBody: 'อาจใช้เวลาหลายนาทีหากเมชเสียหายมาก ยกเลิกได้ทุกเมื่อ',
+      advancedRepairRunning: 'กำลังซ่อมแบบขั้นสูง…',
+      cancelRepair: 'ยกเลิก',
+      advancedRepairFailed: 'การซ่อมแบบขั้นสูงไม่สามารถแก้ไขเมชนี้ได้ ลองซ่อมในโปรแกรม CAD หรือสไลเซอร์ก่อนส่งออก',
     },
     uploader: {
       title: 'ไฟล์เมช',
@@ -638,12 +655,24 @@ const appTranslations = {
 }
 const uiCopy = computed(() => appTranslations[locale.value] || appTranslations.en)
 const visibleError = computed(() => {
-  // When the mesh is watertight, problem edges on the 3D view are a visual cue
-  // and the text error can be suppressed. But if the mesh itself is non-watertight,
-  // the user needs to see the error to understand why the split button is disabled.
-  if (meshInfo.value?.is_watertight !== false && problemEdges.value.length > 0) return ''
+  // Whenever there are problem edges — load-time non-manifold failure or a
+  // split-time error — NonManifoldErrorDialog is already showing the full
+  // story (stats, a hint, and the opt-in advanced-repair action where
+  // available). Duplicating the same message as plain text under the file
+  // panel is pure redundancy, so suppress it there regardless of watertight
+  // status. Errors unrelated to problem edges (e.g. an invalid file) still
+  // show normally — they have nothing else explaining them.
+  if (problemEdges.value.length > 0) return ''
   return error.value || (hasCreditAccount.value ? creditError.value : '') || ''
 })
+// When the mesh itself failed to become watertight at load (basic repair
+// failed outright), the mesh genuinely cannot be split — dismissing the
+// dialog would strand the user on a permanently disabled Split button with no
+// path forward. They must continue with the opt-in advanced repair, or use
+// "Replace file" to start over. A split-time-only error (the mesh loaded fine
+// but something failed later, e.g. a scale-induced precision issue) isn't
+// necessarily a dead end, so dismiss stays available there.
+const canDismissProblemEdges = computed(() => meshInfo.value?.is_watertight !== false)
 // A loaded mesh is splittable only once it is watertight. Load already attempts
 // automatic repair, so a mesh that is still non-watertight is non-repairable —
 // splitting it would just fail, so Split (and therefore Export) stay disabled.

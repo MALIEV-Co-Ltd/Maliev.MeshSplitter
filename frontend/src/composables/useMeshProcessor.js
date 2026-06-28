@@ -16,6 +16,7 @@ import {
 } from '../mesh/meshProcessor'
 import { allocatePreviewBudget, createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
 import { renderPartThumbnail, disposeThumbnailRenderer } from '../mesh/thumbnailRenderer'
+import { runVoxelRepairInWorker } from '../mesh/voxelRepairWorkerClient'
 
 const COLORS = [
   0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6,
@@ -53,6 +54,18 @@ export function useMeshProcessor(options = {}) {
   const problemEdges = ref([])
   const repairPreview = ref(null)
   let pendingOriginalGeometry = null
+
+  // Opt-in, last-resort voxel repair (see meshProcessor.attemptVoxelRepair):
+  // only offered after the fast repair paths fail, and only run on explicit
+  // user action — it can take from several seconds to a few minutes on a
+  // badly non-manifold mesh. Runs in a Web Worker so the UI stays responsive
+  // and progress can update live.
+  const canAttemptVoxelRepair = ref(false)
+  const voxelRepairRunning = ref(false)
+  const voxelRepairProgress = ref(0)
+  let voxelRepairSourceGeometry = null
+  let voxelRepairSourceFilename = null
+  let voxelRepairAbortController = null
 
   function setProgressLabels(labels) {
     Object.assign(progressLabels.value, { ...progressLabels.value, ...labels })
@@ -120,6 +133,9 @@ export function useMeshProcessor(options = {}) {
     pendingOriginalGeometry = null
     error.value = null
     problemEdges.value = []
+    canAttemptVoxelRepair.value = false
+    voxelRepairSourceGeometry = null
+    voxelRepairSourceFilename = null
     try {
       const buffer = await file.arrayBuffer()
       progressLabel.value = progressLabels.value.checking
@@ -152,6 +168,14 @@ export function useMeshProcessor(options = {}) {
         if (repaired === null) {
           problemEdges.value = computeProblemEdges(geometry)
           error.value = 'Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'
+          // The fast paths gave up, but the slower opt-in voxel remesh (see
+          // runAdvancedRepair) can still fix this — offer it instead of a
+          // dead end. Keep the ORIGINAL (un-normalized-for-preview) geometry
+          // reference so a successful advanced repair lines up with the same
+          // before/after preview flow a fast repair would have produced.
+          canAttemptVoxelRepair.value = true
+          voxelRepairSourceGeometry = geometry
+          voxelRepairSourceFilename = file.name
         }
       } else if (repaired !== workingGeometry) {
         const repairedInfo = validateManifold(repaired)
@@ -160,6 +184,8 @@ export function useMeshProcessor(options = {}) {
         repairPreview.value = {
           beforeUrl: renderPartThumbnail(geometry),
           afterUrl: renderPartThumbnail(repaired),
+          beforeGeometry: markRaw(geometry.clone()),
+          afterGeometry: markRaw(repaired.clone()),
           beforeStats: { faces: initialInfo.faceCount, verts: initialInfo.vertCount },
           afterStats: { faces: repairedInfo.faceCount, verts: repairedInfo.vertCount },
           filename: file.name,
@@ -197,6 +223,69 @@ export function useMeshProcessor(options = {}) {
       pendingOriginalGeometry = null
     }
     repairPreview.value = null
+  }
+
+  // The opt-in last resort after the fast repair paths in loadStl gave up
+  // (see canAttemptVoxelRepair). Runs in a Web Worker — can take from several
+  // seconds to a few minutes on a badly non-manifold mesh — and reports live
+  // progress via voxelRepairProgress. On success it hands off to the SAME
+  // before/after acknowledge flow (repairPreview/acceptRepair/rejectRepair) a
+  // fast repair would have produced, so the rest of the app doesn't need to
+  // know which path the repair took.
+  async function runAdvancedRepair() {
+    if (!voxelRepairSourceGeometry || voxelRepairRunning.value) return
+    const original = voxelRepairSourceGeometry
+    const filename = voxelRepairSourceFilename || meshInfo.value?.filename || 'mesh'
+    const initialInfo = validateManifold(original)
+
+    voxelRepairRunning.value = true
+    voxelRepairProgress.value = 0
+    loading.value = true
+    progressLabel.value = progressLabels.value.advancedRepairing
+    error.value = null
+    voxelRepairAbortController = new AbortController()
+    try {
+      const result = await runVoxelRepairInWorker(original, {
+        onProgress: (p) => { voxelRepairProgress.value = p },
+        signal: voxelRepairAbortController.signal,
+      })
+      if (!result) {
+        problemEdges.value = computeProblemEdges(original)
+        error.value = 'Advanced repair could not fix this mesh either. Try repairing it in your CAD or slicer before export.'
+        canAttemptVoxelRepair.value = false
+        return
+      }
+
+      const repairedInfo = validateManifold(result)
+      pendingOriginalGeometry = original
+      repairPreview.value = {
+        beforeUrl: renderPartThumbnail(original),
+        afterUrl: renderPartThumbnail(result),
+        beforeGeometry: markRaw(original.clone()),
+        afterGeometry: markRaw(result.clone()),
+        beforeStats: { faces: initialInfo.faceCount, verts: initialInfo.vertCount },
+        afterStats: { faces: repairedInfo.faceCount, verts: repairedInfo.vertCount },
+        filename,
+      }
+      problemEdges.value = []
+      canAttemptVoxelRepair.value = false
+      voxelRepairSourceGeometry = null
+      sourceGeometry.value = markRaw(result)
+      scaleFactor.value = 1
+      setMeshState(result.clone(), filename, { wasRepaired: true, watertight: true })
+    } catch (e) {
+      if (e?.name !== 'AbortError') {
+        error.value = e.message
+      }
+    } finally {
+      voxelRepairRunning.value = false
+      voxelRepairAbortController = null
+      loading.value = false
+    }
+  }
+
+  function cancelAdvancedRepair() {
+    voxelRepairAbortController?.abort()
   }
 
   function normalizeForPreview(geometry) {
@@ -391,6 +480,8 @@ export function useMeshProcessor(options = {}) {
   // call this instead.
   function clearProblemEdges() {
     problemEdges.value = []
+    canAttemptVoxelRepair.value = false
+    voxelRepairSourceGeometry = null
     // When the loaded mesh itself is non-watertight (repair failed at load time),
     // keep the error so the user knows why the split button stays disabled.
     // Split-time errors on watertight meshes get cleared normally.
@@ -400,6 +491,13 @@ export function useMeshProcessor(options = {}) {
   }
 
   function clearMesh() {
+    voxelRepairAbortController?.abort()
+    voxelRepairAbortController = null
+    voxelRepairRunning.value = false
+    voxelRepairProgress.value = 0
+    canAttemptVoxelRepair.value = false
+    voxelRepairSourceGeometry = null
+    voxelRepairSourceFilename = null
     meshInfo.value = null
     sourceGeometry.value = null
     meshGeometry.value = null
@@ -438,6 +536,11 @@ export function useMeshProcessor(options = {}) {
     repairPreview: readonly(repairPreview),
     acceptRepair,
     rejectRepair,
+    canAttemptVoxelRepair: readonly(canAttemptVoxelRepair),
+    voxelRepairRunning: readonly(voxelRepairRunning),
+    voxelRepairProgress: readonly(voxelRepairProgress),
+    runAdvancedRepair,
+    cancelAdvancedRepair,
     error: readonly(error),
     scaleFactor: readonly(scaleFactor),
     buildVolume,

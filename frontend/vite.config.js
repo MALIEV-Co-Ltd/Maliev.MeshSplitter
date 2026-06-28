@@ -13,4 +13,10 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
     },
   },
+  // The voxel repair worker (voxelRemesh.worker.js) dynamically imports
+  // manifold-3d, which code-splits — that requires ES module output for
+  // workers (Vite's default IIFE format can't support code-split chunks).
+  worker: {
+    format: 'es',
+  },
 })

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url'
 import malievLogoWhiteSvg from '../assets/logos/maliev-wordmark-white.svg?raw'
+import { voxelRemeshGeometry } from './voxelRemesh.js'
 
 let manifoldModulePromise
 
@@ -189,57 +190,252 @@ export function repairMeshGeometry(geometry, tolerance = 1e-4) {
   return repaired
 }
 
-// Try manifold-3d union of disconnected components first so intersecting
-// bodies (e.g. bolt thread + head) get a correct boolean merge instead of
-// having their intersection boundaries treated as holes. Falls back to
-// Three.js hole-fill then manifold round-trip when union is not applicable.
+// Boolean ops resolve self-intersection by re-meshing the result, which can
+// leave microscopic sliver shards at the resolved fold — a handful of
+// degenerate triangles, not a real feature. Keep only components that aren't
+// vanishingly small relative to the dominant body so that debris never
+// survives as a phantom extra part.
+function filterSignificantComponents(components) {
+  if (components.length <= 1) return components
+  const faceCounts = components.map((c) => (c.index ? c.index.count : c.attributes.position.count) / 3)
+  const maxFaces = Math.max(...faceCounts)
+  return components.filter((_, i) => faceCounts[i] >= Math.max(8, maxFaces * 0.01))
+}
+
+function mergeComponentsGeometry(components) {
+  const positions = []
+  const indices = []
+  components.forEach((comp) => {
+    const offset = positions.length / 3
+    const pos = comp.attributes.position
+    for (let i = 0; i < pos.count; i += 1) positions.push(pos.getX(i), pos.getY(i), pos.getZ(i))
+    const idx = comp.index ? Array.from(comp.index.array) : Array.from({ length: pos.count }, (_, i) => i)
+    idx.forEach((v) => indices.push(v + offset))
+  })
+  const merged = new THREE.BufferGeometry()
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  merged.setIndex(indices)
+  return merged
+}
+
+function dropInsignificantComponents(geometry) {
+  const components = splitDisconnectedComponents(geometry)
+  const keep = filterSignificantComponents(components)
+  if (keep.length === components.length) return geometry
+  if (keep.length === 1) return keep[0]
+  return mergeComponentsGeometry(keep)
+}
+
+// A connected shell that folds through itself in 3D space ("self-intersecting")
+// still passes Manifold.ofMesh with NoError — that status only certifies
+// 2-manifold topology (every edge shared by exactly two triangles), NOT that
+// the surface is free of self-intersection. The reliable tell is volume: the
+// naive signed-tetrahedra sum double-counts the self-overlap, while Manifold's
+// boolean-aware volume does not. A gap beyond this fraction means the shell
+// self-intersects and must be repaired with a real boolean op before it can be
+// cut — otherwise the grid-cut intersect in splitMeshManifold explodes it into
+// an inside-out "star". The bolt's head shell shows a ~7% gap; clean shells
+// match to floating-point epsilon, so 1% cleanly separates the two.
+const SELF_INTERSECTION_VOLUME_TOLERANCE = 0.01
+
+// A shell where some edge is shared by THREE OR MORE triangles (e.g. an
+// internal membrane fused flush into the outer surface — a flange modeled as
+// a zero-thickness interface between two overlapping bodies) is genuinely
+// non-manifold, not merely self-intersecting. A boolean union cannot repair
+// this: Manifold's CSG kernel misinterprets inside/outside across the WHOLE
+// shell from it, corrupting unrelated features elsewhere on the same surface
+// (verified: even a bare ofMesh round-trip with no boolean at all mangles a
+// drive-socket recess far from the defective edges). Only rebuilding the
+// surface from a robust volumetric field — see voxelRemeshGeometry — resolves
+// it. A valence of 1 (a simple boundary edge / hole) is a DIFFERENT, already-
+// handled case — repairMeshGeometry's boundary-loop fill covers that — so it
+// must not trigger this bailout. Must run on the WELDED component: raw STL
+// triangles never share vertex indices, so every edge would trivially read as
+// valence 1.
+function hasNonManifoldEdges(geometry) {
+  const indices = geometry.index ? geometry.index.array : null
+  const triCount = indices ? indices.length / 3 : geometry.attributes.position.count / 3
+  const edgeCounts = new Map()
+  for (let f = 0; f < triCount; f += 1) {
+    const i0 = indices ? indices[f * 3] : f * 3
+    const i1 = indices ? indices[f * 3 + 1] : f * 3 + 1
+    const i2 = indices ? indices[f * 3 + 2] : f * 3 + 2
+    const tri = [i0, i1, i2]
+    for (let e = 0; e < 3; e += 1) {
+      const a = tri[e], b = tri[(e + 1) % 3]
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`
+      edgeCounts.set(key, (edgeCounts.get(key) || 0) + 1)
+    }
+  }
+  for (const count of edgeCounts.values()) {
+    if (count >= 3) return true
+  }
+  return false
+}
+
+// The volumetric voxel remesh (see voxelRemesh.js) is the only thing that
+// repairs genuinely non-manifold input correctly, but it can take anywhere
+// from several seconds to a few minutes on a badly broken mesh — far slower
+// than every other path here. Auto-running it would silently make every
+// upload pay that cost on the rare pathological file. Instead
+// repairMeshGeometryRobust bails out (returns null) for this case, and the
+// caller offers it as an explicit, opt-in "try advanced repair" action via
+// attemptVoxelRepair — typically run in a Web Worker so it can report live
+// progress without blocking the UI.
+export async function attemptVoxelRepair(geometry, options = {}) {
+  const manifold = await getManifoldModule()
+  return voxelRemeshGeometry(geometry, manifold, options)
+}
+
 export async function repairMeshGeometryRobust(geometry) {
-  const welded = geometry.index ? geometry : weldGeometry(geometry, 1e-4)
+  const manifold = await getManifoldModule()
+  const welded = weldGeometry(geometry, 1e-4)
   const components = splitDisconnectedComponents(welded)
-  if (components.length > 1) {
-    const manifold = await getManifoldModule()
 
+  // Genuinely non-manifold input (some edge shared by other than exactly two
+  // triangles) cannot be fixed by a boolean union — see hasNonManifoldEdges.
+  // It is ALSO unsafe to fall through to the hole-fill/manifoldCleanGeometry
+  // chain below: manifoldCleanGeometry's ofMesh round-trip reports NoError for
+  // this defect while silently corrupting unrelated geometry elsewhere on the
+  // same shell (observed: a drive-socket recess mangled into a star, far from
+  // the actual defective edges). Bail out now so the caller can offer the
+  // slower, opt-in voxel remesh instead of a fast path that looks successful
+  // but is actually wrong.
+  if (components.some(hasNonManifoldEdges)) {
+    return null
+  }
+
+  // Build one Manifold solid per connected component and decide, per the
+  // volume test above, whether any shell self-intersects. ofMesh's NoError
+  // does not catch that, so we cannot trust topology alone here.
+  const solids = []
+  let buildFailed = false
+  let selfIntersecting = false
+  for (const comp of components) {
+    let solid
     try {
-      const solids = []
-      for (const comp of components) {
-        const mesh = geometryToManifoldMesh(comp, manifold)
-        const solid = manifold.Manifold.ofMesh(mesh)
-        if (solid.status() === 'NoError' && !solid.isEmpty()) {
-          solids.push(solid)
-        } else {
-          solid?.delete?.()
-        }
-      }
+      solid = manifold.Manifold.ofMesh(geometryToManifoldMesh(comp, manifold))
+    } catch {
+      solid = null
+    }
+    if (!solid || solid.status() !== 'NoError' || solid.isEmpty()) {
+      solid?.delete?.()
+      buildFailed = true
+      break
+    }
+    const naiveVolume = Math.abs(computeVolume(comp))
+    const realVolume = Math.abs(solid.volume())
+    const denom = Math.max(naiveVolume, realVolume)
+    if (denom > 0 && Math.abs(naiveVolume - realVolume) / denom > SELF_INTERSECTION_VOLUME_TOLERANCE) {
+      selfIntersecting = true
+    }
+    solids.push(solid)
+  }
 
-      if (solids.length >= 2) {
-        let result = solids[0]
-        for (let i = 1; i < solids.length; i++) {
-          const unioned = result.union(solids[i])
-          result.delete?.()
-          solids[i].delete?.()
-          result = unioned
+  if (!buildFailed && solids.length > 0) {
+    try {
+      // One clean, non-self-intersecting solid is already splittable. The solid
+      // above was built from the WELDED component, which can be kernel-clean even
+      // when the raw input is not (welding merges near-coincident verts and drops
+      // degenerate triangles). Confirm the ORIGINAL geometry itself builds a valid
+      // solid: if so, return the same reference so a genuinely good upload shows
+      // no repair dialog and is split untouched; if not (e.g. a dense
+      // TorusGeometry whose seam verts only coincide after welding), hand back the
+      // cleaned Manifold solid so the later ofMesh in splitMeshManifold succeeds.
+      if (solids.length === 1 && !selfIntersecting) {
+        let originalSolid
+        try {
+          originalSolid = manifold.Manifold.ofMesh(geometryToManifoldMesh(geometry, manifold))
+        } catch {
+          originalSolid = null
         }
-        const cleaned = manifoldMeshToGeometry(result.getMesh())
-        result.delete?.()
+        const originalIsClean = Boolean(originalSolid) && originalSolid.status() === 'NoError' && !originalSolid.isEmpty()
+        originalSolid?.delete?.()
+        if (originalIsClean) {
+          return geometry
+        }
+        const cleaned = manifoldMeshToGeometry(solids[0].getMesh())
         cleaned.computeBoundingBox()
         cleaned.computeVertexNormals()
         return cleaned
       }
 
-      solids.forEach((s) => s?.delete?.())
-    } catch {
-      // Component union failed — fall through
+      // Resolve via a REAL boolean union. Unlike an ofMesh round-trip, the
+      // boolean engine re-meshes and resolves self-intersections as part of
+      // computing its result (this is the same model BambuStudio/3D-Builder
+      // repair uses). For a lone self-intersecting shell, union it with an
+      // independent copy of itself to force that resolution; for multiple
+      // bodies, union them together. Manifold's add() does not consume its
+      // operands, so every solid built above is deleted in the finally below;
+      // here we only delete the intermediate union results we create.
+      let union
+      if (solids.length === 1) {
+        const copy = manifold.Manifold.ofMesh(geometryToManifoldMesh(components[0], manifold))
+        try {
+          union = solids[0].add(copy)
+        } finally {
+          copy.delete?.()
+        }
+      } else {
+        union = solids[0]
+        for (let i = 1; i < solids.length; i += 1) {
+          const next = union.add(solids[i])
+          if (union !== solids[0]) union.delete?.()
+          union = next
+        }
+      }
+
+      try {
+        if (union.status() === 'NoError' && !union.isEmpty()) {
+          // Resolving self-intersection via boolean re-meshing leaves a spray
+          // of needle/cap sliver triangles where surfaces nearly coincide
+          // (observed: ~870 triangles with aspect ratios into the tens of
+          // thousands). They're invisible head-on but read as radial "spikes"
+          // raking across a recess, and they wreck the later grid-cut.
+          // Manifold.simplify() collapses every sub-tolerance edge while
+          // guaranteeing no surface moves further than the tolerance, which
+          // clears the slivers without perceptibly changing the part. Scale
+          // the tolerance to the model (bounding-box diagonal) so it stays a
+          // fixed, invisible fraction of the geometry regardless of unit size.
+          const bbox = union.boundingBox()
+          const diag = Math.hypot(
+            bbox.max[0] - bbox.min[0],
+            bbox.max[1] - bbox.min[1],
+            bbox.max[2] - bbox.min[2],
+          )
+          const tolerance = Math.max(1e-3, diag * 2e-4)
+          let simplified
+          try {
+            simplified = union.simplify(tolerance)
+          } catch {
+            simplified = null
+          }
+          const source = simplified && simplified.status() === 'NoError' && !simplified.isEmpty() ? simplified : union
+          const cleaned = manifoldMeshToGeometry(source.getMesh())
+          simplified?.delete?.()
+          const significant = dropInsignificantComponents(cleaned)
+          significant.computeBoundingBox()
+          significant.computeVertexNormals()
+          return significant
+        }
+      } finally {
+        if (union !== solids[0]) union.delete?.()
+      }
+    } finally {
+      solids.forEach((solid) => solid?.delete?.())
     }
+  } else {
+    solids.forEach((solid) => solid?.delete?.())
   }
 
+  // Manifold could not build clean solids (genuine holes / boundary edges) —
+  // fall back to Three.js hole-fill, then a Manifold clean round-trip.
   const info = validateManifold(geometry)
   if (info.watertight) return geometry
 
   const filled = repairMeshGeometry(geometry)
   const filledInfo = validateManifold(filled)
   if (filledInfo.watertight) return filled
-
-  const manifold = await getManifoldModule()
 
   const origCleaned = manifoldCleanGeometry(geometry, manifold)
   if (origCleaned) return origCleaned
@@ -489,7 +685,7 @@ export function applyScale(geometry, scaleFactor) {
   return scaled
 }
 
-async function getManifoldModule() {
+export async function getManifoldModule() {
   if (!manifoldModulePromise) {
     manifoldModulePromise = import('manifold-3d').then(async (mod) => {
       const wasmBinary = await loadManifoldWasmBinary()
@@ -666,15 +862,6 @@ export function yieldToMain() {
 
 export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
   let splitGeometry = mesh.geometry
-  const repaired = await repairMeshGeometryRobust(splitGeometry)
-  if (repaired === null) {
-    const boundaryData = computeProblemEdges(splitGeometry)
-    throw Object.assign(
-      new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'),
-      { boundaryData }
-    )
-  }
-  if (repaired !== splitGeometry) splitGeometry = repaired
 
   const [dx, dy, dz] = gridDivisions.map(Number)
   if (dx === 0 || dy === 0 || dz === 0) return []
@@ -684,11 +871,38 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
 
   const manifold = await getManifoldModule()
   const manifoldMesh = geometryToManifoldMesh(splitGeometry, manifold)
-  const solid = manifold.Manifold.ofMesh(manifoldMesh)
-  const status = solid.status()
+  let solid
+  try {
+    solid = manifold.Manifold.ofMesh(manifoldMesh)
+  } catch {
+    // ofMesh throws on non-manifold input — try repair
+  }
+  const status = solid ? solid.status() : 'NotManifold'
+
   if (status !== 'NoError') {
-    solid.delete?.()
-    throw new Error(`Input mesh is not manifold (${status})`)
+    solid?.delete?.()
+    // Geometry is not manifold — attempt repair as fallback
+    const repaired = await repairMeshGeometryRobust(splitGeometry)
+    if (repaired === null) {
+      const boundaryData = computeProblemEdges(splitGeometry)
+      throw Object.assign(
+        new Error('Mesh is non-manifold and could not be repaired automatically. Try repairing larger holes in your CAD or slicer before export.'),
+        { boundaryData }
+      )
+    }
+    if (repaired !== splitGeometry) splitGeometry = repaired
+    // Re-create the Manifold solid from the repaired geometry
+    const repairedMesh = geometryToManifoldMesh(splitGeometry, manifold)
+    try {
+      solid = manifold.Manifold.ofMesh(repairedMesh)
+    } catch (e) {
+      throw new Error(`Input mesh is not manifold (${e.message || e})`)
+    }
+    if (solid.status() !== 'NoError') {
+      const s = solid.status()
+      solid.delete?.()
+      throw new Error(`Input mesh is not manifold (${s})`)
+    }
   }
 
   splitGeometry.computeBoundingBox()
@@ -722,7 +936,19 @@ export async function splitMeshManifold(mesh, buildVolume, gridDivisions) {
             const geometry = manifoldMeshToGeometry(resultMesh)
             await yieldToMain()
 
-            const components = splitDisconnectedComponents(geometry)
+            // Manifold's own mesh output is already indexed with deduplicated
+            // vertices. Re-welding it at a fixed 1e-4 tolerance can collapse
+            // genuinely distinct nearby vertices (e.g. a thin recessed feature
+            // whose walls sit closer together than the weld tolerance), fusing
+            // unrelated triangles into the same vertex and corrupting winding
+            // at that seam — visible as a self-intersecting "collapsed star"
+            // artifact even though the part still reports NoError.
+            //
+            // Filter out insignificant components: running a boolean (this
+            // grid-cell intersect) can leave a microscopic numerical-noise
+            // shard at a resolved fold even on an already-repaired solid —
+            // a handful of degenerate triangles, not a real separate body.
+            const components = filterSignificantComponents(splitDisconnectedComponents(geometry))
             await yieldToMain()
 
             components.forEach((componentGeometry, bodyIndex) => {
