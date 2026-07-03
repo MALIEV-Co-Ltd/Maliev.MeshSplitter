@@ -1,0 +1,1 @@
+Mesh Splitter helps makers, studios, and small production teams turn oversized STL files into labeled, print-ready assemblies. See how the app handles upload inspection, build-volume fitting, connector-aware splitting, 3D review, STL ZIP export, and PDF assembly guidance.

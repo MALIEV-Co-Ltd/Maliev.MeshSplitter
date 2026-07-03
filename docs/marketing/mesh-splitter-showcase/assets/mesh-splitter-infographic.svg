@@ -1,0 +1,110 @@
+<svg width="1600" height="2000" viewBox="0 0 1600 2000" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Mesh Splitter workflow and customer benefits infographic</title>
+  <desc id="desc">A professional infographic explaining how Mesh Splitter turns oversized STL files into labeled printable parts with assembly guidance and export controls.</desc>
+  <defs>
+    <linearGradient id="blueGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e66ff"/>
+      <stop offset="1" stop-color="#49b7ff"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#0f172a" flood-opacity="0.13"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="2000" fill="#f7f8fb"/>
+  <rect x="80" y="80" width="1440" height="1840" rx="42" fill="#ffffff" filter="url(#softShadow)"/>
+
+  <g transform="translate(140 150)">
+    <text x="0" y="0" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="34" font-weight="800" letter-spacing="6">MALIEV MESHSPLITTER</text>
+    <text x="0" y="100" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="88" font-weight="900">From oversized STL</text>
+    <text x="0" y="200" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="88" font-weight="900">to print-ready assembly</text>
+    <text x="0" y="270" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="31" font-weight="500">A guided workflow for makers who need large models to fit real printer build volumes.</text>
+  </g>
+
+  <g transform="translate(140 500)">
+    <rect x="0" y="0" width="1320" height="360" rx="34" fill="#eef5ff" stroke="#c9dcff" stroke-width="2"/>
+    <g transform="translate(52 58)">
+      <circle cx="42" cy="42" r="42" fill="url(#blueGlow)"/>
+      <text x="42" y="57" text-anchor="middle" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="38" font-weight="900">1</text>
+      <text x="116" y="28" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="34" font-weight="800">Upload and inspect</text>
+      <text x="116" y="78" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23">Read bounds, faces, vertices, and</text>
+      <text x="116" y="112" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23">watertight status before splitting.</text>
+    </g>
+    <g transform="translate(708 58)">
+      <circle cx="42" cy="42" r="42" fill="#111827"/>
+      <text x="42" y="57" text-anchor="middle" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="38" font-weight="900">2</text>
+      <text x="116" y="28" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="34" font-weight="800">Fit the printer</text>
+      <text x="116" y="78" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23">Set exact build volume and scale</text>
+      <text x="116" y="112" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23">before generating parts.</text>
+    </g>
+    <g transform="translate(52 218)">
+      <circle cx="42" cy="42" r="42" fill="#111827"/>
+      <text x="42" y="57" text-anchor="middle" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="38" font-weight="900">3</text>
+      <text x="116" y="28" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="34" font-weight="800">Split with connectors</text>
+      <text x="116" y="78" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23">Create labeled parts plus keys,</text>
+      <text x="116" y="112" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23">dowels, or plain cut faces.</text>
+    </g>
+    <g transform="translate(708 218)">
+      <circle cx="42" cy="42" r="42" fill="url(#blueGlow)"/>
+      <text x="42" y="57" text-anchor="middle" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="38" font-weight="900">4</text>
+      <text x="116" y="28" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="34" font-weight="800">Export the packet</text>
+      <text x="116" y="78" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23">Download labeled STL ZIP plus</text>
+      <text x="116" y="112" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23">PDF assembly instructions.</text>
+    </g>
+  </g>
+
+  <g transform="translate(140 960)">
+    <text x="0" y="0" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="52" font-weight="900">Where the time goes</text>
+    <text x="0" y="52" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28">Mesh Splitter reduces the work that usually happens between CAD export and a successful print run.</text>
+
+    <g transform="translate(0 110)">
+      <rect x="0" y="0" width="410" height="360" rx="28" fill="#111827"/>
+      <text x="34" y="70" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="31" font-weight="800">Manual planning</text>
+      <text x="34" y="128" fill="#cbd5e1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">No more guessing how many</text>
+      <text x="34" y="165" fill="#cbd5e1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">cuts are needed to fit the</text>
+      <text x="34" y="202" fill="#cbd5e1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">printer chamber.</text>
+      <text x="34" y="295" fill="#60a5fa" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="800">Scale + volume first</text>
+    </g>
+
+    <g transform="translate(455 110)">
+      <rect x="0" y="0" width="410" height="360" rx="28" fill="#f3f6fb" stroke="#d9e1ef" stroke-width="2"/>
+      <text x="34" y="70" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="31" font-weight="800">Assembly rework</text>
+      <text x="34" y="128" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">Labeled parts and connector</text>
+      <text x="34" y="165" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">geometry make the physical</text>
+      <text x="34" y="202" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">build easier to follow.</text>
+      <text x="34" y="295" fill="#1e66ff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="800">Parts stay understandable</text>
+    </g>
+
+    <g transform="translate(910 110)">
+      <rect x="0" y="0" width="410" height="360" rx="28" fill="#f3f6fb" stroke="#d9e1ef" stroke-width="2"/>
+      <text x="34" y="70" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="31" font-weight="800">Broken exports</text>
+      <text x="34" y="128" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">Watertight and manifold checks</text>
+      <text x="34" y="165" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">help avoid spending time on</text>
+      <text x="34" y="202" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">files that should not print.</text>
+      <text x="34" y="295" fill="#1e66ff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="800">Validate before download</text>
+    </g>
+  </g>
+
+  <g transform="translate(140 1490)">
+    <rect x="0" y="0" width="1320" height="300" rx="34" fill="#fff7ed" stroke="#fed7aa" stroke-width="2"/>
+    <text x="52" y="72" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="44" font-weight="900">Why it is a good investment</text>
+    <g transform="translate(52 122)">
+      <circle cx="24" cy="24" r="24" fill="#fb923c"/>
+      <text x="24" y="34" text-anchor="middle" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="900">1</text>
+      <text x="70" y="18" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28" font-weight="800">Try real models first</text>
+      <text x="70" y="58" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24">Customers receive 3 free exports every month before buying more credits.</text>
+    </g>
+    <g transform="translate(52 212)">
+      <circle cx="24" cy="24" r="24" fill="#1e66ff"/>
+      <text x="24" y="34" text-anchor="middle" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="900">2</text>
+      <text x="70" y="18" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28" font-weight="800">Pay only for production packets</text>
+      <text x="70" y="58" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24">Credits are spent when the user downloads a labeled STL + PDF package.</text>
+    </g>
+  </g>
+
+  <g transform="translate(140 1830)">
+    <rect x="0" y="0" width="1320" height="2" fill="#e5e7eb"/>
+    <text x="0" y="58" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">Built for oversized STL preparation, connector-aware splitting, 3D review, and</text>
+    <text x="0" y="96" fill="#526070" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25">receipt-marked export packages.</text>
+  </g>
+</svg>
