@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS frontend-build
+FROM node:26-bookworm-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
@@ -9,7 +9,7 @@ ENV VITE_SHOPIFY_STORE_DOMAIN=shop.maliev.com
 ENV VITE_ASSET_BASE=/tools/mesh-splitter/
 RUN npm run build
 
-FROM node:22-bookworm-slim AS backend
+FROM node:26-bookworm-slim AS backend
 WORKDIR /app
 COPY backend/package*.json ./backend/
 RUN npm --prefix backend ci --omit=dev
