@@ -55,7 +55,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Read bumped package version
         id: bumped-version
         run: |
