@@ -43,7 +43,7 @@ vi.mock('./renderSnapshots', () => ({
 
 vi.mock('jspdf', () => {
   return {
-    jsPDF: vi.fn(() => {
+    jsPDF: vi.fn(function MockJsPdf() {
       const instance = {
         setFont: vi.fn(),
         setFontSize: vi.fn(),
