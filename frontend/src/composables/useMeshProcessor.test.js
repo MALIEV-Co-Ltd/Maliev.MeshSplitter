@@ -60,9 +60,9 @@ vi.mock('../mesh/meshProcessor', () => ({
 }))
 
 vi.mock('three/addons/loaders/STLLoader.js', () => ({
-  STLLoader: vi.fn(() => ({
-    parse: mockStlParse,
-  })),
+  STLLoader: vi.fn(function MockStlLoader() {
+    this.parse = mockStlParse
+  }),
 }))
 
 import { useMeshProcessor } from './useMeshProcessor'
