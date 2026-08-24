@@ -72,6 +72,8 @@
               :reapplying-connectors="reapplyingConnectors"
               :show-labels="showLabels"
               :problem-edges="problemEdges"
+              :boundary-candidates="boundaryCandidates"
+              :selected-boundary-id="selectedBoundaryId"
               :scale-factor="scaleFactor"
               @connector-drag-start="onConnectorDragStart"
               @connector-drag-end="onConnectorDragEnd"
@@ -139,13 +141,13 @@
             <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
           </AccordionSection>
           <AccordionSection :title="uiCopy.splitConfig.title" :icon="LayersIcon" :open="openSection === 'split'" @toggle="toggleSection('split')">
-            <SplitConfig ref="splitConfigRef" :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" :show-split-button="false" @split="onSplit" />
+            <SplitConfig ref="splitConfigRef" :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" :show-split-button="false" :color-boundary-available="meshInfo?.hasColor" :boundary-candidates="boundaryCandidates" :selected-boundary-id="selectedBoundaryId" @analyze-boundaries="onAnalyzeBoundaries" @select-boundary="selectBoundary" @split="onSplit" />
           </AccordionSection>
         </template>
         <template v-else>
           <BuildVolumeConfig v-model="buildVolume" :labels="uiCopy.buildVolume" />
           <ScaleConfig v-model="scaleInput" :enabled="!!meshInfo" :loading="loading" :mesh-info="meshInfo" :labels="uiCopy.scaleConfig" @apply="onScaleApply" />
-          <SplitConfig :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" @split="onSplit" />
+          <SplitConfig :v="buildVolume" :ok="canSplitMesh" :loading="splitAuthorizing || loading" :progress-label="progressLabel" :divisions="divisions" :labels="uiCopy.splitConfig" :color-boundary-available="meshInfo?.hasColor" :boundary-candidates="boundaryCandidates" :selected-boundary-id="selectedBoundaryId" @analyze-boundaries="onAnalyzeBoundaries" @select-boundary="selectBoundary" @split="onSplit" />
           <ExportPanel
             :has-chunks="chunks.length > 0 && canSplitMesh"
             :loading="loading || exportingPackage"
@@ -294,9 +296,10 @@ function onMobileSplit() {
 const {
   meshInfo, meshGeometry, previewMeshGeometry, previewInfo, chunks, previewChunks,
   connectorPositions, reapplyingConnectors, problemEdges,
+  boundaryCandidates, selectedBoundaryId, resolvedAlignment,
   loading, progressLabel, setProgressLabels, repairPreview, acceptRepair, error, scaleFactor, buildVolume,
   canAttemptVoxelRepair, voxelRepairRunning, voxelRepairProgress, runAdvancedRepair, cancelAdvancedRepair,
-  loadStl, setScaleFactor, split, applyConnectors, updateConnectorPosition,
+  loadStl, loadMesh, analyzeSplitBoundaries, selectBoundary, splitSelectedBoundary, setScaleFactor, split, applyConnectors, updateConnectorPosition,
   prepareExport, buildExportPackage, saveBlob, clearProblemEdges,
 } = useMeshProcessor()
 
@@ -418,11 +421,11 @@ const appTranslations = {
       watertight: 'Watertight',
       notWatertight: 'Not watertight',
       dropFile: 'Drop file here',
-      uploadTitle: 'Upload an STL file',
-      uploadHint: 'Drag & drop an STL file or click to browse',
+      uploadTitle: 'Upload an STL, 3MF, or OBJ file',
+      uploadHint: 'Drag & drop a model and optional OBJ/MTL pair, or click to browse',
       uploading: 'Loading...',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
-      selectStl: 'Please select an .stl file',
+      selectStl: 'Select one .stl, .3mf, or .obj model and an optional .mtl file',
       replace: 'Replace file',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',
@@ -450,6 +453,14 @@ const appTranslations = {
       working: 'Working...',
       splitMesh: 'Split mesh',
       autoSplitLabel: 'Auto',
+      splitMode: 'Split mode',
+      buildVolumeMode: 'Build volume',
+      featureMode: 'Feature',
+      colorMode: 'Color',
+      localOnly: 'Analyzed locally in your browser. Select a closed boundary before splitting.',
+      boundaries: 'Detected boundaries',
+      boundary: 'Boundary',
+      noBoundaries: 'No safe closed boundaries detected yet.',
       connectorWarningTitle: 'No connector selected',
       connectorWarningBody: 'Printed parts may be difficult to align without connectors. Select Dowel, Mortise & Tenon, or Key unless you intentionally want plain cut faces.',
       connectorWarningCancel: 'Choose connector',
@@ -465,10 +476,13 @@ const appTranslations = {
         keyThickness: 'Key thickness (mm)',
         clearance: 'Clearance (mm)',
         perFace: 'Connectors per face',
+        autoSize: 'Size alignment key automatically',
+        alignmentOnly: 'PLA estimate · precise alignment only, not load-bearing.',
         types: {
           dowel: 'Dowel',
           mortise: 'Mortise & Tenon',
           key: 'Key',
+          taper: 'Square taper',
           none: 'None',
         },
       },
@@ -570,11 +584,11 @@ const appTranslations = {
       watertight: 'ปิดผิวสมบูรณ์',
       notWatertight: 'เมชไม่ปิดผิว',
       dropFile: 'วางไฟล์ที่นี่',
-      uploadTitle: 'อัปโหลดไฟล์ STL',
-      uploadHint: 'ลากไฟล์ STL มาวาง หรือคลิกเพื่อเลือกไฟล์',
+      uploadTitle: 'อัปโหลดไฟล์ STL, 3MF หรือ OBJ',
+      uploadHint: 'ลากโมเดลและไฟล์ OBJ/MTL (ถ้ามี) มาวาง หรือคลิกเพื่อเลือกไฟล์',
       uploading: 'กำลังโหลด...',
       fileTooLarge: 'ไฟล์ใหญ่เกินไป ขนาดสูงสุด 200 MB',
-      selectStl: 'กรุณาเลือกไฟล์ .stl',
+      selectStl: 'เลือกโมเดล .stl, .3mf หรือ .obj หนึ่งไฟล์ และไฟล์ .mtl ได้อีกหนึ่งไฟล์',
       nonWatertightWarning: 'เมซไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
       replace: 'เปลี่ยนไฟล์',
       loadedWatertight: 'โหลดเมชแบบปิดผิวสมบูรณ์แล้ว',
@@ -603,6 +617,14 @@ const appTranslations = {
       working: 'กำลังทำงาน...',
       splitMesh: 'แยกเมช',
       autoSplitLabel: 'อัตโนมัติ',
+      splitMode: 'วิธีแยก',
+      buildVolumeMode: 'ตามพื้นที่พิมพ์',
+      featureMode: 'ตามขอบรูปทรง',
+      colorMode: 'ตามสี',
+      localOnly: 'วิเคราะห์ภายในเบราว์เซอร์เท่านั้น เลือกขอบปิดก่อนแยก',
+      boundaries: 'ขอบที่ตรวจพบ',
+      boundary: 'ขอบ',
+      noBoundaries: 'ยังไม่พบขอบปิดที่ปลอดภัย',
       connectorWarningTitle: 'ยังไม่ได้เลือกตัวต่อ',
       connectorWarningBody: 'ชิ้นงานที่พิมพ์แล้วอาจจัดแนวยากถ้าไม่มีตัวต่อ เลือกเดือยกลม เดือยสี่เหลี่ยม หรือคีย์ล็อก เว้นแต่ตั้งใจใช้หน้าตัดเรียบ',
       connectorWarningCancel: 'เลือกตัวต่อ',
@@ -618,10 +640,13 @@ const appTranslations = {
         keyThickness: 'ความหนาคีย์ (มม.)',
         clearance: 'ระยะเผื่อ (มม.)',
         perFace: 'จำนวนตัวต่อต่อหน้า',
+        autoSize: 'คำนวณขนาดคีย์จัดแนวอัตโนมัติ',
+        alignmentOnly: 'ประเมินจาก PLA · ใช้จัดแนวเท่านั้น ไม่รับแรง',
         types: {
           dowel: 'เดือยกลม',
           mortise: 'เดือยสี่เหลี่ยม',
           key: 'คีย์ล็อก',
+          taper: 'ปลั๊กสี่เหลี่ยมเรียว',
           none: 'ไม่ใช้ตัวต่อ',
         },
       },
@@ -709,6 +734,7 @@ const currentExportKey = computed(() => {
     scaleFactor: scaleFactor.value,
     buildVolume: lastSplitContext.value.buildVolume,
     connectorConfig: lastSplitContext.value.connectorConfig,
+    splitOptions: lastSplitContext.value.splitOptions,
   })
 })
 const exportAlreadyUnlocked = computed(() => Boolean(currentExportKey.value) && exportedAuthByKey.value.has(currentExportKey.value))
@@ -796,27 +822,37 @@ watch(buildVolume, (bv) => {
   }
 })
 
-async function onUpload(file) {
+async function onUpload(files) {
   selectedChunkIndex.value = null
-  await loadStl(file)
+  await loadMesh(Array.isArray(files) ? files : [files])
 }
 
 function onScaleApply(value) {
   setScaleFactor(value)
 }
 
-async function onSplit(volume, gridDivisions, connectorConfig) {
+async function onAnalyzeBoundaries(mode) {
+  try {
+    await analyzeSplitBoundaries(mode)
+  } catch {
+    // error is surfaced by the mesh processor
+  }
+}
+
+async function onSplit(volume, gridDivisions, connectorConfig, splitOptions = { mode: 'build-volume' }) {
   splitAuthorizing.value = true
   await new Promise(r => setTimeout(r, 0))
   try {
-    await split(volume, gridDivisions)
+    if (splitOptions.mode === 'feature' || splitOptions.mode === 'color') await splitSelectedBoundary(connectorConfig)
+    else await split(volume, gridDivisions)
     selectedChunkIndex.value = null
-    if (connectorConfig?.type && connectorConfig.type !== 'None') {
+    if (splitOptions.mode === 'build-volume' && connectorConfig?.type && connectorConfig.type !== 'None') {
       await applyConnectors(connectorConfig)
     }
     lastSplitContext.value = {
       buildVolume: [...volume],
-      connectorConfig: { ...(connectorConfig || { type: 'None' }) },
+      connectorConfig: { ...(connectorConfig || { type: 'None' }), ...(resolvedAlignment.value ? { resolvedAlignment: resolvedAlignment.value } : {}) },
+      splitOptions: { ...splitOptions },
     }
   } catch {
     // error set by composable

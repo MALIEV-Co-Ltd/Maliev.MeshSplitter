@@ -21,6 +21,6 @@ describe('CanvasUploadOverlay', () => {
     const file = new File([new Uint8Array(10)], 'a.stl', { type: 'model/stl' })
     Object.defineProperty(input.element, 'files', { value: [file] })
     await input.trigger('change')
-    expect(wrapper.emitted('upload')?.[0][0]).toBe(file)
+    expect(wrapper.emitted('upload')?.[0][0]).toEqual([file])
   })
 })

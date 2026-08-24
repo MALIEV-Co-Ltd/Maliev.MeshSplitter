@@ -17,7 +17,8 @@
       <input
         ref="fileInput"
         type="file"
-        accept=".stl"
+        accept=".stl,.3mf,.obj,.mtl"
+        multiple
         class="hidden"
         @change="onFileSelected"
       />
@@ -80,11 +81,11 @@ const props = defineProps({
       watertight: 'Watertight',
       notWatertight: 'Not watertight',
       dropFile: 'Drop file here',
-      uploadTitle: 'Upload an STL file',
-      uploadHint: 'Drag & drop an STL file or click to browse',
+      uploadTitle: 'Upload an STL, 3MF, or OBJ file',
+      uploadHint: 'Drag & drop a model (and optional OBJ/MTL pair) or click to browse',
       uploading: 'Loading...',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
-      selectStl: 'Please select an .stl file',
+      selectStl: 'Select one .stl, .3mf, or .obj model (plus an optional .mtl).',
       replace: 'Replace file',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',

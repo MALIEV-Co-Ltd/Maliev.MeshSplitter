@@ -74,7 +74,20 @@ describe('ConnectorConfig', () => {
 
     await wrapper.get('.conn-select-trigger').trigger('click')
     expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
-    expect(wrapper.findAll('[role="option"]')).toHaveLength(4)
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(5)
+  })
+
+  it('offers an automatically sized square-taper alignment plug', async () => {
+    const wrapper = mount(ConnectorConfig)
+    await selectConnector(wrapper, 'Square taper')
+
+    expect(wrapper.get('[data-testid="auto-key-sizing"]').element.checked).toBe(true)
+    expect(wrapper.emitted('update:modelValue').at(-1)[0]).toMatchObject({
+      type: 'Square Taper',
+      autoSize: true,
+      purpose: 'alignment-only',
+    })
+    expect(wrapper.text()).toContain('not load-bearing')
   })
 })
 

@@ -39,6 +39,13 @@
     </div>
 
     <div v-if="connectorType !== 'None'" class="mt-3 space-y-2">
+      <label v-if="isTaperConnector" class="flex items-start gap-2 text-xs text-foreground">
+        <input v-model="autoSize" type="checkbox" data-testid="auto-key-sizing" class="mt-0.5" />
+        <span>
+          <strong>{{ labels.autoSize || 'Size alignment key automatically' }}</strong>
+          <span class="block text-muted-foreground">{{ labels.alignmentOnly || 'PLA estimate · precise alignment only, not load-bearing.' }}</span>
+        </span>
+      </label>
       <div v-if="isDowelConnector" class="conn-params">
         <div class="conn-field">
           <label>{{ labels.diameter }}</label>
@@ -63,7 +70,7 @@
           <Input type="number" step="0.5" min="2" class="h-8 font-mono text-xs" v-model.number="depth" />
         </div>
       </div>
-      <div v-else class="conn-params">
+      <div v-else-if="!isTaperConnector || !autoSize" class="conn-params">
         <div class="conn-field">
           <label>{{ labels.keyWidth }}</label>
           <Input type="number" step="0.5" min="1" class="h-8 font-mono text-xs" v-model.number="keyWidth" />
@@ -130,6 +137,7 @@ const props = defineProps({
         dowel: 'Dowel',
         mortise: 'Mortise & Tenon',
         key: 'Key',
+        taper: 'Square taper',
         none: 'None',
       },
     }),
@@ -146,6 +154,7 @@ const mortiseWidth = ref(6)
 const mortiseThickness = ref(4)
 const keyWidth = ref(6)
 const keyThickness = ref(3.5)
+const autoSize = ref(true)
 
 // Exploded cross-section: two steel halves pulled apart so BOTH mating faces are
 // visible, with the male feature, the female pocket, and (for keys) the loose
@@ -224,6 +233,12 @@ const connectorTypes = computed(() => [
     referenceUrl: 'https://www.google.com/search?tbm=isch&q=Mortise+and+Tenon',
   },
   {
+    value: 'Square Taper',
+    title: props.labels.types?.taper || 'Square taper',
+    visual: KeyVisual,
+    referenceUrl: 'https://www.google.com/search?tbm=isch&q=square+taper+alignment+plug+3d+printing',
+  },
+  {
     value: 'Key',
     title: props.labels.types?.key || 'Key',
     visual: KeyVisual,
@@ -243,6 +258,7 @@ const selectedType = computed(() => connectorTypes.value.find((type) => type.val
 const isDowelConnector = computed(() => connectorType.value === 'Dowel')
 const isMortiseConnector = computed(() => connectorType.value === 'Mortise & Tenon')
 const isKeyConnector = computed(() => connectorType.value === 'Key')
+const isTaperConnector = computed(() => connectorType.value === 'Square Taper')
 
 const config = computed(() => {
   const c = { type: connectorType.value }
@@ -256,9 +272,13 @@ const config = computed(() => {
     } else if (isMortiseConnector.value) {
       c.tenonWidth = mortiseWidth.value
       c.tenonThickness = mortiseThickness.value
-    } else if (isKeyConnector.value) {
+    } else if (isKeyConnector.value || isTaperConnector.value) {
       c.keyWidth = keyWidth.value
       c.keyHeight = keyThickness.value
+      if (isTaperConnector.value) {
+        c.autoSize = autoSize.value
+        c.purpose = 'alignment-only'
+      }
     }
   }
   return c
@@ -268,6 +288,7 @@ watch(config, (value) => emit('update:modelValue', value), { immediate: true, de
 
 function selectType(value) {
   connectorType.value = value
+  if (value === 'Square Taper') autoSize.value = true
   isOpen.value = false
 }
 </script>

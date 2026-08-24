@@ -53,4 +53,11 @@ describe('exportIdempotencyKey', () => {
       exportIdempotencyKey({ ...base, connectorConfig: { type: 'None', depth: 9, diameter: 3 } }),
     )
   })
+
+  it('charges distinct selected feature boundaries as distinct printable outputs', () => {
+    const feature = { mode: 'feature', boundaryId: 'feature-loop-a', method: 'topology' }
+    expect(exportIdempotencyKey({ ...base, splitOptions: feature })).not.toBe(
+      exportIdempotencyKey({ ...base, splitOptions: { ...feature, boundaryId: 'feature-loop-b' } }),
+    )
+  })
 })

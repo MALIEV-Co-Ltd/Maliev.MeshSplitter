@@ -13,29 +13,36 @@ export function useFileUpload(emit, labels) {
     fileInput.value?.click()
   }
 
-  function handleFile(file) {
-    if (!file.name.toLowerCase().endsWith('.stl')) {
+  function handleFiles(selected) {
+    const files = Array.from(selected || [])
+    const primary = files.filter((file) => /\.(stl|3mf|obj)$/i.test(file.name))
+    const companions = files.filter((file) => /\.mtl$/i.test(file.name))
+    if (primary.length !== 1 || companions.length > 1 || (companions.length && !/\.obj$/i.test(primary[0]?.name || ''))) {
       localError.value = labels.selectStl
       return
     }
-    if (file.size > 200 * 1024 * 1024) {
+    if (files.some((file) => file.size > 200 * 1024 * 1024)) {
       localError.value = labels.fileTooLarge
       return
     }
     localError.value = ''
-    emit('upload', file)
+    emit('upload', files)
+  }
+
+  function handleFile(file) {
+    handleFiles([file])
   }
 
   function onFileSelected(e) {
-    const file = e.target?.files?.[0]
-    if (file) handleFile(file)
+    const files = e.target?.files
+    if (files?.length) handleFiles(files)
   }
 
   function onDrop(e) {
     dragOver.value = false
-    const file = e.dataTransfer?.files?.[0]
-    if (file) handleFile(file)
+    const files = e.dataTransfer?.files
+    if (files?.length) handleFiles(files)
   }
 
-  return { fileInput, dragOver, localError, browse, handleFile, onFileSelected, onDrop }
+  return { fileInput, dragOver, localError, browse, handleFile, handleFiles, onFileSelected, onDrop }
 }

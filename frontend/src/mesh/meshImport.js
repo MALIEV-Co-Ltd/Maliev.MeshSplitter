@@ -3,7 +3,6 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js'
-import JSZip from 'jszip'
 
 const PRIMARY_EXTENSIONS = new Set(['stl', '3mf', 'obj'])
 
@@ -136,6 +135,7 @@ async function import3mf(file) {
 }
 
 export async function assert3mfArchiveBudget(buffer, maxExpandedBytes = 64 * 1024 * 1024) {
+  const { default: JSZip } = await import('jszip')
   const archive = await JSZip.loadAsync(buffer)
   const expandedBytes = Object.values(archive.files).reduce((total, entry) => total + Number(entry?._data?.uncompressedSize || 0), 0)
   if (expandedBytes > maxExpandedBytes) {

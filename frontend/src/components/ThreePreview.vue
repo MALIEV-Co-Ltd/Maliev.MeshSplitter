@@ -25,6 +25,8 @@ const props = defineProps({
   reapplyingConnectors: { type: Boolean, default: false },
   showLabels: { type: Boolean, default: true },
   problemEdges: { type: Array, default: () => [] },
+  boundaryCandidates: { type: Array, default: () => [] },
+  selectedBoundaryId: { type: String, default: null },
   scaleFactor: { type: Number, default: 1 },
 })
 
@@ -38,6 +40,7 @@ let renderer, scene, camera, controls, meshGroup, connectorMarkers, gridOverlay,
 let ambientLight, keyLight, fillLight, rimLight
 let axisLines
 let problemEdgeOverlay = null
+let boundaryOverlay = null
 // Bounding sphere of whatever the camera is currently framing. Used to keep the
 // near/far clipping planes sized to the model as the user zooms, so the mesh
 // never disappears at the extremes of the dolly range (which has no min/max).
@@ -163,7 +166,7 @@ function onControlsChange() {
 function disposeGroup(group) {
   if (!group) return
   group.children.forEach((c) => {
-    if (c.isMesh || c.isLineSegments) {
+    if (c.isMesh || c.isLine) {
       c.geometry?.dispose()
       c.material?.dispose()
     } else if (c.isSprite) {
@@ -819,6 +822,10 @@ onBeforeUnmount(() => {
     disposeGroup(problemEdgeOverlay)
     problemEdgeOverlay = null
   }
+  if (boundaryOverlay) {
+    disposeGroup(boundaryOverlay)
+    boundaryOverlay = null
+  }
   renderer?.dispose()
 })
 
@@ -904,6 +911,27 @@ watch(() => props.problemEdges, (edges) => {
   scene.add(problemEdgeOverlay)
   requestRender()
 }, { deep: false })
+
+function drawBoundaryCandidates() {
+  if (boundaryOverlay) disposeGroup(boundaryOverlay)
+  boundaryOverlay = null
+  if (!props.boundaryCandidates?.length) return
+  boundaryOverlay = new THREE.Group()
+  for (const candidate of props.boundaryCandidates) {
+    for (const loop of candidate.loops || []) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(loop.map((point) => new THREE.Vector3().fromArray(point)))
+      const selected = candidate.id === props.selectedBoundaryId
+      const material = new THREE.LineBasicMaterial({ color: selected ? 0xffb000 : 0x00d4ff, transparent: true, opacity: selected ? 1 : 0.65, depthTest: false })
+      const line = new THREE.LineLoop(geometry, material)
+      line.renderOrder = 999
+      boundaryOverlay.add(line)
+    }
+  }
+  scene.add(boundaryOverlay)
+  requestRender()
+}
+
+watch([() => props.boundaryCandidates, () => props.selectedBoundaryId], drawBoundaryCandidates, { deep: false })
 
 watch(() => props.previewInfo?.optimized, () => {
   applyPixelRatio()

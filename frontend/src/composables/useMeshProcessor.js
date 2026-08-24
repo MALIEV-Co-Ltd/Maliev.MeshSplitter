@@ -7,6 +7,7 @@ import {
   computeConnectorPositions,
   computeProblemEdges,
   exportPackage,
+  isWatertightAuthoritative,
   prepareExportChunks,
   repairMeshGeometryRobust,
   splitMeshManifold,
@@ -17,6 +18,10 @@ import {
 import { allocatePreviewBudget, createPreviewGeometry, getGeometryFaceCount } from '../mesh/previewGeometry'
 import { renderPartThumbnail, disposeThumbnailRenderer } from '../mesh/thumbnailRenderer'
 import { runVoxelRepairInWorker } from '../mesh/voxelRepairWorkerClient'
+import { importMeshFiles } from '../mesh/meshImport'
+import { runBoundaryAnalysis } from '../mesh/boundaryAnalysisClient'
+import { splitMeshAtBoundary } from '../mesh/boundarySplit'
+import { sizeAlignmentPlug } from '../mesh/alignmentSizing'
 
 const COLORS = [
   0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6,
@@ -36,6 +41,11 @@ export function useMeshProcessor(options = {}) {
   const chunks = shallowRef([])
   const previewChunks = shallowRef([])
   const connectorPositions = ref([])
+  const normalizedMesh = shallowRef(null)
+  const boundaryCandidates = shallowRef([])
+  const selectedBoundaryId = ref(null)
+  const boundaryMode = ref('build-volume')
+  const resolvedAlignment = ref(null)
   const reapplyingConnectors = ref(false)
   let lastConnectorConfig = null
   const loading = ref(false)
@@ -201,6 +211,137 @@ export function useMeshProcessor(options = {}) {
       scaleFactor.value = 1
       await yieldToMain()
       return setMeshState(workingGeometry.clone(), file.name, { wasRepaired, watertight })
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function loadMesh(files) {
+    const selected = Array.from(files || [])
+    if (selected.length === 1 && selected[0].name.toLowerCase().endsWith('.stl')) {
+      await loadStl(selected[0])
+      normalizedMesh.value = { geometry: meshGeometry.value, triangleRegions: new Uint32Array(Math.floor(meshGeometry.value.attributes.position.count / 3)), regionColors: new Map(), hasColor: false, format: 'stl', warnings: [] }
+      boundaryCandidates.value = []
+      selectedBoundaryId.value = null
+      return meshInfo.value
+    }
+    loading.value = true
+    progressLabel.value = progressLabels.value.loading
+    error.value = null
+    try {
+      const imported = await importMeshFiles(selected)
+      let geometry = normalizeForPreview(imported.geometry)
+      progressLabel.value = progressLabels.value.checking
+      const watertight = await (async () => {
+        const info = validateManifold(geometry)
+        if (info.watertight || await isWatertightAuthoritative(geometry)) return true
+        const repaired = await repairMeshGeometryRobust(geometry)
+        if (!repaired) return false
+        if (repaired !== geometry) {
+          geometry.dispose()
+          geometry = repaired
+          imported.hasColor = false
+          imported.triangleRegions = new Uint32Array(Math.floor(geometry.attributes.position.count / 3))
+          imported.regionColors = new Map()
+          imported.warnings.push('Color-boundary splitting was disabled because mesh repair changed triangle topology.')
+        }
+        return true
+      })()
+      sourceGeometry.value = markRaw(geometry)
+      normalizedMesh.value = markRaw({ ...imported, geometry })
+      const info = setMeshState(geometry, selected.find((file) => /\.(stl|3mf|obj)$/i.test(file.name))?.name || 'model', { watertight })
+      meshInfo.value = { ...info, format: imported.format, hasColor: imported.hasColor, importWarnings: imported.warnings }
+      boundaryCandidates.value = []
+      selectedBoundaryId.value = null
+      return meshInfo.value
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function analyzeSplitBoundaries(mode, options = {}) {
+    if (!meshGeometry.value) return []
+    if (mode === 'color' && !normalizedMesh.value?.hasColor) throw new Error('This mesh has no reliable color or material boundaries.')
+    loading.value = true
+    progressLabel.value = 'Analyzing local boundaries…'
+    error.value = null
+    try {
+      boundaryMode.value = mode
+      const geometry = applyScale(meshGeometry.value, scaleFactor.value)
+      const candidates = await runBoundaryAnalysis({
+        geometry,
+        triangleRegions: normalizedMesh.value?.triangleRegions,
+        regionColors: normalizedMesh.value?.regionColors,
+      }, { mode, sharpAngleDeg: options.sharpAngleDeg ?? 45, maxCandidates: options.maxCandidates ?? 12 })
+      boundaryCandidates.value = candidates
+      selectedBoundaryId.value = candidates[0]?.id || null
+      return candidates
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function selectBoundary(id) {
+    selectedBoundaryId.value = boundaryCandidates.value.some((candidate) => candidate.id === id) ? id : null
+  }
+
+  function autoAlignmentConfig(rawChunks, config) {
+    if (!config?.autoSize) return config
+    const boxes = rawChunks.map((chunk) => {
+      chunk.geometry.computeBoundingBox()
+      return chunk.geometry.boundingBox
+    })
+    const overlap = boxes.length >= 2 ? boxes[0].clone().intersect(boxes[1]) : null
+    const overlapSize = overlap?.getSize(new THREE.Vector3()) || new THREE.Vector3()
+    const spans = [overlapSize.x, overlapSize.y, overlapSize.z].filter((value) => value > 1e-4).sort((a, b) => b - a)
+    const faceAreaMm2 = spans.length >= 2 ? spans[0] * spans[1] : 0
+    const localThicknessMm = Math.min(...boxes.map((box) => box.getSize(new THREE.Vector3()).toArray()).flat().filter((value) => value > 1e-4))
+    const resolved = sizeAlignmentPlug({
+      partVolumesMm3: rawChunks.map((chunk) => chunk.volume),
+      faceAreaMm2,
+      localThicknessMm,
+      clearance: config.clearance,
+      requestedCount: config.perFace,
+    })
+    resolvedAlignment.value = resolved
+    if (!resolved.viable) throw new Error('No safe square-taper alignment pocket fits this split boundary.')
+    return {
+      ...config,
+      type: 'Square Taper',
+      keyWidth: resolved.widthMm,
+      keyHeight: resolved.thicknessMm,
+      depth: resolved.depthMm,
+      perFace: resolved.count,
+      resolvedAlignment: resolved,
+    }
+  }
+
+  async function splitSelectedBoundary(config = {}) {
+    const candidate = boundaryCandidates.value.find((item) => item.id === selectedBoundaryId.value)
+    if (!candidate) throw new Error('Select a boundary before splitting.')
+    loading.value = true
+    progressLabel.value = progressLabels.value.splitting
+    error.value = null
+    try {
+      const geometry = applyScale(meshGeometry.value, scaleFactor.value)
+      const rawChunks = await splitMeshAtBoundary(geometry, candidate)
+      splitChunks.value = rawChunks.map((chunk, index) => ({ ...chunk, geometry: markRaw(chunk.geometry), color: COLORS[index % COLORS.length] }))
+      cleanSplitChunks.value = splitChunks.value
+      chunks.value = decorateChunks(splitChunks.value)
+      setPreviewChunks(chunks.value)
+      const resolvedConfig = autoAlignmentConfig(rawChunks, config)
+      if (resolvedConfig?.type && resolvedConfig.type !== 'None') await applyConnectors(resolvedConfig)
+      generateThumbnails()
+      return chunks.value
     } catch (e) {
       error.value = e.message
       throw e
@@ -509,6 +650,11 @@ export function useMeshProcessor(options = {}) {
     cleanSplitChunks.value = []
     chunks.value = []
     connectorPositions.value = []
+    normalizedMesh.value = null
+    boundaryCandidates.value = []
+    selectedBoundaryId.value = null
+    boundaryMode.value = 'build-volume'
+    resolvedAlignment.value = null
     problemEdges.value = []
     reapplyingConnectors.value = false
     lastConnectorConfig = null
@@ -528,6 +674,11 @@ export function useMeshProcessor(options = {}) {
     chunks: readonly(chunks),
     previewChunks: readonly(previewChunks),
     connectorPositions: readonly(connectorPositions),
+    normalizedMesh: readonly(normalizedMesh),
+    boundaryCandidates: readonly(boundaryCandidates),
+    selectedBoundaryId: readonly(selectedBoundaryId),
+    boundaryMode: readonly(boundaryMode),
+    resolvedAlignment: readonly(resolvedAlignment),
     problemEdges: readonly(problemEdges),
     reapplyingConnectors: readonly(reapplyingConnectors),
     loading: readonly(loading),
@@ -545,6 +696,10 @@ export function useMeshProcessor(options = {}) {
     scaleFactor: readonly(scaleFactor),
     buildVolume,
     loadStl,
+    loadMesh,
+    analyzeSplitBoundaries,
+    selectBoundary,
+    splitSelectedBoundary,
     setScaleFactor,
     split,
     applyConnectors,

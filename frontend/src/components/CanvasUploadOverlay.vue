@@ -1,6 +1,6 @@
 <template>
   <div class="canvas-upload">
-    <input ref="fileInput" type="file" accept=".stl" class="hidden" @change="onFileSelected" />
+    <input ref="fileInput" type="file" accept=".stl,.3mf,.obj,.mtl" multiple class="hidden" @change="onFileSelected" />
     <button
       v-if="!hasMesh"
       type="button"
@@ -37,10 +37,10 @@ const props = defineProps({
   labels: {
     type: Object,
     default: () => ({
-      uploadTitle: 'Upload an STL file',
+      uploadTitle: 'Upload an STL, 3MF, or OBJ file',
       uploadHint: 'Tap to browse',
       replace: 'Replace',
-      selectStl: 'Please select an .stl file',
+      selectStl: 'Select one STL, 3MF, or OBJ model and an optional MTL.',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
     }),
   },

@@ -43,7 +43,15 @@ export function connectorSignature(config) {
     part(config.tenonThickness),
     part(config.keyWidth),
     part(config.keyHeight),
+    part(config.resolvedAlignment?.widthMm),
+    part(config.resolvedAlignment?.thicknessMm),
+    part(config.resolvedAlignment?.depthMm),
   ].join(',')
+}
+
+function splitSignature(options) {
+  if (!options || !options.mode || options.mode === 'build-volume') return 'build-volume'
+  return [options.mode, options.boundaryId || '', options.method || 'topology'].join(',')
 }
 
 export function exportIdempotencyKey({
@@ -52,6 +60,7 @@ export function exportIdempotencyKey({
   scaleFactor = 1,
   buildVolume = [],
   connectorConfig,
+  splitOptions,
 } = {}) {
   return [
     format,
@@ -59,5 +68,6 @@ export function exportIdempotencyKey({
     `s${Number(scaleFactor) || 1}`,
     `bv${(buildVolume || []).map((value) => Number(value) || 0).join('x')}`,
     `c${connectorSignature(connectorConfig)}`,
+    `split:${splitSignature(splitOptions)}`,
   ].join('::')
 }

@@ -11,6 +11,17 @@ beforeAll(() => {
 })
 
 describe('SplitConfig', () => {
+  it('offers build-volume, feature-boundary, and color-boundary split modes', async () => {
+    const wrapper = mount(SplitConfig, {
+      props: { v: [250, 250, 250], ok: true, colorBoundaryAvailable: true, boundaryCandidates: [{ id: 'loop-1', score: 0.9 }] },
+    })
+
+    expect(wrapper.findAll('[name="split-mode"]')).toHaveLength(3)
+    await wrapper.get('[value="feature"]').setValue()
+    expect(wrapper.emitted('analyze-boundaries').at(-1)).toEqual(['feature'])
+    expect(wrapper.text()).toContain('Boundary 1')
+  })
+
   it('summarizes the automatic split counts in the header without manual sliders or per-axis rows', () => {
     const wrapper = mount(SplitConfig, {
       props: { v: [250, 250, 250], ok: false, err: '', divisions: [3, 1, 1] }
