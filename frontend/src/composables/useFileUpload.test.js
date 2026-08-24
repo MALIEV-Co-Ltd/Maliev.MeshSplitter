@@ -64,4 +64,26 @@ describe('useFileUpload', () => {
     u.handleFiles([makeFile('figure.mtl')])
     expect(u.localError.value).toBe('pick model')
   })
+
+  it('loads a complete OBJ folder while ignoring unrelated files', () => {
+    const emitted = []
+    const u = useFileUpload((evt, files) => emitted.push([evt, files]), labels)
+
+    u.handleFolderFiles([
+      makeFile('figure.obj'),
+      makeFile('material.mtl'),
+      makeFile('base-color.png'),
+      makeFile('normal.png'),
+      makeFile('Thumbs.db'),
+    ])
+
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0][1].map((item) => item.name)).toEqual([
+      'figure.obj',
+      'material.mtl',
+      'base-color.png',
+      'normal.png',
+    ])
+    expect(u.localError.value).toBe('')
+  })
 })

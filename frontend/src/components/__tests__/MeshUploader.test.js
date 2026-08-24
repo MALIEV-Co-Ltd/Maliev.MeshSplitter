@@ -30,6 +30,8 @@ describe('MeshUploader', () => {
     expect(wrapper.text()).not.toContain('faces')
     // The drop prompt is replaced by the summary once a mesh is loaded.
     expect(wrapper.text()).not.toContain('Drag & drop')
+    expect(wrapper.get('[data-testid="obj-folder-input"]').attributes()).toHaveProperty('webkitdirectory')
+    expect(wrapper.text()).toContain('Load OBJ folder')
   })
 
   it('renders the mesh thumbnail image when one is provided', () => {

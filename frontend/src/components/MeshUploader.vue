@@ -22,6 +22,15 @@
         class="hidden"
         @change="onFileSelected"
       />
+      <input
+        ref="folderInput"
+        data-testid="obj-folder-input"
+        type="file"
+        webkitdirectory
+        multiple
+        class="hidden"
+        @change="onFolderSelected"
+      />
 
       <div
         v-if="!meshInfo"
@@ -51,6 +60,11 @@
         </div>
       </div>
 
+      <button type="button" class="mesh-replace-btn mesh-folder-btn" :disabled="loading" @click="browseFolder()">
+        <FolderOpenIcon :size="13" :stroke-width="1.75" />
+        {{ labels.loadObjFolder }}
+      </button>
+
       <p v-if="loading && !meshInfo" class="mt-3 text-sm text-signal flex items-center gap-2">
         <span class="mesh-uploader__spinner"></span>
         {{ progressLabel || labels.uploading }}
@@ -62,7 +76,7 @@
 </template>
 
 <script setup>
-import { File as FileIcon, Upload as UploadIcon } from '@lucide/vue'
+import { File as FileIcon, FolderOpen as FolderOpenIcon, Upload as UploadIcon } from '@lucide/vue'
 import { useFileUpload } from '@/composables/useFileUpload'
 
 const props = defineProps({
@@ -83,6 +97,7 @@ const props = defineProps({
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
       selectStl: 'Select one .stl, .3mf, or .obj model (plus optional .mtl and texture images).',
       replace: 'Replace file',
+      loadObjFolder: 'Load OBJ folder',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',
       verts: 'vertices',
@@ -93,7 +108,7 @@ const props = defineProps({
 
 const emit = defineEmits(['upload'])
 
-const { fileInput, dragOver, localError, browse, onFileSelected, onDrop } = useFileUpload(emit, props.labels)
+const { fileInput, folderInput, dragOver, localError, browse, browseFolder, onFileSelected, onFolderSelected, onDrop } = useFileUpload(emit, props.labels)
 </script>
 
 <style scoped>

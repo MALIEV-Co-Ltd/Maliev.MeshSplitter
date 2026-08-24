@@ -36,7 +36,7 @@ async function coloredBox3mf() {
 
 test('splits a colored 3MF boundary with auto-sized PLA square-taper alignment keys', async ({ page }) => {
   await page.goto('/')
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator('input[type="file"]:not([webkitdirectory])').setInputFiles({
     name: 'colored-box.3mf',
     mimeType: 'model/3mf',
     buffer: await coloredBox3mf(),

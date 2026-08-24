@@ -530,6 +530,12 @@
     opacity: 0.5;
   }
 
+  .mesh-folder-btn {
+    justify-content: center;
+    margin-top: 10px;
+    width: 100%;
+  }
+
   .spec-row {
     border-bottom: 1px solid var(--steel-100);
     display: flex;
@@ -2487,6 +2493,23 @@
       position: absolute;
       right: 10px;
       top: 10px;
+    }
+
+    .canvas-folder {
+      align-items: center;
+      background: oklch(var(--card));
+      border: 1px solid var(--steel-300);
+      border-radius: var(--radius-sm);
+      bottom: 28px;
+      display: inline-flex;
+      font-size: 11px;
+      gap: 5px;
+      left: 50%;
+      padding: 7px 12px;
+      pointer-events: auto;
+      position: absolute;
+      transform: translateX(-50%);
+      z-index: 2;
     }
 
     /* ---- Mobile: config accordion ---- */

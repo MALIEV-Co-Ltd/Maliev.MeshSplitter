@@ -1,6 +1,7 @@
 <template>
   <div class="canvas-upload">
     <input ref="fileInput" type="file" accept=".stl,.3mf,.obj,.mtl,.png,.jpg,.jpeg,.webp,.bmp" multiple class="hidden" @change="onFileSelected" />
+    <input ref="folderInput" data-testid="mobile-obj-folder-input" type="file" webkitdirectory multiple class="hidden" @change="onFolderSelected" />
     <button
       v-if="!hasMesh"
       type="button"
@@ -16,6 +17,14 @@
       <span v-if="localError" class="canvas-dropzone__err">{{ localError }}</span>
     </button>
     <button
+      v-if="!hasMesh"
+      type="button"
+      class="canvas-folder"
+      @click="browseFolder"
+    >
+      <FolderOpenIcon :size="14" :stroke-width="1.75" /> {{ labels.loadObjFolder }}
+    </button>
+    <button
       v-else
       type="button"
       class="canvas-replace"
@@ -29,7 +38,7 @@
 </template>
 
 <script setup>
-import { Upload as UploadIcon } from '@lucide/vue'
+import { FolderOpen as FolderOpenIcon, Upload as UploadIcon } from '@lucide/vue'
 import { useFileUpload } from '@/composables/useFileUpload'
 
 const props = defineProps({
@@ -40,11 +49,12 @@ const props = defineProps({
       uploadTitle: 'Upload an STL, 3MF, or OBJ file',
       uploadHint: 'Tap to browse',
       replace: 'Replace',
+      loadObjFolder: 'Load OBJ folder',
       selectStl: 'Select one STL, 3MF, or OBJ model and an optional MTL.',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
     }),
   },
 })
 const emit = defineEmits(['upload'])
-const { fileInput, localError, browse, onFileSelected, onDrop } = useFileUpload(emit, props.labels)
+const { fileInput, folderInput, localError, browse, browseFolder, onFileSelected, onFolderSelected, onDrop } = useFileUpload(emit, props.labels)
 </script>

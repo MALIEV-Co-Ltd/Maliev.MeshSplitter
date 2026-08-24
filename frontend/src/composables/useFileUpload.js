@@ -6,11 +6,16 @@ import { ref } from 'vue'
 // emit('upload', file).
 export function useFileUpload(emit, labels) {
   const fileInput = ref(null)
+  const folderInput = ref(null)
   const dragOver = ref(false)
   const localError = ref('')
 
   function browse() {
     fileInput.value?.click()
+  }
+
+  function browseFolder() {
+    folderInput.value?.click()
   }
 
   function handleFiles(selected) {
@@ -35,9 +40,19 @@ export function useFileUpload(emit, labels) {
     handleFiles([file])
   }
 
+  function handleFolderFiles(selected) {
+    const supported = Array.from(selected || []).filter((file) => /\.(stl|3mf|obj|mtl|png|jpe?g|webp|bmp)$/i.test(file.name))
+    handleFiles(supported)
+  }
+
   function onFileSelected(e) {
     const files = e.target?.files
     if (files?.length) handleFiles(files)
+  }
+
+  function onFolderSelected(e) {
+    const files = e.target?.files
+    if (files?.length) handleFolderFiles(files)
   }
 
   function onDrop(e) {
@@ -46,5 +61,5 @@ export function useFileUpload(emit, labels) {
     if (files?.length) handleFiles(files)
   }
 
-  return { fileInput, dragOver, localError, browse, handleFile, handleFiles, onFileSelected, onDrop }
+  return { fileInput, folderInput, dragOver, localError, browse, browseFolder, handleFile, handleFiles, handleFolderFiles, onFileSelected, onFolderSelected, onDrop }
 }
