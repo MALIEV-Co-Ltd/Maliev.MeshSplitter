@@ -24,6 +24,10 @@ describe('MeshUploader', () => {
     // Watertight status is shown in the top status bar and canvas mesh-details,
     // not duplicated here, so no "Watertight" label appears in this panel.
     expect(wrapper.text()).not.toContain('Watertight')
+    expect(wrapper.text()).not.toContain('100')
+    expect(wrapper.text()).not.toContain('50')
+    expect(wrapper.text()).not.toContain('vertices')
+    expect(wrapper.text()).not.toContain('faces')
     // The drop prompt is replaced by the summary once a mesh is loaded.
     expect(wrapper.text()).not.toContain('Drag & drop')
   })

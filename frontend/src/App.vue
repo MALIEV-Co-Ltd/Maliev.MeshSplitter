@@ -88,8 +88,6 @@
           </div>
           <div class="canvas-inspector__grid">
             <div><span>{{ uiCopy.file }}</span><strong>{{ meshInfo.filename }}</strong></div>
-            <div><span>{{ uiCopy.vertices }}</span><strong>{{ meshInfo.verts?.toLocaleString() }}</strong></div>
-            <div><span>{{ uiCopy.faces }}</span><strong>{{ meshInfo.faces?.toLocaleString() }}</strong></div>
             <div><span>{{ uiCopy.bounds }}</span><strong>{{ previewDims }}</strong></div>
             <div><span>{{ uiCopy.scale }}</span><strong>{{ scaleFactor.toFixed(3) }}x</strong></div>
             <div v-if="previewInfo?.optimized"><span>{{ uiCopy.previewQuality }}</span><strong>{{ previewFaceSummary }}</strong></div>
@@ -422,10 +420,10 @@ const appTranslations = {
       notWatertight: 'Not watertight',
       dropFile: 'Drop file here',
       uploadTitle: 'Upload an STL, 3MF, or OBJ file',
-      uploadHint: 'Drag & drop a model and optional OBJ/MTL pair, or click to browse',
+      uploadHint: 'Drag & drop a model with optional MTL and texture images, or click to browse',
       uploading: 'Loading...',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
-      selectStl: 'Select one .stl, .3mf, or .obj model and an optional .mtl file',
+      selectStl: 'Select one model, plus optional OBJ material and texture images',
       replace: 'Replace file',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',
@@ -524,15 +522,15 @@ const appTranslations = {
     meshDetails: 'รายละเอียดเมช',
     checkMesh: 'ตรวจสอบเมช',
     file: 'ไฟล์',
-    vertices: 'จุดยอด',
-    faces: 'หน้า',
+    vertices: 'Vertices',
+    faces: 'Triangles',
     bounds: 'ขนาด',
     scale: 'สเกล',
     preview: 'พรีวิว 3D',
     previewOptimized: 'พรีวิวแบบประหยัด',
     previewQuality: 'พรีวิว',
-    previewFaces: 'หน้าในพรีวิว',
-    printFaces: 'หน้าไฟล์จริง',
+    previewFaces: 'Preview triangles',
+    printFaces: 'Source triangles',
     canvasHint: 'ลากเพื่อหมุน · เลื่อนเพื่อซูม',
     connectorDragTip: 'ลากเพื่อเลื่อนตำแหน่งตัวต่อ',
     toggleLabels: 'ซ่อน/แสดงป้ายชื่อชิ้นงาน',
@@ -561,8 +559,8 @@ const appTranslations = {
       body: 'เมชไม่ปิดผิว ระบบได้ซ่อมอัตโนมัติแล้ว ตรวจสอบผลลัพธ์ด้านล่าง',
       before: 'ก่อนซ่อม',
       after: 'หลังซ่อม',
-      faces: 'หน้า',
-      verts: 'จุด',
+      faces: 'triangles',
+      verts: 'vertices',
       acknowledge: 'ตกลง',
     },
     errorDialog: {
@@ -585,16 +583,16 @@ const appTranslations = {
       notWatertight: 'เมชไม่ปิดผิว',
       dropFile: 'วางไฟล์ที่นี่',
       uploadTitle: 'อัปโหลดไฟล์ STL, 3MF หรือ OBJ',
-      uploadHint: 'ลากโมเดลและไฟล์ OBJ/MTL (ถ้ามี) มาวาง หรือคลิกเพื่อเลือกไฟล์',
+      uploadHint: 'ลากโมเดล พร้อมไฟล์ MTL และ texture (ถ้ามี) มาวาง หรือคลิกเพื่อเลือกไฟล์',
       uploading: 'กำลังโหลด...',
       fileTooLarge: 'ไฟล์ใหญ่เกินไป ขนาดสูงสุด 200 MB',
-      selectStl: 'เลือกโมเดล .stl, .3mf หรือ .obj หนึ่งไฟล์ และไฟล์ .mtl ได้อีกหนึ่งไฟล์',
+      selectStl: 'เลือกโมเดลหนึ่งไฟล์ พร้อมไฟล์ MTL และ texture ของ OBJ (ถ้ามี)',
       nonWatertightWarning: 'เมซไม่ปิดผิว ระบบจะพยายามซ่อมอัตโนมัติก่อนแยกชิ้นงาน',
       replace: 'เปลี่ยนไฟล์',
       loadedWatertight: 'โหลดเมชแบบปิดผิวสมบูรณ์แล้ว',
       loadedNotWatertight: 'โหลดเมชแล้ว · ผิวไม่ปิดสมบูรณ์',
-      verts: 'จุดยอด',
-      faces: 'หน้า',
+      verts: 'Vertices',
+      faces: 'Triangles',
     },
     partList: {
       title: 'รายการชิ้นงาน',

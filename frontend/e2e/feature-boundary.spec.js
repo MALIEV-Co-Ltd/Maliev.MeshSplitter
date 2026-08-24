@@ -58,3 +58,33 @@ test('splits a colored 3MF boundary with auto-sized PLA square-taper alignment k
   await expect(page.locator('.parts-panel')).toContainText('6 × 3 × 5 mm')
   await expect(page.getByRole('button', { name: /Download package/ })).toBeEnabled()
 })
+
+test('loads an OBJ diffuse texture into preview vertex colors', async ({ page }) => {
+  await page.goto('/')
+  const sampled = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 2
+    canvas.height = 2
+    const context = canvas.getContext('2d')
+    context.fillStyle = '#ff0000'
+    context.fillRect(0, 0, 2, 2)
+    const texture = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+    const obj = new File([[
+      'mtllib figure.mtl',
+      'v 0 0 0', 'v 10 0 0', 'v 0 10 0',
+      'vt 0 0', 'vt 1 0', 'vt 0 1',
+      'usemtl painted', 'f 1/1 2/2 3/3',
+    ].join('\n')], 'figure.obj', { type: 'text/plain' })
+    const mtl = new File(['newmtl painted\nKd 1 1 1\nmap_Kd texture.png'], 'figure.mtl', { type: 'text/plain' })
+    const png = new File([texture], 'texture.png', { type: 'image/png' })
+    const { importMeshFiles } = await import('/src/mesh/meshImport.js')
+    const imported = await importMeshFiles([obj, mtl, png])
+    const colors = imported.geometry.attributes.color
+    return { red: colors.getX(0), green: colors.getY(0), blue: colors.getZ(0), sources: imported.sourceFiles }
+  })
+
+  expect(sampled.sources).toEqual(['figure.obj', 'figure.mtl', 'texture.png'])
+  expect(sampled.red).toBeGreaterThan(0.95)
+  expect(sampled.green).toBeLessThan(0.01)
+  expect(sampled.blue).toBeLessThan(0.01)
+})

@@ -7,7 +7,7 @@ const TEST_STL = path.resolve(__dirname, '..', '..', 'test-cube.stl')
 
 async function uploadTestStl(page) {
   const fc = page.waitForEvent('filechooser')
-  await page.getByText('Drag & drop a model and optional OBJ/MTL pair, or click to browse').click()
+  await page.getByText('Drag & drop a model with optional MTL and texture images, or click to browse').click()
   await (await fc).setFiles(TEST_STL)
 }
 
@@ -46,7 +46,7 @@ test.describe('Mesh Split Application', () => {
 
   test('page loads with empty state', async ({ page }) => {
     await expect(page.locator('.app-logo-link')).toHaveAttribute('href', 'https://shop.maliev.com/')
-    await expect(page.getByText('Drag & drop a model and optional OBJ/MTL pair, or click to browse')).toBeVisible()
+    await expect(page.getByText('Drag & drop a model with optional MTL and texture images, or click to browse')).toBeVisible()
     await expect(page.locator('.parts-panel')).toContainText('0 total')
     await expect(page.getByText('No parts yet. Upload and split a mesh.')).toBeVisible()
     await expect(page.getByRole('button', { name: /Download package/ })).toBeDisabled()
@@ -78,7 +78,7 @@ test.describe('Mesh Split Application', () => {
 
   test('explains why a loaded non-watertight OBJ cannot be split and offers repair', async ({ page }) => {
     const fc = page.waitForEvent('filechooser')
-    await page.getByText('Drag & drop a model and optional OBJ/MTL pair, or click to browse').click()
+    await page.getByText('Drag & drop a model with optional MTL and texture images, or click to browse').click()
     await (await fc).setFiles({
       name: 'open.obj',
       mimeType: 'text/plain',
@@ -105,8 +105,8 @@ test.describe('Mesh Split Application', () => {
     const inspector = page.locator('.canvas-inspector')
     await expect(inspector).toBeVisible({ timeout: 10000 })
     await expect(inspector).toContainText('test-cube.stl')
-    await expect(inspector).toContainText('36')
-    await expect(inspector).toContainText('12')
+    await expect(inspector).not.toContainText('Vertices')
+    await expect(inspector).not.toContainText('Faces')
     await expect(inspector).toContainText('Watertight')
     await expect(inspector).toContainText('100 × 100 × 100 mm')
     await expect(page.locator('.col-left')).not.toContainText('Vertices')

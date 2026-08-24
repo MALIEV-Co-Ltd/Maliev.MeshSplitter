@@ -17,7 +17,9 @@ export function useFileUpload(emit, labels) {
     const files = Array.from(selected || [])
     const primary = files.filter((file) => /\.(stl|3mf|obj)$/i.test(file.name))
     const companions = files.filter((file) => /\.mtl$/i.test(file.name))
-    if (primary.length !== 1 || companions.length > 1 || (companions.length && !/\.obj$/i.test(primary[0]?.name || ''))) {
+    const textures = files.filter((file) => /\.(png|jpe?g|webp|bmp)$/i.test(file.name))
+    const recognized = primary.length + companions.length + textures.length
+    if (primary.length !== 1 || recognized !== files.length || companions.length > 1 || ((companions.length || textures.length) && !/\.obj$/i.test(primary[0]?.name || '')) || (textures.length && companions.length !== 1)) {
       localError.value = labels.selectStl
       return
     }

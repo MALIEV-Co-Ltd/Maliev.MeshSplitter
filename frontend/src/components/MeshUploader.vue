@@ -17,7 +17,7 @@
       <input
         ref="fileInput"
         type="file"
-        accept=".stl,.3mf,.obj,.mtl"
+        accept=".stl,.3mf,.obj,.mtl,.png,.jpg,.jpeg,.webp,.bmp"
         multiple
         class="hidden"
         @change="onFileSelected"
@@ -47,10 +47,6 @@
           </span>
           <div class="mesh-loaded__info">
             <span class="mesh-loaded__name" :title="meshInfo.filename">{{ meshInfo.filename }}</span>
-            <span class="mesh-loaded__stats">
-              {{ Number(meshInfo.verts || 0).toLocaleString() }} {{ labels.verts }} ·
-              {{ Number(meshInfo.faces || 0).toLocaleString() }} {{ labels.faces }}
-            </span>
           </div>
         </div>
       </div>
@@ -82,10 +78,10 @@ const props = defineProps({
       notWatertight: 'Not watertight',
       dropFile: 'Drop file here',
       uploadTitle: 'Upload an STL, 3MF, or OBJ file',
-      uploadHint: 'Drag & drop a model (and optional OBJ/MTL pair) or click to browse',
+      uploadHint: 'Drag & drop a model (and optional OBJ/MTL/texture files) or click to browse',
       uploading: 'Loading...',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
-      selectStl: 'Select one .stl, .3mf, or .obj model (plus an optional .mtl).',
+      selectStl: 'Select one .stl, .3mf, or .obj model (plus optional .mtl and texture images).',
       replace: 'Replace file',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',

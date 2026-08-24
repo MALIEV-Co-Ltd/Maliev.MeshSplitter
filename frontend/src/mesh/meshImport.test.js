@@ -3,6 +3,7 @@ import JSZip from 'jszip'
 import * as THREE from 'three'
 import * as MeshImport from './meshImport'
 import { assert3mfArchiveBudget, importMeshFiles } from './meshImport'
+import { sampleTextureColor } from './textureSampling'
 
 function file(name, contents, type = 'application/octet-stream') {
   return new File([contents], name, { type })
@@ -53,6 +54,16 @@ async function colored3mf() {
 }
 
 describe('importMeshFiles', () => {
+  it('samples an MTL texture in UV space so preview vertex colors match the image', () => {
+    const pixels = new Uint8ClampedArray([
+      255, 0, 0, 255, 0, 255, 0, 255,
+      0, 0, 255, 255, 255, 255, 255, 255,
+    ])
+
+    expect(sampleTextureColor({ data: pixels, width: 2, height: 2 }, 0.25, 0.75)).toEqual([1, 0, 0])
+    expect(sampleTextureColor({ data: pixels, width: 2, height: 2 }, 0.75, 0.75)).toEqual([0, 1, 0])
+  })
+
   it('keeps STL compatible while explicitly reporting that it has no color boundary data', async () => {
     const imported = await importMeshFiles([file('part.stl', ASCII_STL, 'model/stl')])
 

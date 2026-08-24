@@ -40,6 +40,25 @@ describe('useFileUpload', () => {
     expect(emitted[0][1].map((file) => file.name)).toEqual(['figure.obj', 'figure.mtl'])
   })
 
+  it('emits OBJ, MTL, and texture image companions together', () => {
+    const emitted = []
+    const u = useFileUpload((evt, files) => emitted.push([evt, files]), labels)
+    u.handleFiles([
+      makeFile('figure.obj'),
+      makeFile('figure.mtl'),
+      makeFile('albedo.png'),
+      makeFile('detail.jpg'),
+    ])
+
+    expect(emitted[0][0]).toBe('upload')
+    expect(emitted[0][1].map((file) => file.name)).toEqual([
+      'figure.obj',
+      'figure.mtl',
+      'albedo.png',
+      'detail.jpg',
+    ])
+  })
+
   it('rejects an orphan MTL companion', () => {
     const u = useFileUpload(() => {}, labels)
     u.handleFiles([makeFile('figure.mtl')])

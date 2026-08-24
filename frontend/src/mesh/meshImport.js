@@ -3,6 +3,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js'
+import { rasterizeTexture, sampleTextureColor } from './textureSampling'
 
 const PRIMARY_EXTENSIONS = new Set(['stl', '3mf', 'obj'])
 export const MAX_IMPORTED_TRIANGLES = 1_500_000
@@ -60,7 +61,7 @@ export function assertObjectTriangleBudget(root, maxTriangles = MAX_IMPORTED_TRI
   return triangleCount
 }
 
-function normalizeObject(root, { colorsReliable }) {
+function normalizeObject(root, { colorsReliable, textureSamplers = new Map() }) {
   root.updateMatrixWorld(true)
   const totalTriangles = assertObjectTriangleBudget(root)
   const positions = new Float32Array(totalTriangles * 9)
@@ -80,6 +81,7 @@ function normalizeObject(root, { colorsReliable }) {
     if (!geometry.attributes.normal) geometry.computeVertexNormals()
     const position = geometry.attributes.position
     const normal = geometry.attributes.normal
+    const uv = geometry.attributes.uv
     const groups = geometryGroups(geometry, position.count)
 
     for (const group of groups) {
@@ -88,6 +90,7 @@ function normalizeObject(root, { colorsReliable }) {
         : object.material
       const materialHex = materialColor(material)
       const materialName = material?.name || object.name || `material-${group.materialIndex || 0}`
+      const texture = textureSamplers.get(materialName)
       for (let vertex = group.start; vertex + 2 < group.end; vertex += 3) {
         let color = materialHex
         let red = material?.color?.r ?? 0.75
@@ -101,7 +104,7 @@ function normalizeObject(root, { colorsReliable }) {
           const averaged = new THREE.Color(red, green, blue)
           color = averaged.getHex()
         }
-        const key = colorsReliable ? `${materialName}:${color ?? 'none'}` : materialName
+        const key = colorsReliable ? `${materialName}:${materialHex ?? color ?? 'none'}` : materialName
         if (!regionByKey.has(key)) regionByKey.set(key, regionByKey.size)
         const region = regionByKey.get(key)
         if (colorsReliable && color != null) regionColors.set(region, color)
@@ -110,6 +113,16 @@ function normalizeObject(root, { colorsReliable }) {
         if (colorsReliable && color != null) hasVertexColors = true
         for (let offset = 0; offset < 3; offset += 1) {
           const index = vertex + offset
+          let vertexRed = red
+          let vertexGreen = green
+          let vertexBlue = blue
+          if (texture && uv) {
+            const sampled = sampleTextureColor(texture, uv.getX(index), uv.getY(index))
+            vertexRed = sampled[0] * (material?.color?.r ?? 1)
+            vertexGreen = sampled[1] * (material?.color?.g ?? 1)
+            vertexBlue = sampled[2] * (material?.color?.b ?? 1)
+            hasVertexColors = true
+          }
           positions[vertexOffset] = position.getX(index)
           positions[vertexOffset + 1] = position.getY(index)
           positions[vertexOffset + 2] = position.getZ(index)
@@ -117,9 +130,9 @@ function normalizeObject(root, { colorsReliable }) {
           normals[vertexOffset + 1] = normal.getY(index)
           normals[vertexOffset + 2] = normal.getZ(index)
           if (vertexColors) {
-            vertexColors[vertexOffset] = red
-            vertexColors[vertexOffset + 1] = green
-            vertexColors[vertexOffset + 2] = blue
+            vertexColors[vertexOffset] = vertexRed
+            vertexColors[vertexOffset + 1] = vertexGreen
+            vertexColors[vertexOffset + 2] = vertexBlue
           }
           vertexOffset += 3
         }
@@ -155,14 +168,25 @@ async function importStl(file) {
   }
 }
 
-async function importObj(primary, companion) {
+function matchingTexture(reference, textureFiles) {
+  const normalized = decodeURIComponent(String(reference || '')).replaceAll('\\', '/').toLowerCase()
+  return textureFiles.find((file) => normalized.endsWith(`/${file.name.toLowerCase()}`) || normalized.endsWith(file.name.toLowerCase()))
+}
+
+async function importObj(primary, companion, textureFiles) {
   const source = await readFile(primary, 'text')
   const referencedMtl = source.match(/^\s*mtllib\s+(.+)$/im)?.[1]?.trim()
   const loader = new OBJLoader()
   const warnings = []
   if (companion) {
     const materials = new MTLLoader().parse(await readFile(companion, 'text'), '')
-    for (const info of Object.values(materials.materialsInfo || {})) {
+    const textureSamplers = new Map()
+    for (const [name, info] of Object.entries(materials.materialsInfo || {})) {
+      if (info.map_kd) {
+        const texture = matchingTexture(info.map_kd, textureFiles)
+        if (texture) textureSamplers.set(name, await rasterizeTexture(texture))
+        else warnings.push(`MTL texture ${info.map_kd} was not selected; ${name} uses its diffuse color.`)
+      }
       delete info.map_kd
       delete info.map_ks
       delete info.map_bump
@@ -170,10 +194,12 @@ async function importObj(primary, companion) {
     }
     materials.preload()
     loader.setMaterials(materials)
+    const normalized = normalizeObject(loader.parse(source), { colorsReliable: true, textureSamplers })
+    return { ...normalized, warnings }
   } else if (referencedMtl) {
     warnings.push(`OBJ references ${referencedMtl}, but no companion MTL file was selected.`)
   }
-  const normalized = normalizeObject(loader.parse(source), { colorsReliable: Boolean(companion) })
+  const normalized = normalizeObject(loader.parse(source), { colorsReliable: false })
   return { ...normalized, warnings }
 }
 
@@ -201,13 +227,16 @@ export async function importMeshFiles(inputFiles) {
   const primary = primaryFiles[0]
   const format = extension(primary.name)
   const companions = files.filter((file) => extension(file.name) === 'mtl')
+  const textureFiles = files.filter((file) => /^(png|jpe?g|webp|bmp)$/.test(extension(file.name)))
   if (format !== 'obj' && companions.length) throw new Error('MTL companion files can only be used with an OBJ model.')
   if (companions.length > 1) throw new Error('Select at most one MTL companion file.')
+  if (textureFiles.length && (format !== 'obj' || companions.length !== 1)) throw new Error('Texture images require one OBJ model and its MTL companion.')
+  if (files.length !== primaryFiles.length + companions.length + textureFiles.length) throw new Error('Unsupported companion file. Select OBJ textures as PNG, JPG, WebP, or BMP.')
 
   const imported = format === 'stl'
     ? await importStl(primary)
     : format === 'obj'
-      ? await importObj(primary, companions[0])
+      ? await importObj(primary, companions[0], textureFiles)
       : await import3mf(primary)
 
   const triangleCount = Math.floor(imported.geometry.attributes.position.count / 3)

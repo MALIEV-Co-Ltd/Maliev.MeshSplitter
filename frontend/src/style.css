@@ -502,13 +502,6 @@
     white-space: nowrap;
   }
 
-  .mesh-loaded__stats {
-    color: var(--steel-500);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    margin-top: 2px;
-  }
-
   /* Compact Replace control that sits in the Mesh File panel header (right of
      the title), reclaiming the row the full-width button used to occupy. */
   .mesh-replace-btn {

@@ -1,6 +1,6 @@
 <template>
   <div class="canvas-upload">
-    <input ref="fileInput" type="file" accept=".stl,.3mf,.obj,.mtl" multiple class="hidden" @change="onFileSelected" />
+    <input ref="fileInput" type="file" accept=".stl,.3mf,.obj,.mtl,.png,.jpg,.jpeg,.webp,.bmp" multiple class="hidden" @change="onFileSelected" />
     <button
       v-if="!hasMesh"
       type="button"
