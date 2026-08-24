@@ -7,7 +7,7 @@ const TEST_STL = path.resolve(__dirname, '..', '..', 'test-cube.stl')
 
 async function uploadTestStl(page) {
   const fc = page.waitForEvent('filechooser')
-  await page.getByText('Drag & drop an STL file or click to browse').click()
+  await page.getByText('Drag & drop a model and optional OBJ/MTL pair, or click to browse').click()
   await (await fc).setFiles(TEST_STL)
 }
 
@@ -46,7 +46,7 @@ test.describe('Mesh Split Application', () => {
 
   test('page loads with empty state', async ({ page }) => {
     await expect(page.locator('.app-logo-link')).toHaveAttribute('href', 'https://shop.maliev.com/')
-    await expect(page.getByText('Drag & drop an STL file or click to browse')).toBeVisible()
+    await expect(page.getByText('Drag & drop a model and optional OBJ/MTL pair, or click to browse')).toBeVisible()
     await expect(page.locator('.parts-panel')).toContainText('0 total')
     await expect(page.getByText('No parts yet. Upload and split a mesh.')).toBeVisible()
     await expect(page.getByRole('button', { name: /Download package/ })).toBeDisabled()
