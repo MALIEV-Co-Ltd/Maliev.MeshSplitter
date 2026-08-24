@@ -36,7 +36,7 @@ async function coloredBox3mf() {
 
 test('splits a colored 3MF boundary with auto-sized PLA square-taper alignment keys', async ({ page }) => {
   await page.goto('/')
-  await page.locator('input[type="file"]:not([webkitdirectory])').setInputFiles({
+  await page.getByTestId('mesh-file-input').setInputFiles({
     name: 'colored-box.3mf',
     mimeType: 'model/3mf',
     buffer: await coloredBox3mf(),
@@ -57,6 +57,32 @@ test('splits a colored 3MF boundary with auto-sized PLA square-taper alignment k
   await expect(page.locator('.parts-panel')).toContainText('Key x1')
   await expect(page.locator('.parts-panel')).toContainText('6 × 3 × 5 mm')
   await expect(page.getByRole('button', { name: /Download package/ })).toBeEnabled()
+})
+
+test('asks for an optional MTL after selecting an OBJ and loads both files', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('mesh-file-input').setInputFiles({
+    name: 'painted-tetra.obj',
+    mimeType: 'text/plain',
+    buffer: Buffer.from([
+      'mtllib painted-tetra.mtl',
+      'v 0 0 0', 'v 10 0 0', 'v 0 10 0', 'v 0 0 10',
+      'usemtl painted',
+      'f 1 3 2', 'f 1 2 4', 'f 2 3 4', 'f 3 1 4',
+    ].join('\n')),
+  })
+
+  const prompt = page.getByRole('dialog', { name: 'Does this OBJ have material files?' })
+  await expect(prompt).toContainText('painted-tetra.obj')
+  const chooser = page.waitForEvent('filechooser')
+  await prompt.getByRole('button', { name: 'Add MTL / textures' }).click()
+  await (await chooser).setFiles({
+    name: 'painted-tetra.mtl',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('newmtl painted\nKd 0.1 0.6 0.9'),
+  })
+
+  await expect(page.locator('.canvas-inspector')).toContainText('painted-tetra.obj', { timeout: 15000 })
 })
 
 test('loads an OBJ diffuse texture into preview vertex colors', async ({ page }) => {

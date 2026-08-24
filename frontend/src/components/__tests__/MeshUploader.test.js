@@ -30,8 +30,24 @@ describe('MeshUploader', () => {
     expect(wrapper.text()).not.toContain('faces')
     // The drop prompt is replaced by the summary once a mesh is loaded.
     expect(wrapper.text()).not.toContain('Drag & drop')
-    expect(wrapper.get('[data-testid="obj-folder-input"]').attributes()).toHaveProperty('webkitdirectory')
-    expect(wrapper.text()).toContain('Load OBJ folder')
+  })
+
+  it('asks for optional material files after an OBJ is selected', async () => {
+    const wrapper = mount(MeshUploader, {
+      props: { meshInfo: null, loading: false, error: '' },
+    })
+    const input = wrapper.get('[data-testid="mesh-file-input"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['v 0 0 0'], 'figure.obj', { type: 'text/plain' })],
+    })
+
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('figure.obj')
+    expect(wrapper.text()).toContain('Add MTL / textures')
+    expect(wrapper.text()).toContain('Continue without materials')
+    expect(wrapper.emitted('upload')).toBeUndefined()
   })
 
   it('renders the mesh thumbnail image when one is provided', () => {

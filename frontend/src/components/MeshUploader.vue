@@ -16,24 +16,24 @@
     <div class="pnl-body">
       <input
         ref="fileInput"
+        data-testid="mesh-file-input"
         type="file"
-        accept=".stl,.3mf,.obj,.mtl,.png,.jpg,.jpeg,.webp,.bmp"
-        multiple
+        accept=".stl,.3mf,.obj"
         class="hidden"
         @change="onFileSelected"
       />
       <input
-        ref="folderInput"
-        data-testid="obj-folder-input"
+        ref="companionInput"
+        data-testid="obj-companion-input"
         type="file"
-        webkitdirectory
+        accept=".mtl,.png,.jpg,.jpeg,.webp,.bmp"
         multiple
         class="hidden"
-        @change="onFolderSelected"
+        @change="onCompanionSelected"
       />
 
       <div
-        v-if="!meshInfo"
+        v-if="!meshInfo && !awaitingObjCompanions"
         class="drop-zone"
         :class="{ 'is-dragover': dragOver, 'is-error': (error || localError) && !loading }"
         @dragover.prevent="dragOver = true"
@@ -48,7 +48,7 @@
         <p>{{ labels.uploadHint }}</p>
       </div>
 
-      <div v-else class="mesh-loaded">
+      <div v-if="meshInfo" class="mesh-loaded">
         <div class="mesh-loaded__row">
           <span class="mesh-loaded__thumb">
             <img v-if="meshInfo.thumbnail" :src="meshInfo.thumbnail" alt="" />
@@ -60,10 +60,18 @@
         </div>
       </div>
 
-      <button type="button" class="mesh-replace-btn mesh-folder-btn" :disabled="loading" @click="browseFolder()">
-        <FolderOpenIcon :size="13" :stroke-width="1.75" />
-        {{ labels.loadObjFolder }}
-      </button>
+      <div v-if="awaitingObjCompanions" class="obj-companion-prompt" role="dialog" :aria-label="labels.objCompanionTitle">
+        <div class="obj-companion-prompt__file">{{ pendingObj?.name }}</div>
+        <h4>{{ labels.objCompanionTitle }}</h4>
+        <p>{{ labels.objCompanionHint }}</p>
+        <button type="button" class="mesh-replace-btn obj-companion-prompt__primary" @click="browseCompanions">
+          <UploadIcon :size="13" :stroke-width="1.75" />
+          {{ labels.addObjCompanions }}
+        </button>
+        <button type="button" class="obj-companion-prompt__skip" @click="continueWithoutMaterials">
+          {{ labels.continueWithoutMaterials }}
+        </button>
+      </div>
 
       <p v-if="loading && !meshInfo" class="mt-3 text-sm text-signal flex items-center gap-2">
         <span class="mesh-uploader__spinner"></span>
@@ -76,7 +84,7 @@
 </template>
 
 <script setup>
-import { File as FileIcon, FolderOpen as FolderOpenIcon, Upload as UploadIcon } from '@lucide/vue'
+import { File as FileIcon, Upload as UploadIcon } from '@lucide/vue'
 import { useFileUpload } from '@/composables/useFileUpload'
 
 const props = defineProps({
@@ -97,7 +105,11 @@ const props = defineProps({
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
       selectStl: 'Select one .stl, .3mf, or .obj model (plus optional .mtl and texture images).',
       replace: 'Replace file',
-      loadObjFolder: 'Load OBJ folder',
+      objCompanionTitle: 'Does this OBJ have material files?',
+      objCompanionHint: 'Add one MTL file and any texture images it references.',
+      addObjCompanions: 'Add MTL / textures',
+      continueWithoutMaterials: 'Continue without materials',
+      selectObjCompanions: 'Select one MTL file and any referenced texture images.',
       loadedWatertight: 'Watertight mesh loaded',
       loadedNotWatertight: 'Mesh loaded · not watertight',
       verts: 'vertices',
@@ -108,7 +120,20 @@ const props = defineProps({
 
 const emit = defineEmits(['upload'])
 
-const { fileInput, folderInput, dragOver, localError, browse, browseFolder, onFileSelected, onFolderSelected, onDrop } = useFileUpload(emit, props.labels)
+const {
+  fileInput,
+  companionInput,
+  dragOver,
+  localError,
+  pendingObj,
+  awaitingObjCompanions,
+  browse,
+  browseCompanions,
+  continueWithoutMaterials,
+  onFileSelected,
+  onCompanionSelected,
+  onDrop,
+} = useFileUpload(emit, props.labels)
 </script>
 
 <style scoped>

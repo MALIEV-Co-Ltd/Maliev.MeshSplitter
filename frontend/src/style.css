@@ -530,9 +530,42 @@
     opacity: 0.5;
   }
 
-  .mesh-folder-btn {
+  .obj-companion-prompt {
+    background: color-mix(in oklab, oklch(var(--signal)) 8%, oklch(var(--card)));
+    border: 1px solid color-mix(in oklab, oklch(var(--signal)) 40%, oklch(var(--steel-300)));
+    border-radius: var(--radius-sm);
+    padding: 12px;
+  }
+
+  .obj-companion-prompt h4 {
+    font-size: 13px;
+    margin-top: 7px;
+  }
+
+  .obj-companion-prompt p {
+    color: oklch(var(--muted-foreground));
+    font-size: 11px;
+    line-height: 1.45;
+    margin-top: 4px;
+  }
+
+  .obj-companion-prompt__file {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .obj-companion-prompt__primary {
     justify-content: center;
     margin-top: 10px;
+    width: 100%;
+  }
+
+  .obj-companion-prompt__skip {
+    cursor: pointer;
+    font-size: 11px;
+    margin-top: 9px;
+    text-decoration: underline;
     width: 100%;
   }
 
@@ -2495,21 +2528,33 @@
       top: 10px;
     }
 
-    .canvas-folder {
+    .canvas-companion-prompt {
       align-items: center;
       background: oklch(var(--card));
       border: 1px solid var(--steel-300);
       border-radius: var(--radius-sm);
-      bottom: 28px;
-      display: inline-flex;
+      display: flex;
+      flex-direction: column;
       font-size: 11px;
-      gap: 5px;
+      gap: 8px;
       left: 50%;
-      padding: 7px 12px;
+      max-width: calc(100% - 32px);
+      padding: 12px;
       pointer-events: auto;
       position: absolute;
+      top: 50%;
       transform: translateX(-50%);
+      translate: 0 -50%;
+      width: 280px;
       z-index: 2;
+    }
+
+    .canvas-companion-prompt button {
+      border: 1px solid var(--steel-300);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      padding: 7px 10px;
+      width: 100%;
     }
 
     /* ---- Mobile: config accordion ---- */

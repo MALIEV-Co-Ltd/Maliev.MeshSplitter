@@ -94,6 +94,8 @@ test.describe('Mesh Split Application', () => {
       ].join('\n')),
     })
 
+    await page.getByRole('button', { name: 'Continue without materials' }).click()
+
     await expect(page.locator('.canvas-inspector')).toContainText('open.obj')
     await expect(page.getByRole('alertdialog')).toContainText('Cannot split mesh')
     await expect(page.getByRole('button', { name: 'Try advanced repair (slower)' })).toBeVisible()

@@ -1,9 +1,9 @@
 <template>
   <div class="canvas-upload">
-    <input ref="fileInput" type="file" accept=".stl,.3mf,.obj,.mtl,.png,.jpg,.jpeg,.webp,.bmp" multiple class="hidden" @change="onFileSelected" />
-    <input ref="folderInput" data-testid="mobile-obj-folder-input" type="file" webkitdirectory multiple class="hidden" @change="onFolderSelected" />
+    <input ref="fileInput" type="file" accept=".stl,.3mf,.obj" class="hidden" @change="onFileSelected" />
+    <input ref="companionInput" data-testid="mobile-obj-companion-input" type="file" accept=".mtl,.png,.jpg,.jpeg,.webp,.bmp" multiple class="hidden" @change="onCompanionSelected" />
     <button
-      v-if="!hasMesh"
+      v-if="!hasMesh && !awaitingObjCompanions"
       type="button"
       class="canvas-dropzone"
       data-testid="canvas-dropzone"
@@ -16,16 +16,15 @@
       <span class="canvas-dropzone__hint">{{ labels.uploadHint }}</span>
       <span v-if="localError" class="canvas-dropzone__err">{{ localError }}</span>
     </button>
+    <div v-if="awaitingObjCompanions" class="canvas-companion-prompt" role="dialog" :aria-label="labels.objCompanionTitle">
+      <strong>{{ pendingObj?.name }}</strong>
+      <span>{{ labels.objCompanionTitle }}</span>
+      <button type="button" @click="browseCompanions">{{ labels.addObjCompanions }}</button>
+      <button type="button" @click="continueWithoutMaterials">{{ labels.continueWithoutMaterials }}</button>
+      <span v-if="localError" class="canvas-dropzone__err">{{ localError }}</span>
+    </div>
     <button
-      v-if="!hasMesh"
-      type="button"
-      class="canvas-folder"
-      @click="browseFolder"
-    >
-      <FolderOpenIcon :size="14" :stroke-width="1.75" /> {{ labels.loadObjFolder }}
-    </button>
-    <button
-      v-else
+      v-else-if="hasMesh"
       type="button"
       class="canvas-replace"
       data-testid="canvas-replace"
@@ -38,7 +37,7 @@
 </template>
 
 <script setup>
-import { FolderOpen as FolderOpenIcon, Upload as UploadIcon } from '@lucide/vue'
+import { Upload as UploadIcon } from '@lucide/vue'
 import { useFileUpload } from '@/composables/useFileUpload'
 
 const props = defineProps({
@@ -49,12 +48,27 @@ const props = defineProps({
       uploadTitle: 'Upload an STL, 3MF, or OBJ file',
       uploadHint: 'Tap to browse',
       replace: 'Replace',
-      loadObjFolder: 'Load OBJ folder',
+      objCompanionTitle: 'Does this OBJ have material files?',
+      addObjCompanions: 'Add MTL / textures',
+      continueWithoutMaterials: 'Continue without materials',
+      selectObjCompanions: 'Select one MTL file and any referenced texture images.',
       selectStl: 'Select one STL, 3MF, or OBJ model and an optional MTL.',
       fileTooLarge: 'File is too large. Maximum size is 200 MB.',
     }),
   },
 })
 const emit = defineEmits(['upload'])
-const { fileInput, folderInput, localError, browse, browseFolder, onFileSelected, onFolderSelected, onDrop } = useFileUpload(emit, props.labels)
+const {
+  fileInput,
+  companionInput,
+  localError,
+  pendingObj,
+  awaitingObjCompanions,
+  browse,
+  browseCompanions,
+  continueWithoutMaterials,
+  onFileSelected,
+  onCompanionSelected,
+  onDrop,
+} = useFileUpload(emit, props.labels)
 </script>

@@ -65,25 +65,46 @@ describe('useFileUpload', () => {
     expect(u.localError.value).toBe('pick model')
   })
 
-  it('loads a complete OBJ folder while ignoring unrelated files', () => {
+  it('waits for an optional MTL choice after selecting an OBJ by itself', () => {
     const emitted = []
     const u = useFileUpload((evt, files) => emitted.push([evt, files]), labels)
 
-    u.handleFolderFiles([
-      makeFile('figure.obj'),
-      makeFile('material.mtl'),
-      makeFile('base-color.png'),
-      makeFile('normal.png'),
-      makeFile('Thumbs.db'),
+    u.handleFiles([makeFile('figure.obj')])
+
+    expect(emitted).toHaveLength(0)
+    expect(u.pendingObj.value?.name).toBe('figure.obj')
+    expect(u.awaitingObjCompanions.value).toBe(true)
+  })
+
+  it('imports the staged OBJ with subsequently selected MTL and textures', () => {
+    const emitted = []
+    const u = useFileUpload((evt, files) => emitted.push([evt, files]), labels)
+
+    u.handleFiles([makeFile('figure.obj')])
+    u.handleCompanionFiles([
+      makeFile('figure.mtl'),
+      makeFile('albedo.png'),
     ])
 
     expect(emitted).toHaveLength(1)
-    expect(emitted[0][1].map((item) => item.name)).toEqual([
+    expect(emitted[0][1].map((file) => file.name)).toEqual([
       'figure.obj',
-      'material.mtl',
-      'base-color.png',
-      'normal.png',
+      'figure.mtl',
+      'albedo.png',
     ])
-    expect(u.localError.value).toBe('')
+    expect(u.awaitingObjCompanions.value).toBe(false)
   })
+
+  it('imports the staged OBJ without materials when the user continues', () => {
+    const emitted = []
+    const u = useFileUpload((evt, files) => emitted.push([evt, files]), labels)
+
+    u.handleFiles([makeFile('figure.obj')])
+    u.continueWithoutMaterials()
+
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0][1].map((file) => file.name)).toEqual(['figure.obj'])
+    expect(u.awaitingObjCompanions.value).toBe(false)
+  })
+
 })
