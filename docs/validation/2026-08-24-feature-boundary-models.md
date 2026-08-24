@@ -11,6 +11,7 @@ committed. The reusable runner is `frontend/scripts/validate-external-models.mjs
 | --- | --- | --- | --- |
 | `male02.obj` + `male02.mtl` | Three.js examples, `cbba126004263d0c32d3d6d05a4fe218d261fa47` | MIT | OBJ `6E521DCEB9CF5B0D9B375C607364F23C7A9DB7D56A135F2A74C2DA698B7671B3`; MTL `A1D2F6DF681197208221B74E6C32D74207A38FB84119ED55452998ED24B0E8CE` |
 | `WaltHead.obj` + `WaltHead.mtl` | Three.js examples, `cbba126004263d0c32d3d6d05a4fe218d261fa47` | MIT | OBJ `B8276CA88369AF967A2329792C9C3DF202CE8C02612790FF3842EBA3D0DD44B5`; MTL `009C8B613BEF2575D392B362D0FFD75811D899473FBD09EA20B5858024687724` |
+| `female02.obj` + MTL + three JPG textures | Three.js examples, `aba01bd60811c055fc7d229e6ba9ecbb0c27b89c` | MIT | OBJ `65916EF144D593D80F8D08C3E7FB70A43D8B69CF0B9F055FDAF3B508025BDC18`; MTL `D03D753A9654A51C012812940A66FC092F6861E4B597183FE343EF3F5910816C`; textures `2170117384178588C9A5D92FB217764CA0F698268815D87AE9B1A29BEAE0462E`, `DF41151F5069ECE1E9674D7B7D042B6487F2261D26431BE040FF994D6D1AF6DF`, `EF57B974A38788C5FDA7058970140A78667249817154A5AD42B1CBCA7A7776E6` |
 | `turkey.3mf`, `kuwait.3mf`, `watchful-owl.3mf` | `SamiSalah221/3mf-to-glb`, `dd880ac841c3527f54eb9e6ab7ac43a21e108db4` | MIT; fixtures authored by that repository's author | Turkey `C6D63975D1850FD23DE9E468FCFFB39FA72A4CDE37BD288DCD41EC3B3DDE13A2`; Kuwait `09E1AE5F4C9FB0E90A3393821BB7312EEB4AB10D1C1FBF439EF863C7C6EBABBB`; owl `9139B549A97927BF7A14FCDCD6DF761BC435AF70C03C0D31881E7D855142088A` |
 | Core/material conformance samples | `3MFConsortium/3mf-samples`, `665e20dc4d7777fd4c9702bca86a2d4028440337` | BSD-2-Clause | Generated/small files used for parser comparison; not committed |
 
@@ -26,6 +27,7 @@ Source pages:
 | --- | ---: | --- | ---: | ---: | ---: | ---: |
 | `male02.obj` + MTL | 5,004 | Pass | 5 material colors | 0 | 0 | 71 ms |
 | `WaltHead.obj` + MTL | 16,160 | Pass | 1 color | 0 | unavailable | 98 ms |
+| `female02.obj` + MTL + JPG textures | 6,233 | Pass in Chromium | 6 textured materials | n/a | Available | Preview rendered textured vertex colors; no console errors |
 | `turkey.3mf` | 229,560 | Pass | 1 standard color | 0 | unavailable | 11,297 ms |
 | `kuwait.3mf` | 161,080 | Pass | 1 standard color | 0 | unavailable | 9,686 ms |
 | `watchful-owl.3mf` | n/a | Rejected safely | n/a | n/a | n/a | 53 ms preflight |
@@ -35,6 +37,22 @@ triangulation does not contain a safe, closed, non-branching sharp-edge loop, so
 the application offers no split rather than guessing a neck or limb. `male02`
 also demonstrates that several material colors do not automatically constitute
 a valid split unless their shared border is a closed surface loop.
+
+The textured `female02` figure is a real OBJ/MTL/UV acceptance case. All three
+referenced JPG files were selected with the OBJ and MTL, sampled locally into
+the normalized preview geometry, and visibly rendered in the WebGL canvas.
+The file card displayed only the filename; internal vertex/triangle counts were
+intentionally omitted.
+
+## 1.5-million-triangle boundary-analysis performance
+
+The production analyzer was exercised on a watertight, stepped solid with
+exactly 1,500,000 triangles and four closed sharp loops. It completed locally
+in 2,823 ms and returned four valid split candidates. The former object/map
+implementation used about 202 MB of JavaScript heap for only 100,000 triangles;
+the replacement uses typed topology buffers and an in-worker radix sort. The
+limit is inclusive at 1,500,000 triangles and rejects 1,500,001 before topology
+allocation.
 
 The Bambu/Orca fixtures store painted filament assignments in vendor metadata,
 not in standard 3MF base-material or color-group triangle properties. This
