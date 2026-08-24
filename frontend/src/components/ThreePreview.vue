@@ -361,7 +361,8 @@ function showOriginal(geometry, divisions) {
   if (!geometry) return
   meshGroup = new THREE.Group()
   const geom = geometry.clone()
-  const mat = createCadSurfaceMaterial(0xc0c0c0)
+  const hasVertexColors = Boolean(geom.attributes.color)
+  const mat = createCadSurfaceMaterial(hasVertexColors ? 0xffffff : 0xc0c0c0, { vertexColors: hasVertexColors })
   const mesh = new THREE.Mesh(geom, mat)
   meshGroup.add(mesh)
   scene.add(meshGroup)

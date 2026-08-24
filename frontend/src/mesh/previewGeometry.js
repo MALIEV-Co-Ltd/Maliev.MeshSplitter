@@ -150,6 +150,7 @@ export function resolvePreviewPixelRatio({ optimized = false, devicePixelRatio =
 // Returns null when welding collapses the whole mesh (caller keeps full detail).
 function decimateByClustering(geometry, targetFaces) {
   const position = geometry.attributes.position
+  const color = geometry.attributes.color
   const index = geometry.index
   const sourceFaces = getGeometryFaceCount(geometry)
 
@@ -197,6 +198,7 @@ function decimateByClustering(geometry, targetFaces) {
   }
 
   const tris = []
+  const triangleColors = color ? [] : null
   const corner = (face, c) => (index ? index.getX(face * 3 + c) : face * 3 + c)
   for (let f = 0; f < sourceFaces; f += 1) {
     const a = vertexRep(corner(f, 0))
@@ -204,6 +206,12 @@ function decimateByClustering(geometry, targetFaces) {
     const c = vertexRep(corner(f, 2))
     if (a === b || b === c || a === c) continue // collapsed into a sliver/point
     tris.push(a, b, c)
+    if (triangleColors) {
+      for (let cornerIndex = 0; cornerIndex < 3; cornerIndex += 1) {
+        const sourceVertex = corner(f, cornerIndex)
+        triangleColors.push(color.getX(sourceVertex), color.getY(sourceVertex), color.getZ(sourceVertex))
+      }
+    }
   }
 
   if (tris.length === 0) return null
@@ -222,6 +230,7 @@ function decimateByClustering(geometry, targetFaces) {
 
   const preview = new THREE.BufferGeometry()
   preview.setAttribute('position', new THREE.BufferAttribute(out, 3))
+  if (triangleColors) preview.setAttribute('color', new THREE.Float32BufferAttribute(triangleColors, 3))
   preview.computeBoundingBox()
   return preview
 }

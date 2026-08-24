@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
+import * as THREE from 'three'
+import * as MeshImport from './meshImport'
 import { assert3mfArchiveBudget, importMeshFiles } from './meshImport'
 
 function file(name, contents, type = 'application/octet-stream') {
@@ -91,10 +93,34 @@ describe('importMeshFiles', () => {
     expect([...imported.triangleRegions]).toEqual([0, 1])
     expect([...imported.regionColors.values()].sort((a, b) => a - b)).toEqual([0x00ff00, 0xff0000])
     expect(imported.hasColor).toBe(true)
+    expect(imported.geometry.attributes.color).toBeDefined()
+    expect(new THREE.Color().fromBufferAttribute(imported.geometry.attributes.color, 0).getHex()).toBe(0xff0000)
+    expect(new THREE.Color().fromBufferAttribute(imported.geometry.attributes.color, 3).getHex()).toBe(0x00ff00)
   })
 
   it('rejects a 3MF archive whose expanded XML would exhaust browser memory', async () => {
     await expect(assert3mfArchiveBudget(await colored3mf(), 100)).rejects.toThrow('expanded size')
+  })
+
+  it('accepts exactly 1,500,000 instanced triangles and rejects 1,500,001 before allocation', () => {
+    const sharedGeometry = new THREE.BufferGeometry()
+    sharedGeometry.setAttribute('position', new THREE.Float32BufferAttribute([
+      0, 0, 0,
+      1, 0, 0,
+      0, 1, 0,
+    ], 3))
+    const acceptedRoot = new THREE.Group()
+    const acceptedGeometry = sharedGeometry.clone()
+    acceptedGeometry.setIndex(new THREE.BufferAttribute(new Uint32Array(1_500_000 * 3), 1))
+    acceptedRoot.add(new THREE.Mesh(acceptedGeometry))
+    expect(() => MeshImport.assertObjectTriangleBudget(acceptedRoot)).not.toThrow()
+
+    const oversizedRoot = new THREE.Group()
+    sharedGeometry.setIndex(new THREE.BufferAttribute(new Uint32Array(1_500_001 * 3), 1))
+    oversizedRoot.add(new THREE.Mesh(sharedGeometry))
+    expect(() => MeshImport.assertObjectTriangleBudget(oversizedRoot)).toThrow(
+      'expands to 1,500,001 triangles after its components are placed; the local editor supports up to 1,500,000',
+    )
   })
 
   it('rejects ambiguous primary model selections instead of guessing', async () => {

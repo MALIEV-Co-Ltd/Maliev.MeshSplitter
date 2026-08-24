@@ -33,6 +33,29 @@ function boundaryEdgeRatio(geometry) {
 }
 
 describe('previewGeometry', () => {
+  it('preserves uploaded face colors when creating an optimized preview', () => {
+    const source = new THREE.BoxGeometry(20, 20, 20, 4, 4, 4).toNonIndexed()
+    const colors = new Float32Array(source.attributes.position.count * 3)
+    for (let vertex = 0; vertex < source.attributes.position.count; vertex += 1) {
+      const red = vertex < source.attributes.position.count / 2
+      colors[vertex * 3] = red ? 1 : 0
+      colors[vertex * 3 + 1] = 0
+      colors[vertex * 3 + 2] = red ? 0 : 1
+    }
+    source.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+
+    const preview = createPreviewGeometry(source, { targetFaces: 12 })
+
+    expect(preview.optimized).toBe(true)
+    expect(preview.geometry.attributes.color).toBeDefined()
+    const renderedColors = new Set()
+    const attribute = preview.geometry.attributes.color
+    for (let vertex = 0; vertex < attribute.count; vertex += 1) {
+      renderedColors.add(new THREE.Color().fromBufferAttribute(attribute, vertex).getHex())
+    }
+    expect(renderedColors).toEqual(new Set([0x0000ff, 0xff0000]))
+  })
+
   it('creates a decimated preview mesh without modifying the print mesh', () => {
     const source = new THREE.SphereGeometry(40, 64, 32)
     const originalFaces = getGeometryFaceCount(source)

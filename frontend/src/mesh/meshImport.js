@@ -5,6 +5,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js'
 
 const PRIMARY_EXTENSIONS = new Set(['stl', '3mf', 'obj'])
+export const MAX_IMPORTED_TRIANGLES = 1_500_000
 
 function extension(name) {
   return String(name || '').split('.').pop().toLowerCase()
@@ -27,13 +28,50 @@ function readFile(file, mode) {
   })
 }
 
+function geometryGroups(geometry, vertexCount) {
+  const source = geometry.groups.length
+    ? geometry.groups
+    : [{ start: 0, count: vertexCount, materialIndex: 0 }]
+  return source.map((group) => {
+    const start = Math.max(0, Math.floor(Number(group.start) || 0))
+    const count = Math.max(0, Math.floor(Number(group.count) || 0))
+    return { ...group, start, end: Math.min(vertexCount, start + count) }
+  })
+}
+
+function meshTriangleCount(object) {
+  const geometry = object.geometry
+  const vertexCount = geometry.index?.count ?? geometry.attributes.position.count
+  return geometryGroups(geometry, vertexCount).reduce(
+    (total, group) => total + Math.floor(Math.max(0, group.end - group.start) / 3),
+    0,
+  )
+}
+
+export function assertObjectTriangleBudget(root, maxTriangles = MAX_IMPORTED_TRIANGLES) {
+  let triangleCount = 0
+  root.traverse((object) => {
+    if (!object.isMesh || !object.geometry?.attributes?.position) return
+    triangleCount += meshTriangleCount(object)
+    if (triangleCount > maxTriangles) {
+      throw new Error(`This model expands to ${triangleCount.toLocaleString('en-US')} triangles after its components are placed; the local editor supports up to ${maxTriangles.toLocaleString('en-US')}. Remove duplicate build items or simplify the model before loading it.`)
+    }
+  })
+  return triangleCount
+}
+
 function normalizeObject(root, { colorsReliable }) {
   root.updateMatrixWorld(true)
-  const positions = []
-  const normals = []
-  const triangleRegions = []
+  const totalTriangles = assertObjectTriangleBudget(root)
+  const positions = new Float32Array(totalTriangles * 9)
+  const normals = new Float32Array(totalTriangles * 9)
+  const vertexColors = colorsReliable ? new Float32Array(totalTriangles * 9) : null
+  const triangleRegions = new Uint32Array(totalTriangles)
   const regionColors = new Map()
   const regionByKey = new Map()
+  let triangleOffset = 0
+  let vertexOffset = 0
+  let hasVertexColors = false
 
   root.traverse((object) => {
     if (!object.isMesh || !object.geometry?.attributes?.position) return
@@ -42,9 +80,7 @@ function normalizeObject(root, { colorsReliable }) {
     if (!geometry.attributes.normal) geometry.computeVertexNormals()
     const position = geometry.attributes.position
     const normal = geometry.attributes.normal
-    const groups = geometry.groups.length
-      ? geometry.groups
-      : [{ start: 0, count: position.count, materialIndex: 0 }]
+    const groups = geometryGroups(geometry, position.count)
 
     for (const group of groups) {
       const material = Array.isArray(object.material)
@@ -52,41 +88,55 @@ function normalizeObject(root, { colorsReliable }) {
         : object.material
       const materialHex = materialColor(material)
       const materialName = material?.name || object.name || `material-${group.materialIndex || 0}`
-      const end = Math.min(position.count, group.start + group.count)
-      for (let vertex = group.start; vertex + 2 < end; vertex += 3) {
+      for (let vertex = group.start; vertex + 2 < group.end; vertex += 3) {
         let color = materialHex
+        let red = material?.color?.r ?? 0.75
+        let green = material?.color?.g ?? 0.75
+        let blue = material?.color?.b ?? 0.75
         if (colorsReliable && geometry.attributes.color) {
           const attribute = geometry.attributes.color
-          const averaged = new THREE.Color(
-            (attribute.getX(vertex) + attribute.getX(vertex + 1) + attribute.getX(vertex + 2)) / 3,
-            (attribute.getY(vertex) + attribute.getY(vertex + 1) + attribute.getY(vertex + 2)) / 3,
-            (attribute.getZ(vertex) + attribute.getZ(vertex + 1) + attribute.getZ(vertex + 2)) / 3,
-          )
+          red = (attribute.getX(vertex) + attribute.getX(vertex + 1) + attribute.getX(vertex + 2)) / 3
+          green = (attribute.getY(vertex) + attribute.getY(vertex + 1) + attribute.getY(vertex + 2)) / 3
+          blue = (attribute.getZ(vertex) + attribute.getZ(vertex + 1) + attribute.getZ(vertex + 2)) / 3
+          const averaged = new THREE.Color(red, green, blue)
           color = averaged.getHex()
         }
         const key = colorsReliable ? `${materialName}:${color ?? 'none'}` : materialName
         if (!regionByKey.has(key)) regionByKey.set(key, regionByKey.size)
         const region = regionByKey.get(key)
         if (colorsReliable && color != null) regionColors.set(region, color)
-        triangleRegions.push(region)
+        triangleRegions[triangleOffset] = region
+        triangleOffset += 1
+        if (colorsReliable && color != null) hasVertexColors = true
         for (let offset = 0; offset < 3; offset += 1) {
           const index = vertex + offset
-          positions.push(position.getX(index), position.getY(index), position.getZ(index))
-          normals.push(normal.getX(index), normal.getY(index), normal.getZ(index))
+          positions[vertexOffset] = position.getX(index)
+          positions[vertexOffset + 1] = position.getY(index)
+          positions[vertexOffset + 2] = position.getZ(index)
+          normals[vertexOffset] = normal.getX(index)
+          normals[vertexOffset + 1] = normal.getY(index)
+          normals[vertexOffset + 2] = normal.getZ(index)
+          if (vertexColors) {
+            vertexColors[vertexOffset] = red
+            vertexColors[vertexOffset + 1] = green
+            vertexColors[vertexOffset + 2] = blue
+          }
+          vertexOffset += 3
         }
       }
     }
     geometry.dispose()
   })
 
-  if (!positions.length) throw new Error('The selected model does not contain triangle mesh geometry.')
+  if (!totalTriangles) throw new Error('The selected model does not contain triangle mesh geometry.')
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+  if (hasVertexColors) geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors, 3))
   geometry.computeBoundingBox()
   return {
     geometry,
-    triangleRegions: Uint32Array.from(triangleRegions),
+    triangleRegions,
     regionColors,
     hasColor: colorsReliable && regionColors.size > 1,
   }
