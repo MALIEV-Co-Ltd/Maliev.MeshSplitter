@@ -7,7 +7,8 @@ self.onmessage = ({ data }) => {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3))
     if (data.indices) geometry.setIndex(new THREE.BufferAttribute(data.indices, 1))
     const candidates = analyzeBoundaries({ geometry, triangleRegions: data.triangleRegions }, data.options)
-    self.postMessage({ revision: data.revision, candidates })
+    const transfers = candidates.flatMap((candidate) => candidate.sideFaces.map((side) => side.buffer))
+    self.postMessage({ revision: data.revision, candidates }, transfers)
   } catch (error) {
     self.postMessage({ revision: data.revision, error: error.message })
   }

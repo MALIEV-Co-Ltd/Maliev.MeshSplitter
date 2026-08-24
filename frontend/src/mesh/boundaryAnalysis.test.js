@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { analyzeBoundaries } from './boundaryAnalysis'
+import { analyzeBoundaries, assertBoundaryAnalysisBudget, MAX_BOUNDARY_ANALYSIS_TRIANGLES } from './boundaryAnalysis'
 
 function steppedSolid(segments = 12) {
   const profile = [
@@ -44,6 +44,12 @@ function steppedSolid(segments = 12) {
 }
 
 describe('analyzeBoundaries', () => {
+  it('uses the same inclusive 1,500,000-triangle limit as model import', () => {
+    expect(MAX_BOUNDARY_ANALYSIS_TRIANGLES).toBe(1_500_000)
+    expect(() => assertBoundaryAnalysisBudget(1_500_000)).not.toThrow()
+    expect(() => assertBoundaryAnalysisBudget(1_500_001)).toThrow('supports up to 1,500,000 triangles')
+  })
+
   it('finds deterministic closed sharp loops that partition a stepped solid', () => {
     const geometry = steppedSolid()
 
