@@ -53,8 +53,8 @@ vi.mock('../mesh/meshProcessor', () => ({
   exportStl: mockExportStl,
   exportPdf: mockExportPdf,
   prepareExportChunks: mockPrepareExportChunks,
-  repairMeshGeometryRobust: mockRepairMeshGeometry,
-  computeProblemEdges: mockRepairMeshGeometry,
+  repairMeshGeometryRobust: mockRepairMeshGeometryRobust,
+  computeProblemEdges: mockComputeProblemEdges,
   isWatertightAuthoritative: mockIsWatertightAuthoritative,
   yieldToMain: mockYieldToMain,
 }))
@@ -204,7 +204,7 @@ describe('useMeshProcessor', () => {
         watertight: false, volume: 1000, euler: 2, faceCount: 12, vertCount: 24,
       })
       // repairMeshGeometryRobust finds a single watertight body — returns same ref
-      mockRepairMeshGeometry.mockImplementation(async (geo) => geo)
+      mockRepairMeshGeometryRobust.mockImplementation(async (geo) => geo)
 
       const { loadStl, meshInfo, repairPreview, error } = useMeshProcessor()
       await loadStl(createMockFile('falsepositive.stl'))
@@ -228,14 +228,14 @@ describe('useMeshProcessor', () => {
       })
       // Authoritative kernel agrees the ORIGINAL is bad, so repair runs.
       mockIsWatertightAuthoritative.mockResolvedValue(false)
-      mockRepairMeshGeometry.mockResolvedValue(repaired)
+      mockRepairMeshGeometryRobust.mockResolvedValue(repaired)
 
       const { loadStl, meshInfo, repairPreview } = useMeshProcessor()
       await loadStl(createMockFile('needsrepair.stl'))
 
       // Repair ran and produced a manifold-by-construction result, so the mesh
       // is watertight even though the heuristic still says otherwise.
-      expect(mockRepairMeshGeometry).toHaveBeenCalled()
+      expect(mockRepairMeshGeometryRobust).toHaveBeenCalled()
       expect(repairPreview.value).not.toBeNull()
       expect(meshInfo.value.is_watertight).toBe(true)
       expect(meshInfo.value.was_repaired).toBe(true)
@@ -254,6 +254,35 @@ describe('useMeshProcessor', () => {
       // A watertight heuristic result is trusted directly — no kernel round-trip.
       expect(mockIsWatertightAuthoritative).not.toHaveBeenCalled()
       expect(meshInfo.value.is_watertight).toBe(true)
+    })
+
+    it('offers the repair flow when an OBJ remains non-watertight', async () => {
+      const problemEdge = {
+        type: 'boundary',
+        positions: new Float32Array([0, 0, 0, 1, 0, 0]),
+        center: [0.5, 0, 0],
+      }
+      mockValidateManifold.mockReturnValue({
+        watertight: false, volume: 0, euler: 1, faceCount: 1, vertCount: 3,
+      })
+      mockIsWatertightAuthoritative.mockResolvedValue(false)
+      mockRepairMeshGeometryRobust.mockResolvedValue(null)
+      mockComputeProblemEdges.mockReturnValue([problemEdge])
+
+      const openObj = new File([
+        'v 0 0 0\n',
+        'v 1 0 0\n',
+        'v 0 1 0\n',
+        'f 1 2 3\n',
+      ], 'open.obj', { type: 'text/plain' })
+      const { loadMesh, meshInfo, problemEdges, error, canAttemptVoxelRepair } = useMeshProcessor()
+
+      await loadMesh([openObj])
+
+      expect(meshInfo.value.is_watertight).toBe(false)
+      expect(problemEdges.value).toEqual([problemEdge])
+      expect(error.value).toContain('could not be repaired automatically')
+      expect(canAttemptVoxelRepair.value).toBe(true)
     })
   })
 

@@ -52,24 +52,52 @@ test.describe('Mesh Split Application', () => {
     await expect(page.getByRole('button', { name: /Download package/ })).toBeDisabled()
   })
 
-  test('Thai language control and split-mode segments use clear single-line labels', async ({ page }) => {
+  test('Thai language control and split-mode segments use clear single-line pointer labels', async ({ page }) => {
     await page.goto('/?lang=th')
 
     await expect(page.getByRole('button', { name: 'English', exact: true })).toBeVisible()
     const modeLabels = page.locator('input[name="split-mode"]').locator('..')
     await expect(modeLabels).toHaveCount(3)
-    for (const label of await modeLabels.all()) {
+    const labels = await modeLabels.all()
+    for (let labelIndex = 0; labelIndex < labels.length; labelIndex += 1) {
+      const label = labels[labelIndex]
       const metrics = await label.evaluate((element) => {
         const style = getComputedStyle(element)
         return {
           whiteSpace: style.whiteSpace,
+          cursor: style.cursor,
           clientWidth: element.clientWidth,
           scrollWidth: element.scrollWidth,
         }
       })
       expect(metrics.whiteSpace).toBe('nowrap')
+      expect(metrics.cursor).toBe(labelIndex === 2 ? 'not-allowed' : 'pointer')
       expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth)
     }
+  })
+
+  test('explains why a loaded non-watertight OBJ cannot be split and offers repair', async ({ page }) => {
+    const fc = page.waitForEvent('filechooser')
+    await page.getByText('Drag & drop a model and optional OBJ/MTL pair, or click to browse').click()
+    await (await fc).setFiles({
+      name: 'open.obj',
+      mimeType: 'text/plain',
+      buffer: Buffer.from([
+        'v 0 0 0',
+        'v 1 0 0',
+        'v 0 1 0',
+        'v 0 -1 0',
+        'v 0 0 1',
+        'f 1 2 3',
+        'f 2 1 4',
+        'f 1 2 5',
+      ].join('\n')),
+    })
+
+    await expect(page.locator('.canvas-inspector')).toContainText('open.obj')
+    await expect(page.getByRole('alertdialog')).toContainText('Cannot split mesh')
+    await expect(page.getByRole('button', { name: 'Try advanced repair (slower)' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Split mesh' })).toBeDisabled()
   })
 
   test('upload STL file and display metadata', async ({ page }) => {

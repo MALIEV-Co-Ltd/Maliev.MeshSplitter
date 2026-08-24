@@ -230,16 +230,30 @@ export function useMeshProcessor(options = {}) {
     }
     loading.value = true
     progressLabel.value = progressLabels.value.loading
+    repairPreview.value = null
+    pendingOriginalGeometry = null
     error.value = null
+    problemEdges.value = []
+    canAttemptVoxelRepair.value = false
+    voxelRepairSourceGeometry = null
+    voxelRepairSourceFilename = null
     try {
       const imported = await importMeshFiles(selected)
+      const primaryFile = selected.find((file) => /\.(stl|3mf|obj)$/i.test(file.name))
       let geometry = normalizeForPreview(imported.geometry)
       progressLabel.value = progressLabels.value.checking
       const watertight = await (async () => {
         const info = validateManifold(geometry)
         if (info.watertight || await isWatertightAuthoritative(geometry)) return true
         const repaired = await repairMeshGeometryRobust(geometry)
-        if (!repaired) return false
+        if (!repaired) {
+          problemEdges.value = computeProblemEdges(geometry)
+          error.value = 'Mesh is non-manifold and could not be repaired automatically. Try advanced repair, or repair larger holes in your CAD or slicer before export.'
+          canAttemptVoxelRepair.value = true
+          voxelRepairSourceGeometry = geometry
+          voxelRepairSourceFilename = primaryFile?.name || 'model'
+          return false
+        }
         if (repaired !== geometry) {
           geometry.dispose()
           geometry = repaired
@@ -252,7 +266,7 @@ export function useMeshProcessor(options = {}) {
       })()
       sourceGeometry.value = markRaw(geometry)
       normalizedMesh.value = markRaw({ ...imported, geometry })
-      const info = setMeshState(geometry, selected.find((file) => /\.(stl|3mf|obj)$/i.test(file.name))?.name || 'model', { watertight })
+      const info = setMeshState(geometry, primaryFile?.name || 'model', { watertight })
       meshInfo.value = { ...info, format: imported.format, hasColor: imported.hasColor, importWarnings: imported.warnings }
       boundaryCandidates.value = []
       selectedBoundaryId.value = null
