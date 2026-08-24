@@ -398,6 +398,17 @@ describe('addConnectorsManifold', () => {
     expect(dowel[1].geometry.attributes.position.count).not.toEqual(key[1].geometry.attributes.position.count)
   })
 
+  it('creates a separate watertight double-ended square-taper alignment plug', async () => {
+    const chunks = await splitMeshManifold(new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100)), [100, 100, 100], [2, 1, 1])
+    const result = await addConnectorsManifold(chunks, { type: 'Square Taper', keyWidth: 7, keyHeight: 4, depth: 4, clearance: 0.3, perFace: 1 })
+    const plugs = result.filter((chunk) => chunk.isKey)
+
+    expect(plugs).toHaveLength(1)
+    expect(plugs[0].label).toBe('Key')
+    expect(await isWatertightAuthoritative(plugs[0].geometry)).toBe(true)
+    expect(result.filter((chunk) => !chunk.isKey).every((chunk) => chunk.manifoldStatus === 'NoError')).toBe(true)
+  })
+
   it('does not create duplicate connectors when applying the same config to the same split', async () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100))
     const chunks = await splitMeshManifold(mesh, [100, 100, 100], [2, 1, 1])

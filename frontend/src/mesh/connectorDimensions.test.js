@@ -19,6 +19,17 @@ function mergeGeometries(geometries) {
 // The female socket must always be larger than the male peg, or printed parts
 // can't be assembled (the male won't enter the hole).
 describe('connectorDimensions', () => {
+  it('defines a clearance-expanded double-ended square taper for alignment-only plugs', () => {
+    const dimensions = connectorDimensions('square-taper', { size: 7, thickness: 4, depth: 4, clearance: 0.3 })
+
+    expect(dimensions.shape).toBe('square-taper')
+    expect(dimensions.peg.shoulder).toEqual({ x: 7, y: 4 })
+    expect(dimensions.peg.tip.x).toBeLessThan(dimensions.peg.shoulder.x)
+    expect(dimensions.peg.tip.y).toBeLessThan(dimensions.peg.shoulder.y)
+    expect(dimensions.socket.shoulder).toEqual({ x: 7.6, y: 4.6 })
+    expect(dimensions.depth).toBe(4)
+  })
+
   it('makes the dowel socket wider than the pin', () => {
     const d = connectorDimensions('dowel', { size: 6, thickness: 6, depth: 5, clearance: 0.3 })
     expect(d.shape).toBe('cylinder')

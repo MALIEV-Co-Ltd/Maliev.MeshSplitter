@@ -1081,6 +1081,7 @@ function resolveConnectorType(type) {
   const normalized = String(type || 'none').toLowerCase().trim()
   if (normalized === 'none') return 'none'
   if (normalized.includes('mortise')) return 'mortise-and-tenon'
+  if (normalized.includes('square') && normalized.includes('taper')) return 'square-taper'
   if (normalized === 'key') return 'key'
   if (normalized.includes('dowel')) return 'dowel'
   return 'dowel'
@@ -1107,6 +1108,25 @@ export function connectorDimensions(type, { size, thickness, depth, clearance } 
     }
   }
 
+  if (type === 'square-taper') {
+    const width = clampConnectorSpacing(size, 3)
+    const cross = clampConnectorSpacing(thickness, 1.5)
+    const taperRatio = 0.88
+    return {
+      shape: 'square-taper',
+      depth,
+      taperRatio,
+      peg: {
+        shoulder: { x: width, y: cross },
+        tip: { x: width * taperRatio, y: cross * taperRatio },
+      },
+      socket: {
+        shoulder: { x: width + gap * 2, y: cross + gap * 2 },
+        tip: { x: width * taperRatio + gap * 2, y: cross * taperRatio + gap * 2 },
+      },
+    }
+  }
+
   const width = clampConnectorSpacing(size, 1.5)
   const cross = clampConnectorSpacing(thickness, type === 'key' ? 1.0 : 1.5)
   return {
@@ -1122,6 +1142,24 @@ function createConnectorShape(manifold, type, options) {
     return {
       makePeg: () => manifold.Manifold.cylinder(dims.peg.height, dims.peg.radius, dims.peg.radius, 24, true),
       makeSocket: () => manifold.Manifold.cylinder(dims.socket.height, dims.socket.radius, dims.socket.radius, 24, true),
+    }
+  }
+  if (dims.shape === 'square-taper') {
+    const makeDoubleTaper = (dimensions) => {
+      const ratio = dimensions.tip.x / dimensions.shoulder.x
+      const scale = [dimensions.shoulder.x * Math.SQRT2, dimensions.shoulder.y * Math.SQRT2, 1]
+      const lower = manifold.Manifold.cylinder(dims.depth, 0.5 * ratio, 0.5, 4, false)
+        .rotate([0, 0, 45]).scale(scale).translate([0, 0, -dims.depth])
+      const upper = manifold.Manifold.cylinder(dims.depth, 0.5, 0.5 * ratio, 4, false)
+        .rotate([0, 0, 45]).scale(scale)
+      const combined = lower.add(upper)
+      lower.delete?.()
+      upper.delete?.()
+      return combined
+    }
+    return {
+      makePeg: () => makeDoubleTaper(dims.peg),
+      makeSocket: () => makeDoubleTaper(dims.socket),
     }
   }
   return {
@@ -1202,6 +1240,7 @@ export function localWallThicknessAroundFootprint(raycaster, mesh, bbox, point, 
 export async function computeConnectorPositions(chunks, config = {}) {
   const cleanChunks = chunks.filter(c => !c.isKey)
   const type = resolveConnectorType(config.type)
+  const looseKey = type === 'key' || type === 'square-taper'
   if (type === 'none') return []
   if (cleanChunks.length < 2) return []
 
@@ -1214,7 +1253,7 @@ export async function computeConnectorPositions(chunks, config = {}) {
   const clearance = Number(config.clearance ?? 0.3)
   const size = toPositive(config.diameter, 6)
   const size2 = toPositive(config.tenonWidth ?? config.keyWidth ?? config.width, size)
-  const thickness = toPositive(config.tenonThickness ?? config.keyHeight ?? config.thickness, type === 'key' ? Math.max(1.5, size * 0.55) : Math.max(1.5, size * 0.45))
+  const thickness = toPositive(config.tenonThickness ?? config.keyHeight ?? config.thickness, looseKey ? Math.max(1.5, size * 0.55) : Math.max(1.5, size * 0.45))
 
   if (!Number.isFinite(clearance) || clearance < 0) {
     throw new Error('Connector clearance cannot be negative')
@@ -1287,7 +1326,7 @@ export async function computeConnectorPositions(chunks, config = {}) {
       let radius
       let keyPeg = null
       let fit = null
-      if (type === 'key') {
+      if (looseKey) {
         keyPeg = planKeyFootprint(axis, extentA, extentB, size2, thickness, clearance, faceTolerance)
         if (!keyPeg) continue
         radius = Math.max(size2, thickness) / 2
@@ -1320,7 +1359,7 @@ export async function computeConnectorPositions(chunks, config = {}) {
       // validated, not just the peg. A connector is only viable where this whole
       // footprint sits on real cut-face material of BOTH parts.
       let footHalfU, footHalfV
-      if (type === 'key') {
+      if (looseKey) {
         const [spanU, spanV] = footprintSpan(axis, keyPeg.pegX, keyPeg.pegY)
         footHalfU = spanU / 2 + clearance
         footHalfV = spanV / 2 + clearance
@@ -1342,7 +1381,7 @@ export async function computeConnectorPositions(chunks, config = {}) {
           localWallThicknessAroundFootprint(raycaster, raycastMeshes[i], bbA, pos, axis, otherAxes, planeValue, faceTolerance, radius),
           localWallThicknessAroundFootprint(raycaster, raycastMeshes[j], bbB, pos, axis, otherAxes, planeValue, faceTolerance, radius),
         )
-        if (type === 'key') {
+        if (looseKey) {
           if (wall >= depth + CONNECTOR_SAFETY_MARGIN_MM) {
             viablePositions.push(pos)
             depthByPosition.set(pos, depth)
@@ -1398,7 +1437,7 @@ export async function computeConnectorPositions(chunks, config = {}) {
           depth: placeDepth,
           clearance,
           radius,
-          isKey: type === 'key',
+          isKey: looseKey,
           keyPeg: keyPeg ? { ...keyPeg } : null,
           safeDepth: placeDepth,
         })
@@ -1434,7 +1473,7 @@ export async function applyConnectorsFromManifest(chunks, manifest) {
       const pos = new THREE.Vector3(entry.position.x, entry.position.y, entry.position.z)
 
       const shape = entry.isKey
-        ? createConnectorShape(manifold, 'key', { size: entry.keyPeg.pegX, thickness: entry.keyPeg.pegY, depth: entry.depth, clearance: entry.clearance })
+        ? createConnectorShape(manifold, entry.type, { size: entry.keyPeg.pegX, thickness: entry.keyPeg.pegY, depth: entry.depth, clearance: entry.clearance })
         : createConnectorShape(manifold, entry.type, { size: entry.size, thickness: entry.thickness, depth: entry.depth, clearance: entry.clearance })
 
       const peg = orientConnector(shape.makePeg(), entry.axis).translate([pos.x, pos.y, pos.z])
