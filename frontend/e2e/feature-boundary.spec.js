@@ -1,0 +1,60 @@
+import { test, expect } from '@playwright/test'
+import JSZip from 'jszip'
+import * as THREE from 'three'
+
+async function coloredBox3mf() {
+  const geometry = new THREE.BoxGeometry(20, 12, 10, 2, 1, 1).toNonIndexed()
+  const positions = geometry.getAttribute('position')
+  const vertices = []
+  const triangles = []
+
+  for (let i = 0; i < positions.count; i += 1) {
+    vertices.push(`<vertex x="${positions.getX(i)}" y="${positions.getY(i)}" z="${positions.getZ(i)}"/>`)
+  }
+  for (let i = 0; i < positions.count; i += 3) {
+    const centerX = (positions.getX(i) + positions.getX(i + 1) + positions.getX(i + 2)) / 3
+    triangles.push(`<triangle v1="${i}" v2="${i + 1}" v3="${i + 2}" pid="1" p1="${centerX < 0 ? 0 : 1}"/>`)
+  }
+  geometry.dispose()
+
+  const zip = new JSZip()
+  zip.file('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>')
+  zip.file('_rels/.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>')
+  zip.file('3D/3dmodel.model', `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+  <resources>
+    <basematerials id="1"><base name="red" displaycolor="#FF0000"/><base name="blue" displaycolor="#0000FF"/></basematerials>
+    <object id="2" type="model" pid="1" pindex="0"><mesh>
+      <vertices>${vertices.join('')}</vertices>
+      <triangles>${triangles.join('')}</triangles>
+    </mesh></object>
+  </resources>
+  <build><item objectid="2"/></build>
+</model>`)
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+
+test('splits a colored 3MF boundary with auto-sized PLA square-taper alignment keys', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'colored-box.3mf',
+    mimeType: 'model/3mf',
+    buffer: await coloredBox3mf(),
+  })
+
+  await expect(page.locator('.canvas-inspector')).toContainText('colored-box.3mf', { timeout: 15000 })
+  await page.getByText('Color', { exact: true }).click()
+
+  const boundaries = page.getByRole('listbox', { name: 'Detected boundaries' })
+  await expect(boundaries).toBeVisible({ timeout: 15000 })
+  await expect(boundaries.getByRole('button').first()).toContainText('Boundary 1')
+  await expect(page.getByText('Size alignment key automatically')).toBeVisible()
+  await expect(page.locator('.conn-select-trigger')).toContainText('Square taper')
+
+  await page.getByRole('button', { name: 'Split mesh' }).click()
+
+  await expect(page.locator('.parts-panel')).toContainText('3 total', { timeout: 20000 })
+  await expect(page.locator('.parts-panel')).toContainText('Key x1')
+  await expect(page.locator('.parts-panel')).toContainText('6 × 3 × 5 mm')
+  await expect(page.getByRole('button', { name: /Download package/ })).toBeEnabled()
+})

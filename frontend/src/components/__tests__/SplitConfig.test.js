@@ -20,6 +20,8 @@ describe('SplitConfig', () => {
     await wrapper.get('[value="feature"]').setValue()
     expect(wrapper.emitted('analyze-boundaries').at(-1)).toEqual(['feature'])
     expect(wrapper.text()).toContain('Boundary 1')
+    expect(wrapper.get('.conn-select-trigger').text()).toContain('Square taper')
+    expect(wrapper.get('[data-testid="auto-key-sizing"]').element.checked).toBe(true)
   })
 
   it('summarizes the automatic split counts in the header without manual sliders or per-axis rows', () => {

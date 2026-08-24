@@ -260,6 +260,23 @@ const isMortiseConnector = computed(() => connectorType.value === 'Mortise & Ten
 const isKeyConnector = computed(() => connectorType.value === 'Key')
 const isTaperConnector = computed(() => connectorType.value === 'Square Taper')
 
+// Keep the picker controlled by its parent. Split mode changes can replace the
+// connector config while boundary analysis is also updating parent state; a
+// remount-time emit must not overwrite that newer selection.
+watch(() => props.modelValue, (value) => {
+  if (!value) return
+  if (value.type && connectorType.value !== value.type) connectorType.value = value.type
+  if (Number.isFinite(value.diameter)) diameter.value = value.diameter
+  if (Number.isFinite(value.depth)) depth.value = value.depth
+  if (Number.isFinite(value.clearance)) clearance.value = value.clearance
+  if (Number.isFinite(value.perFace)) perFace.value = value.perFace
+  if (Number.isFinite(value.tenonWidth)) mortiseWidth.value = value.tenonWidth
+  if (Number.isFinite(value.tenonThickness)) mortiseThickness.value = value.tenonThickness
+  if (Number.isFinite(value.keyWidth)) keyWidth.value = value.keyWidth
+  if (Number.isFinite(value.keyHeight)) keyThickness.value = value.keyHeight
+  if (typeof value.autoSize === 'boolean') autoSize.value = value.autoSize
+}, { deep: true })
+
 const config = computed(() => {
   const c = { type: connectorType.value }
   if (connectorType.value !== 'None') {

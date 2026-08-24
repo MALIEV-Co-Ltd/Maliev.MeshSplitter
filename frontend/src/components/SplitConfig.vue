@@ -30,7 +30,7 @@
         <Link2Icon :size="13" :stroke-width="1.75" />
         {{ labels.connectors }}
       </div>
-      <ConnectorConfig :key="splitMode" v-model="connectorConfig" :labels="labels.connectorConfig" />
+      <ConnectorConfig v-model="connectorConfig" :labels="labels.connectorConfig" />
 
       <p v-if="err" class="text-sm text-destructive">{{ err }}</p>
       <div v-if="showConnectorWarning" class="connector-warning" role="dialog" aria-modal="false" :aria-label="labels.connectorWarningTitle">
