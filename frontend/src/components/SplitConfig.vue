@@ -10,8 +10,8 @@
     <div class="pnl-body space-y-3">
       <fieldset class="space-y-2">
         <legend class="text-xs font-semibold">{{ labels.splitMode || 'Split mode' }}</legend>
-        <div class="grid grid-cols-3 gap-1">
-          <label v-for="mode in splitModes" :key="mode.value" class="rounded border p-2 text-center text-xs" :class="{ 'border-signal': splitMode === mode.value }">
+        <div class="grid grid-cols-[1.15fr_1.15fr_.7fr] gap-1">
+          <label v-for="mode in splitModes" :key="mode.value" class="min-w-0 whitespace-nowrap rounded border px-1 py-2 text-center text-xs" :class="{ 'border-signal': splitMode === mode.value }">
             <input v-model="splitMode" class="sr-only" type="radio" name="split-mode" :value="mode.value" :disabled="mode.value === 'color' && !colorBoundaryAvailable" @change="changeMode" />
             {{ mode.label }}
           </label>

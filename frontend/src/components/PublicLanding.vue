@@ -315,7 +315,7 @@ const translations = {
 const copy = computed(() => translations[props.locale] || translations.en)
 const workflow = computed(() => copy.value.workflow)
 const capabilities = computed(() => copy.value.capabilities)
-const localeLabel = computed(() => (props.locale === 'th' ? 'EN' : 'ไทย'))
+const localeLabel = computed(() => (props.locale === 'th' ? 'English' : 'ไทย'))
 
 function productUrl(pack) {
   if (!pack?.handle) return '#pricing'

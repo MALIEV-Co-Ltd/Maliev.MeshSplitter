@@ -45,7 +45,7 @@
           <MoonIcon v-else :size="16" :stroke-width="1.75" />
         </Button>
         <Button variant="ghost" size="sm" class="language-toggle" @click="toggleLocale">
-          {{ locale === 'th' ? 'EN' : 'ไทย' }}
+          {{ locale === 'th' ? 'English' : 'ไทย' }}
         </Button>
         <Button v-if="!isMobile" variant="outline" size="sm" @click="showCreditDialog">
           {{ uiCopy.buyCredits }}
@@ -618,9 +618,9 @@ const appTranslations = {
       splitMesh: 'แยกเมช',
       autoSplitLabel: 'อัตโนมัติ',
       splitMode: 'วิธีแยก',
-      buildVolumeMode: 'ตามพื้นที่พิมพ์',
-      featureMode: 'ตามขอบรูปทรง',
-      colorMode: 'ตามสี',
+      buildVolumeMode: 'พื้นที่พิมพ์',
+      featureMode: 'ขอบรูปทรง',
+      colorMode: 'สี',
       localOnly: 'วิเคราะห์ภายในเบราว์เซอร์เท่านั้น เลือกขอบปิดก่อนแยก',
       boundaries: 'ขอบที่ตรวจพบ',
       boundary: 'ขอบ',

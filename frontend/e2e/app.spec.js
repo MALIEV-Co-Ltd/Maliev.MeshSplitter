@@ -52,6 +52,26 @@ test.describe('Mesh Split Application', () => {
     await expect(page.getByRole('button', { name: /Download package/ })).toBeDisabled()
   })
 
+  test('Thai language control and split-mode segments use clear single-line labels', async ({ page }) => {
+    await page.goto('/?lang=th')
+
+    await expect(page.getByRole('button', { name: 'English', exact: true })).toBeVisible()
+    const modeLabels = page.locator('input[name="split-mode"]').locator('..')
+    await expect(modeLabels).toHaveCount(3)
+    for (const label of await modeLabels.all()) {
+      const metrics = await label.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          whiteSpace: style.whiteSpace,
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+        }
+      })
+      expect(metrics.whiteSpace).toBe('nowrap')
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth)
+    }
+  })
+
   test('upload STL file and display metadata', async ({ page }) => {
     await uploadTestStl(page)
     const inspector = page.locator('.canvas-inspector')
@@ -225,7 +245,7 @@ test.describe('public presentation', () => {
     await expect(page.getByRole('link', { name: 'เปิด MeshSplitter' }).first()).toBeVisible()
     await expect(page.locator('#pricing')).toContainText('เริ่มใช้ฟรี แล้วซื้อเครดิตเมื่อจำเป็นต้องส่งออกเพิ่ม')
     await expect(page.locator('#pricing')).toContainText('คุ้มที่สุด')
-    await expect(page.getByRole('button', { name: 'EN' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'English', exact: true })).toBeVisible()
   })
 
   test('mobile landing header and pricing do not overflow', async ({ page }) => {
