@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@google-cloud/datastore": "^10.1.1",
+    "@google-cloud/datastore": "^11.1.0",
     "pg": "^8.23.0"
   },
   "devDependencies": {
