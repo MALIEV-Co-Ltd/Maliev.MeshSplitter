@@ -2,6 +2,12 @@
 
 Commercial STL mesh splitting app for Shopify customers.
 
+## Use Mesh Splitter
+
+[Open the hosted Mesh Splitter](https://shop.maliev.com/tools/mesh-splitter)
+to upload an STL, review the split parts, and export files for your printer.
+The hosted app is the customer entry point; this repository is for source review.
+
 ## License and repository use
 
 This public repository is source-available for review, deployment transparency,
